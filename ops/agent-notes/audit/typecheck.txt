@@ -1,0 +1,8 @@
+
+> whatsapp-calendar-agent@0.1.0 typecheck
+> tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json && tsc --noEmit -p tsconfig.tests.json
+
+src/shared/when.test.ts(129,12): error TS2532: Object is possibly 'undefined'.
+src/shared/when.test.ts(140,12): error TS2532: Object is possibly 'undefined'.
+src/shared/when.test.ts(141,12): error TS2532: Object is possibly 'undefined'.
+EXIT=2

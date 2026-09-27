@@ -1,0 +1,297 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`Ready > RTL snapshot 1`] = `
+<section
+  class="flex min-h-full flex-col"
+  data-testid="onboarding-ready"
+>
+  <ol
+    aria-label="שלבי ההתקנה"
+    class="m-0 flex list-none items-center gap-2 border-b border-line bg-surface px-4 py-2"
+    data-testid="onboarding-rail"
+  >
+    <li
+      class="flex min-w-0 grow items-center gap-2"
+    >
+      <span
+        class="chip tnum whitespace-nowrap bg-ok-soft text-ok"
+        data-state="done"
+        data-testid="onboarding-rail-1"
+      >
+        1
+         
+        בינה
+      </span>
+      <span
+        aria-hidden="true"
+        class="rail-connector"
+        data-done="1"
+      />
+    </li>
+    <li
+      class="flex min-w-0 grow items-center gap-2"
+    >
+      <span
+        class="chip tnum whitespace-nowrap bg-ok-soft text-ok"
+        data-state="done"
+        data-testid="onboarding-rail-2"
+      >
+        2
+         
+        וואטסאפ
+      </span>
+      <span
+        aria-hidden="true"
+        class="rail-connector"
+        data-done="1"
+      />
+    </li>
+    <li
+      class="flex min-w-0 grow items-center gap-2"
+    >
+      <span
+        class="chip tnum whitespace-nowrap bg-ok-soft text-ok"
+        data-state="done"
+        data-testid="onboarding-rail-3"
+      >
+        3
+         
+        יומן
+      </span>
+      <span
+        aria-hidden="true"
+        class="rail-connector"
+        data-done="1"
+      />
+    </li>
+    <li
+      aria-current="step"
+      class="flex min-w-0 grow items-center gap-2"
+    >
+      <span
+        class="chip tnum whitespace-nowrap bg-accent-soft text-accent"
+        data-state="current"
+        data-testid="onboarding-rail-4"
+      >
+        4
+         
+        סיום
+      </span>
+    </li>
+  </ol>
+  <div
+    class="mx-auto flex w-full max-w-[35rem] grow flex-col gap-4 px-4 py-5"
+    data-testid="onboarding-step-4"
+  >
+    <h1
+      class="m-0 text-xl"
+    >
+      הכול מוכן
+    </h1>
+    <ul
+      aria-label="רשימת ההתקנה"
+      class="m-0 flex list-none flex-col gap-2 p-0"
+    >
+      <li
+        class="flex items-center gap-2"
+        data-ready="1"
+        data-testid="ready-ai"
+      >
+        <span
+          class="text-ok"
+        >
+          <svg
+            aria-hidden="true"
+            class="shrink-0"
+            fill="none"
+            height="16"
+            stroke="currentColor"
+            stroke-width="1.75"
+            viewBox="0 0 16 16"
+            width="16"
+          >
+            <path
+              d="m3.2 8.4 3.2 3.3 6.4-7"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            />
+          </svg>
+        </span>
+        <span
+          class="font-semibold"
+        >
+          בינה
+        </span>
+        <span
+          class="text-text-muted"
+        >
+          מוכנה על המחשב הזה
+        </span>
+      </li>
+      <li
+        class="flex items-center gap-2"
+        data-ready="1"
+        data-testid="ready-whatsapp"
+      >
+        <span
+          class="text-ok"
+        >
+          <svg
+            aria-hidden="true"
+            class="shrink-0"
+            fill="none"
+            height="16"
+            stroke="currentColor"
+            stroke-width="1.75"
+            viewBox="0 0 16 16"
+            width="16"
+          >
+            <path
+              d="m3.2 8.4 3.2 3.3 6.4-7"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            />
+          </svg>
+        </span>
+        <span
+          class="font-semibold"
+        >
+          וואטסאפ
+        </span>
+        <span
+          class="text-text-muted"
+        >
+          מקושר
+        </span>
+      </li>
+      <li
+        class="flex items-center gap-2"
+        data-ready="1"
+        data-testid="ready-calendar"
+      >
+        <span
+          class="text-ok"
+        >
+          <svg
+            aria-hidden="true"
+            class="shrink-0"
+            fill="none"
+            height="16"
+            stroke="currentColor"
+            stroke-width="1.75"
+            viewBox="0 0 16 16"
+            width="16"
+          >
+            <path
+              d="m3.2 8.4 3.2 3.3 6.4-7"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            />
+          </svg>
+        </span>
+        <span
+          class="font-semibold"
+        >
+          יומן
+        </span>
+        <span
+          class="text-text-muted"
+        >
+          מחובר
+        </span>
+      </li>
+    </ul>
+    <section
+      aria-labelledby="ready-tray"
+      class="flex items-start gap-3 rounded-md bg-surface p-3"
+    >
+      <svg
+        aria-hidden="true"
+        class="shrink-0"
+        fill="none"
+        height="24"
+        stroke="currentColor"
+        stroke-width="1.5"
+        viewBox="0 0 24 24"
+        width="24"
+      >
+        <rect
+          height="15"
+          rx="2.5"
+          width="17"
+          x="3.5"
+          y="5"
+        />
+        <path
+          d="M3.5 9.5h17"
+        />
+        <path
+          d="M8 3.5v3M16 3.5v3"
+          stroke-linecap="round"
+        />
+      </svg>
+      <div
+        class="flex flex-col gap-2"
+      >
+        <h2
+          class="sr-only"
+          id="ready-tray"
+        >
+          הסוכן ממשיך לפעול
+        </h2>
+        <p
+          class="m-0"
+        >
+          סגירת החלון אינה עוצרת את הסוכן.
+        </p>
+        <p
+          class="m-0"
+        >
+          תמצאו אותו ליד השעון, מתחת לחץ ^. לחיצה ימנית עליו פותחת השהיה או יציאה.
+        </p>
+        <label
+          class="flex items-center gap-2"
+        >
+          <input
+            data-testid="ready-autostart"
+            type="checkbox"
+          />
+          <span>
+            להפעיל את הסוכן עם ההפעלה של Windows
+          </span>
+        </label>
+      </div>
+    </section>
+    <p
+      class="m-0 flex flex-wrap items-center gap-2 text-sm text-text-muted"
+      data-testid="ready-bitlocker"
+    >
+      <span
+        class="grow"
+      >
+        השיחות והטיוטות נשמרות על המחשב הזה. הפעילו הצפנת מכשיר כדי שיישארו מוגנות אם הוא יאבד.
+      </span>
+      <button
+        class="btn btn-quiet"
+        type="button"
+      >
+        מה עושים
+      </button>
+    </p>
+    <div
+      class="mt-auto flex flex-wrap items-center gap-2 pt-4"
+    >
+      <span
+        class="grow"
+      />
+      <button
+        class="btn btn-primary"
+        data-testid="ready-open"
+        type="button"
+      >
+        לפתוח את הסוכן
+      </button>
+    </div>
+  </div>
+</section>
+`;

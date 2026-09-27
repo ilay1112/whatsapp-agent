@@ -1,0 +1,1077 @@
+{
+  "action": {
+    "addAgain": "Add again",
+    "addAnyway": "Add anyway",
+    "addToCalendar": "Add to calendar",
+    "added": "Added to calendar",
+    "adding": "Adding...",
+    "analyse": "Analyse",
+    "analyseAgain": "Analyse again",
+    "analyseChat": "Analyse this chat",
+    "approveSend": "Approve & send",
+    "askDetails": "Ask for details",
+    "copied": "Copied",
+    "copy": "Copy",
+    "copyReply": "Copy reply",
+    "createAnyway": "Create anyway",
+    "dismiss": "Dismiss",
+    "dismissed": "Dismissed",
+    "edit": "Edit",
+    "openInCalendar": "Open in calendar",
+    "resetSuggestion": "Reset to suggestion",
+    "restore": "Restore",
+    "send": "Send",
+    "sendAgain": "Send again",
+    "sending": "Sending...",
+    "sent": "Sent",
+    "undo": "Undo"
+  },
+  "ai": {
+    "cloud": {
+      "privacy": "The chat being analysed is sent to {{vendor}} - without names or phone numbers."
+    },
+    "local": {
+      "name": "On this computer",
+      "privacy": "Your messages never leave this computer."
+    }
+  },
+  "app": {
+    "announce": {
+      "added": "Added to calendar: {{when}}.",
+      "newCards_one": "{{count}} new chat needs your reply.",
+      "newCards_other": "{{count}} new chats need your reply.",
+      "saved": "Saved.",
+      "sent": "Sent to {{name, bdi}}."
+    },
+    "back": "Back",
+    "close": "Close",
+    "dashboard": "Dashboard",
+    "loading": "Loading...",
+    "mainRegion": "Main content",
+    "name": "WhatsApp Calendar Agent",
+    "settings": "Settings",
+    "tryAgain": "Try again",
+    "version": "Version {{version}}",
+    "wordmark": "WA Calendar Agent"
+  },
+  "calendar": {
+    "eventDescription": "Added from WhatsApp by the WhatsApp Calendar Agent after you approved it.",
+    "primaryName": "Main calendar"
+  },
+  "card": {
+    "analyseCancel": "Cancel",
+    "analyseExplain": {
+      "cloud": "The message will be sent to {{vendor}} for analysis.",
+      "local": "The message will be read by the AI on this computer."
+    },
+    "busyAtThatTime": "You are busy at that time.",
+    "calendarUnavailable": "Calendar is not available right now.",
+    "changeTime": "Change time",
+    "changed": "This card changed - review again.",
+    "clickAgain": "Click the button again.",
+    "counterLabel": "Characters used",
+    "draftHidden": "The draft is hidden. You can still write your own reply.",
+    "draftLabel": "Draft reply",
+    "duplicateEvent": "An event like this already exists.",
+    "expired": "This suggestion expired.",
+    "lidCopyOnly": "Number hidden by WhatsApp - copy only",
+    "media": {
+      "location": "Location",
+      "other": "Attachment",
+      "photo": "Photo",
+      "sticker": "Sticker",
+      "voice": "Voice message"
+    },
+    "messageRemoved": "Message text was removed after 30 days.",
+    "neverAnalyse": "Never analyse this chat",
+    "openDetails": "Open details",
+    "overflow": "More actions",
+    "ownLabel": "Your reply",
+    "rateLimited": "Hourly send limit reached - this protects your account.",
+    "refresh": "Refresh card",
+    "replyNotSent": "Reply not sent yet",
+    "sendFailed": "Sending failed. Nothing was sent.",
+    "sendsTo": "Sends to <bdi>{{name}}</bdi>, <bdi dir=\"ltr\">{{phone}}</bdi>",
+    "show": "Show",
+    "showDraftAnyway": "Show draft anyway",
+    "showMore": "Show more",
+    "stillSending": "Still sending - WhatsApp sends are spaced out to protect your account.",
+    "unknownOutcome": "We could not confirm this - check WhatsApp.",
+    "unknownOutcomeCalendar": "We could not confirm this - check your calendar.",
+    "waOffline": "WhatsApp is offline - sending is paused. You can still copy the reply.",
+    "writeMyOwn": "Write my own",
+    "writeReplyFirst": "Write a reply first.",
+    "you": "You:"
+  },
+  "consent": {
+    "cancel": "Not now",
+    "cloud_claude": {
+      "v1": {
+        "accept": "Send to Claude",
+        "body": "The chat being analysed is sent to Anthropic (Claude) - without names or phone numbers. Anthropic processes it under its terms. You can switch back to the AI on this computer at any time.",
+        "title": "Send chats to Claude"
+      }
+    },
+    "cloud_gemini": {
+      "v1": {
+        "accept": "Send to Gemini",
+        "body": "The chat being analysed is sent to Google (Gemini) - without names or phone numbers. Google processes it under its terms. You can switch back to the AI on this computer at any time.",
+        "title": "Send chats to Gemini"
+      }
+    },
+    "detail": {
+      "freeTier": "On the free tier Google may use your text to improve its models. A paid key is not used that way.",
+      "neverBody": "Names, phone numbers, attachments, and any chat the agent is not analysing right now.",
+      "neverTitle": "What is never sent",
+      "sentBody": "The text of the chat being analysed, today's date, and the busy and free times of your calendar.",
+      "sentTitle": "What is sent",
+      "who": {
+        "cloud_claude": "Anthropic, under its own terms. You can switch back to the AI on this computer at any time.",
+        "cloud_gemini": "Google, under its own terms. You can switch back to the AI on this computer at any time."
+      },
+      "whoTitle": "Who processes it"
+    },
+    "whatsapp_tos": {
+      "v1": {
+        "accept": "I understand and accept",
+        "body": "This app links to your WhatsApp as a companion device using an unofficial component. WhatsApp may not permit this; use it at your own risk. Nothing is sent without your approval.",
+        "title": "WhatsApp terms"
+      }
+    }
+  },
+  "dialog": {
+    "dbRecovery": {
+      "body": "You can restore yesterday's backup. WhatsApp stays linked either way.",
+      "restore": "Restore",
+      "startFresh": "Start fresh",
+      "title": "The app's data could not be opened"
+    }
+  },
+  "download": {
+    "bytes": "{{done}} of {{total}}",
+    "cancel": "Cancel download",
+    "downloading": "Downloading {{percent}} %",
+    "eta": "About {{minutes}} minutes left",
+    "etaShort": "{{minutes}} min left",
+    "failed": "Download failed",
+    "finished": "Download finished - the AI is ready.",
+    "pause": "Pause",
+    "paused": "Paused {{percent}} %",
+    "resume": "Resume",
+    "showDetails": "Show download details",
+    "speed": "{{speed}} per second",
+    "tier": {
+      "mid": "Large model",
+      "small": "Standard model",
+      "tiny": "Compact model"
+    },
+    "title": "AI model download",
+    "valueText": "{{percent}} percent, about {{minutes}} minutes left",
+    "valueTextShort": "{{percent}} percent",
+    "verifying": "Checking file..."
+  },
+  "errors": {
+    "ABORTED": {
+      "action": "Wait",
+      "body": "The operation was stopped.",
+      "title": "Stopped"
+    },
+    "ACTION_EXPIRED": {
+      "action": "Review again",
+      "body": "It is older than a day. Review it again.",
+      "title": "This suggestion expired"
+    },
+    "ACTION_STALE": {
+      "action": "Review again",
+      "body": "Review it again before approving.",
+      "title": "This card changed"
+    },
+    "ACTION_UNKNOWN_OUTCOME": {
+      "action": "Send again",
+      "body": "Check WhatsApp before sending again.",
+      "title": "We could not confirm this"
+    },
+    "BAD_REQUEST": {
+      "action": "Wait",
+      "body": "The request was not valid.",
+      "title": "Something went wrong"
+    },
+    "BRIDGE_BINARY_BLOCKED": {
+      "action": "Open instructions",
+      "body": "An antivirus may have removed it.",
+      "title": "The WhatsApp component is missing or was blocked"
+    },
+    "BRIDGE_CRASH_LOOP": {
+      "action": "Try again",
+      "body": "It was restarted several times and is now resting.",
+      "title": "The WhatsApp connection keeps stopping"
+    },
+    "BRIDGE_OUTDATED": {
+      "action": "How to update",
+      "body": "Drafts still work and you can copy them; sending needs an app update.",
+      "title": "WhatsApp no longer accepts this version"
+    },
+    "BRIDGE_SPAWN_REFUSED": {
+      "action": "Export diagnostics",
+      "body": "A safety check failed. Your other WhatsApp tools were not touched.",
+      "title": "The WhatsApp component was not started, to stay safe"
+    },
+    "BRIDGE_TS_FORMAT": {
+      "action": "Export diagnostics",
+      "body": "The message dates are in an unexpected format.",
+      "title": "New messages cannot be read correctly"
+    },
+    "CAL_CREATE_FAILED": {
+      "action": "Try again",
+      "body": "Google did not accept the event.",
+      "title": "The event was not added"
+    },
+    "CAL_DUPLICATE": {
+      "action": "Create anyway",
+      "body": "Google found an event that looks the same.",
+      "title": "A similar event already exists"
+    },
+    "CAL_PORT_BUSY": {
+      "action": "Try again",
+      "body": "Another program is using the ports it needs (3500-3505). Close it and try again.",
+      "title": "Google sign-in could not start"
+    },
+    "CAL_RECONNECT": {
+      "action": "Reconnect",
+      "body": "Sign in again. If this happens every week, publish your Google project (see setup step 2).",
+      "title": "Google connection expired"
+    },
+    "CAL_TOOLSET_MISMATCH": {
+      "action": "Export diagnostics",
+      "body": "It was turned off to stay safe.",
+      "title": "The calendar component is not the expected version"
+    },
+    "CAL_UNAVAILABLE": {
+      "action": "Try again",
+      "body": "Replies still work; adding events is paused.",
+      "title": "The calendar connection stopped"
+    },
+    "CLOUD_QUOTA": {
+      "action": "Open AI settings",
+      "body": "New chats wait until this is fixed.",
+      "title": "The AI account is out of credit or quota"
+    },
+    "CLOUD_UNAVAILABLE": {
+      "action": "Wait",
+      "body": "The agent will try again shortly.",
+      "title": "The AI service is busy"
+    },
+    "CONSENT_REQUIRED": {
+      "action": "Give consent",
+      "body": "Read and accept the data notice before using this AI.",
+      "title": "Your consent is needed first"
+    },
+    "DB_RECOVERY": {
+      "action": "Restore",
+      "body": "You can restore yesterday's backup. WhatsApp stays linked either way.",
+      "title": "The app's data could not be opened"
+    },
+    "DISK_FULL": {
+      "action": "Free up {{gb}} GB",
+      "body": "Free up {{gb}} GB and continue the download.",
+      "title": "Not enough disk space for the AI model"
+    },
+    "DOWNLOAD_FAILED": {
+      "action": "Download again",
+      "body": "It will continue from where it stopped.",
+      "title": "The model download stopped"
+    },
+    "EVENT_INVALID": {
+      "action": "Review again",
+      "body": "Check the date, time and length.",
+      "title": "The event details are not valid"
+    },
+    "GOOGLE_CREDENTIALS_INVALID": {
+      "action": "Replace key file",
+      "body": "Download a Desktop app key file from your Google project and try again.",
+      "title": "The key file is not valid"
+    },
+    "GOOGLE_SIGNIN_TIMEOUT": {
+      "action": "Try again",
+      "body": "The sign-in was not completed in the browser.",
+      "title": "Google sign-in timed out"
+    },
+    "INTERNAL": {
+      "action": "Export diagnostics",
+      "body": "An unexpected error happened.",
+      "title": "Something went wrong"
+    },
+    "KEY_INVALID": {
+      "action": "Update key",
+      "body": "The AI is paused until you update it.",
+      "title": "The API key was not accepted"
+    },
+    "KEY_MISSING": {
+      "action": "Enter key",
+      "body": "The saved key could not be read on this computer.",
+      "title": "An API key is needed"
+    },
+    "LLM_BAD_OUTPUT": {
+      "action": "Analyse again",
+      "body": "You can still reply yourself.",
+      "title": "Could not analyse this chat"
+    },
+    "LLM_LOCAL_FAILED": {
+      "action": "Test again",
+      "body": "You can test again or choose a smaller model. Chats wait as plain cards.",
+      "title": "The AI on this computer did not start"
+    },
+    "LLM_NOT_READY": {
+      "action": "Wait",
+      "body": "Chats wait a moment until it is ready.",
+      "title": "The AI is getting ready"
+    },
+    "LLM_VCREDIST_MISSING": {
+      "action": "Install Microsoft runtime",
+      "body": "The AI on this computer needs the Microsoft Visual C++ runtime.",
+      "title": "A Microsoft runtime is missing"
+    },
+    "MODEL_MISSING": {
+      "action": "Download again",
+      "body": "It needs to be downloaded again.",
+      "title": "The AI model file is missing or damaged"
+    },
+    "MODEL_NOT_FOUND": {
+      "action": "Choose a model",
+      "body": "Pick another model to continue.",
+      "title": "The chosen AI model is no longer available"
+    },
+    "NOT_FOUND": {
+      "action": "Wait",
+      "body": "It may have been removed.",
+      "title": "This item no longer exists"
+    },
+    "RATE_LIMIT_CREATE": {
+      "action": "Wait",
+      "body": "Too many events were added recently.",
+      "title": "Adding events is paused for a moment"
+    },
+    "RATE_LIMIT_RETRIAGE": {
+      "action": "Wait",
+      "body": "This chat was analysed too many times recently.",
+      "title": "Analysing is paused for a moment"
+    },
+    "RATE_LIMIT_SEND": {
+      "action": "Wait",
+      "body": "Too many messages were sent recently.",
+      "title": "Sending is paused for a moment"
+    },
+    "SEND_FAILED": {
+      "action": "Try again",
+      "body": "WhatsApp did not accept it.",
+      "title": "The message was not sent"
+    },
+    "SEND_NOT_CONNECTED": {
+      "action": "Copy instead",
+      "body": "You can copy the reply and send it from your phone.",
+      "title": "WhatsApp is not connected"
+    },
+    "SEND_NOT_SENDABLE": {
+      "action": "Copy instead",
+      "body": "WhatsApp hides the number. Copy the reply and send it from your phone.",
+      "title": "This chat cannot be messaged from here"
+    },
+    "WA_LOGGED_OUT": {
+      "action": "Re-link",
+      "body": "Link it again to continue. Your cards stay.",
+      "title": "This computer was unlinked from WhatsApp"
+    },
+    "WA_OFFLINE": {
+      "action": "Check your internet",
+      "body": "Sending is paused until it reconnects. Copy still works.",
+      "title": "WhatsApp has been offline for a while"
+    },
+    "WA_TOS_REQUIRED": {
+      "action": "Accept terms",
+      "body": "The WhatsApp component starts only after you accept the terms.",
+      "title": "WhatsApp terms must be accepted first"
+    },
+    "WINDOW_NOT_FOCUSED": {
+      "action": "Focus window",
+      "body": "Approvals work only in the focused window.",
+      "title": "Bring the window to the front first"
+    }
+  },
+  "event": {
+    "calendarLabel": "Calendar:",
+    "change": "Change",
+    "editDetails": "Edit event details",
+    "error": {
+      "duration": "Choose a duration between 5 minutes and 12 hours.",
+      "endBeforeStart": "End time must be after the start.",
+      "past": "That time has already passed.",
+      "tooFar": "That is more than a year away."
+    },
+    "field": {
+      "date": "Date",
+      "from": "From",
+      "title": "Title",
+      "to": "To",
+      "where": "Where"
+    },
+    "inCalendar": "In calendar",
+    "missing": "Missing: {{fields}}",
+    "needed": "Needed",
+    "noInvites": "No invitations are sent",
+    "timeUnknown": "time?"
+  },
+  "footer": {
+    "undoDismiss": "Undo dismiss"
+  },
+  "google": {
+    "calendarLabel": "Calendar for new events",
+    "connected": "Connected to Google Calendar.",
+    "goToStep": "Go to step {{number}}",
+    "hebrewNote": "Google's own pages may open in English.",
+    "intro": {
+      "body1": "The agent creates events in your own calendar. For that it needs a free key that belongs to you.",
+      "body2": "Five short steps on Google's site, about five minutes. You can also do this later.",
+      "later": "Later - replies only",
+      "privacy": "The agent reads the busy and free times of your calendar and creates only the events you approved.",
+      "start": "Start"
+    },
+    "next": "Next",
+    "step1": {
+      "btn1": "Open: new project",
+      "btn2": "Open: enable the Calendar API",
+      "i1": "Open the Google Cloud console and create a new project. Any name will do.",
+      "i2": "With that project selected, open the Google Calendar API page and press Enable.",
+      "tip": "If a page asks you to choose an organisation, choose No organisation.",
+      "title": "Create a project"
+    },
+    "step2": {
+      "btn1": "Open: consent screen",
+      "btn2": "Open: publish the app",
+      "i1": "Open the OAuth consent screen and choose External.",
+      "i2": "Fill in an app name and your own email address, then save.",
+      "i3": "On the Audience page press Publish app, so that the sign-in does not expire after seven days.",
+      "testingBody": "In Testing mode Google signs you out after seven days, and the agent asks you to connect again.",
+      "testingTitle": "What happens if I leave it in Testing?",
+      "title": "Set up the consent screen"
+    },
+    "step3": {
+      "btn1": "Open: credentials",
+      "copyName": "Copy the name",
+      "i1": "Open Credentials, press Create credentials, then OAuth client ID.",
+      "i2": "For Application type choose Desktop app - not Web application.",
+      "i3": "Use the name below, so you recognise it later.",
+      "i4": "Press Create, then Download JSON.",
+      "title": "Create the key"
+    },
+    "step4": {
+      "accepted": "The key file was accepted.",
+      "browse": "Choose a file",
+      "drop": "Drop the JSON file you downloaded here",
+      "hint": "The file stays where it is - only its contents are read.",
+      "title": "Add the key file"
+    },
+    "step5": {
+      "firewall": "Windows may ask whether this app can use the network - Cancel or Allow both work.",
+      "helpUnverified": "More about the unverified-app notice",
+      "openAgain": "Open the browser again",
+      "signIn": "Sign in with Google",
+      "title": "Sign in",
+      "unverified": "Google will say it has not verified this app. That is expected: the app is yours and you are its only user. Choose Advanced, then Go to (your app name).",
+      "waiting": "Waiting for the browser..."
+    },
+    "substep": "Step {{current}} of {{total}}",
+    "title": "Connect Google Calendar"
+  },
+  "header": {
+    "backToDashboard": "Back to dashboard",
+    "pause": "Pause",
+    "resume": "Resume"
+  },
+  "health": {
+    "action": {
+      "connect": "Connect",
+      "link": "Link"
+    },
+    "attention": "Needs attention",
+    "attentionPart": {
+      "calendar": "Calendar needs attention",
+      "llm": "AI needs attention",
+      "whatsapp": "WhatsApp needs attention"
+    },
+    "calendar": {
+      "connected": "Connected",
+      "needs_sign_in": "Sign in to Google to add events",
+      "not_configured": "Not connected - replies only",
+      "port_busy": "Google sign-in could not start",
+      "reconnect_required": "Google connection expired",
+      "signing_in": "Signing in...",
+      "starting": "Starting...",
+      "toolset_mismatch": "The calendar component is not the expected version",
+      "unavailable": "The calendar connection stopped"
+    },
+    "llm": {
+      "consent_missing": "Your consent is needed first.",
+      "degraded": "{{provider}} - trying again...",
+      "downloading": "{{provider}} - downloading, {{percent}} %",
+      "failed": "{{provider}} - not working.",
+      "idle": "{{provider}} - ready, starts when needed",
+      "key_invalid": "The API key was not accepted.",
+      "key_missing": "An API key is needed.",
+      "model_missing": "The model file is missing.",
+      "quota": "The AI account is out of credit or quota.",
+      "ready": "{{provider}} - ready",
+      "self_testing": "{{provider}} - checking speed...",
+      "starting": "{{provider}} - starting...",
+      "verifying": "{{provider}} - checking the file...",
+      "waitingNote": "Chats wait as plain cards until it is ready."
+    },
+    "ok": "All running",
+    "panelTitle": "Status",
+    "part": {
+      "calendar": "Calendar",
+      "llm": "AI",
+      "whatsapp": "WhatsApp"
+    },
+    "paused": "Paused",
+    "provider": {
+      "claude": "Claude",
+      "gemini": "Gemini",
+      "local": "Local model"
+    },
+    "showDetails": "Show status details",
+    "since": "for {{value}}",
+    "whatsapp": {
+      "backoff": "Restarting shortly...",
+      "failed": "Stopped after repeated errors.",
+      "logged_out": "This computer was unlinked.",
+      "needs_pairing": "Waiting for you to link WhatsApp",
+      "not_started": "Not started - accept the WhatsApp terms to begin.",
+      "online": "Connected",
+      "outdated": "WhatsApp no longer accepts this version.",
+      "reconnecting": "Reconnecting...",
+      "refused": "Not started, to stay safe.",
+      "starting": "Starting...",
+      "stopped": "Stopped."
+    },
+    "working": "Working on it"
+  },
+  "ignored": {
+    "empty": "Nothing to undo.",
+    "title": "Dismissed"
+  },
+  "label": {
+    "assumption": {
+      "default_duration": "Default length used",
+      "hour_assumed_am": "Morning assumed",
+      "hour_assumed_pm": "Afternoon assumed"
+    },
+    "badge": {
+      "change_in_google": "Changed in Google",
+      "conflict": "Overlaps another event",
+      "lang_mismatch": "Language differs",
+      "link_removed": "Link removed",
+      "manipulation": "Suspicious request",
+      "older_message": "Older message",
+      "personal_details": "Personal details",
+      "time_assumed": "Time assumed"
+    },
+    "bridgeStatus": {
+      "backoff": "Restarting shortly",
+      "failed": "Stopped after repeated errors",
+      "logged_out": "Unlinked",
+      "needs_pairing": "Needs linking",
+      "not_started": "Not started",
+      "online": "Connected",
+      "outdated": "Update needed",
+      "reconnecting": "Reconnecting",
+      "refused": "Not started, to stay safe",
+      "starting": "Starting",
+      "stopped": "Stopped"
+    },
+    "closedReason": {
+      "answered_elsewhere": "Answered from the phone",
+      "dismissed": "Dismissed",
+      "expired": "Expired",
+      "not_needed": "No reply needed",
+      "past": "Already happened",
+      "replied": "Replied",
+      "superseded": "Replaced by a newer message"
+    },
+    "credentialsProblem": {
+      "bad_client_id": "The client id does not look like a Google client id",
+      "bad_endpoint": "The file points to a non-Google server",
+      "no_localhost_redirect": "The file has no localhost redirect",
+      "no_secret": "The file has no client secret",
+      "not_installed_type": "You created a Web application client; create a Desktop app client instead",
+      "not_json": "The file is not a JSON key file",
+      "too_large": "The file is too large"
+    },
+    "errorAction": {
+      "accept_terms": "Accept terms",
+      "analyse_again": "Analyse again",
+      "check_internet": "Check your internet",
+      "choose_model": "Choose a model",
+      "copy_instead": "Copy instead",
+      "create_anyway": "Create anyway",
+      "download_again": "Download again",
+      "enter_key": "Enter key",
+      "export_diagnostics": "Export diagnostics",
+      "focus_window": "Focus window",
+      "free_disk": "Free up disk space",
+      "give_consent": "Give consent",
+      "how_to_update": "How to update",
+      "install_vcredist": "Install Microsoft runtime",
+      "none": "",
+      "open_ai_settings": "Open AI settings",
+      "open_instructions": "Open instructions",
+      "reconnect_google": "Reconnect",
+      "relink": "Re-link",
+      "replace_credentials": "Replace key file",
+      "restore_db": "Restore",
+      "review_again": "Review again",
+      "send_again": "Send again",
+      "test_again": "Test again",
+      "try_again": "Try again",
+      "update_key": "Update key"
+    },
+    "holdReason": {
+      "budget": "Daily AI budget reached",
+      "paused": "Paused",
+      "unknown_sender": "New contact - not analysed",
+      "waiting_llm": "Waiting for the AI"
+    },
+    "llmStatus": {
+      "consent_missing": "Consent needed",
+      "degraded": "Retrying",
+      "downloading": "Downloading",
+      "failed": "Failed",
+      "idle": "Idle",
+      "key_invalid": "Key not accepted",
+      "key_missing": "Key missing",
+      "model_missing": "Model missing",
+      "quota": "Out of quota",
+      "ready": "Ready",
+      "self_testing": "Testing",
+      "starting": "Starting",
+      "verifying": "Verifying"
+    },
+    "mcpStatus": {
+      "connected": "Connected",
+      "needs_sign_in": "Sign-in needed",
+      "not_configured": "Not set up",
+      "port_busy": "Port in use",
+      "reconnect_required": "Reconnect needed",
+      "signing_in": "Signing in",
+      "starting": "Starting",
+      "toolset_mismatch": "Unexpected version",
+      "unavailable": "Unavailable"
+    },
+    "missingField": {
+      "confirmation": "confirmation",
+      "date": "day",
+      "duration": "length",
+      "location": "place",
+      "time": "time",
+      "who": "who"
+    },
+    "pairingStatus": {
+      "connected": "Connected",
+      "connecting": "Connecting",
+      "error": "Something went wrong",
+      "logged_out": "Unlinked",
+      "qr_pending": "Scan the code",
+      "timeout": "The code expired",
+      "unavailable": "Not available"
+    }
+  },
+  "language": {
+    "en": "English",
+    "he": "עברית",
+    "label": "Language"
+  },
+  "list": {
+    "analysing_one": "Analysing {{count}} chat...",
+    "analysing_other": "Analysing {{count}} chats...",
+    "empty": {
+      "inCalendar": "Events you approve appear here.",
+      "inCalendarNotConnected": "Connect Google Calendar to add events.",
+      "infoMissing": "When a plan is missing a day or a time, it shows up here with a question you can send.",
+      "needsReply": "Nothing is waiting for you. The agent keeps watching in the background.",
+      "needsReplyNotLinked": "Link WhatsApp to get started.",
+      "needsReplyPaused": "The agent is paused.",
+      "needsReplyQueue_one": "Analysing {{count}} chat... cards appear here when they are ready.",
+      "needsReplyQueue_other": "Analysing {{count}} chats... cards appear here when they are ready."
+    },
+    "in_calendar": "In calendar",
+    "info_missing": "Information missing",
+    "latestOf": "Showing the latest 20 of {{count}}",
+    "loadFailed": "Could not load your items.",
+    "needs_reply": "Needs reply",
+    "stillLoading": "Still loading..."
+  },
+  "missing": {
+    "confirmation": "confirmation",
+    "date": "day",
+    "duration": "length",
+    "location": "place",
+    "time": "time",
+    "who": "who"
+  },
+  "notify": {
+    "attention": {
+      "body": "Open the app to fix it."
+    },
+    "firstHide": {
+      "body": "Under hidden icons. To quit: right-click the icon, then Quit.",
+      "title": "Still running next to the clock"
+    },
+    "needsReply": {
+      "body": "Open the app to review the suggestion.",
+      "title": "A chat needs your reply"
+    },
+    "needsReplyMany": {
+      "title_one": "{{count}} chat needs your reply",
+      "title_other": "{{count}} chats need your reply"
+    }
+  },
+  "onboarding": {
+    "ai": {
+      "claude": {
+        "desc": "Fast and strong. The chat being analysed is sent to Anthropic.",
+        "name": "Claude (cloud)"
+      },
+      "err": {
+        "auth": "{{vendor}} did not accept this key.",
+        "billing": "This key has no quota left at {{vendor}}.",
+        "format": "That does not look like a key. Copy the whole line from the provider's page.",
+        "model_not_found": "{{vendor}} does not offer the selected model for this key.",
+        "network": "{{vendor}} could not be reached. Check the connection and try again.",
+        "other": "The check failed at {{vendor}}. Try again."
+      },
+      "gemini": {
+        "desc": "Fast, and there is a free tier. The chat being analysed is sent to Google.",
+        "freeTier": "On the free tier Google may use your text to improve its models.",
+        "name": "Gemini (cloud)"
+      },
+      "groupLabel": "AI engine",
+      "key": {
+        "check": "Save and check",
+        "checking": "Checking...",
+        "help": "Where do I get a key?",
+        "hide": "Hide",
+        "label": "API key",
+        "ok": "The key works.",
+        "paste": "Paste",
+        "remove": "Remove",
+        "replace": "Replace",
+        "saved": "Key saved, ending {{last4}}.",
+        "show": "Show"
+      },
+      "local": {
+        "bestFit": "Best fit for it: {{model}}.",
+        "checkAgain": "Check again",
+        "chooseSize": "Choose a different size",
+        "desc": "Runs on this computer and nothing leaves it. Needs a one-time download of about {{size}} GB.",
+        "download": "Download and continue",
+        "downloading": "Downloading in the background - you can carry on.",
+        "graphicsCard": "a dedicated graphics card",
+        "graphicsNone": "no dedicated graphics card",
+        "hardware": "This computer has {{ram}} GB of memory, {{graphics}}, and {{disk}} GB free.",
+        "noSpace": "Not enough free space: {{needed}} GB needed, {{available}} GB free.",
+        "ready": "The model is ready on this computer.",
+        "sizeLabel": "Model size"
+      },
+      "model": {
+        "customLabel": "Or type a model id",
+        "label": "Model"
+      },
+      "recommended": "Recommended",
+      "reviewConsent": "Read what is sent",
+      "tier": {
+        "mid": "Large",
+        "small": "Standard",
+        "tiny": "Compact"
+      },
+      "tierNote": {
+        "mid": "The best answers, but slower on a computer without a graphics card.",
+        "small": "The balanced choice for most computers.",
+        "tiny": "The smallest download, and the simplest answers."
+      },
+      "tierWithSize": "{{name}} ({{size}} GB)",
+      "title": "Choose the AI",
+      "vendor": {
+        "claude": "Anthropic",
+        "gemini": "Google"
+      }
+    },
+    "continue": "Continue",
+    "rail": {
+      "label": "Setup steps",
+      "step1": "AI",
+      "step2": "WhatsApp",
+      "step3": "Calendar",
+      "step4": "Done"
+    },
+    "ready": {
+      "ai": "AI",
+      "aiDownloading": "downloading, {{percent}} %",
+      "aiPending": "not set up yet - chats will appear as plain cards",
+      "aiReady": "ready on this computer",
+      "autostart": "Start the agent when Windows starts",
+      "bitlocker": "Your chats and drafts are kept on this computer. Turn on device encryption so they stay safe if it is lost.",
+      "calendar": "Calendar",
+      "calendarPending": "not connected yet",
+      "calendarReady": "connected",
+      "calendarSkipped": "skipped - replies only",
+      "checklistLabel": "Setup checklist",
+      "cloudSynced": "This app's folder looks like it is synced to the cloud, which copies your chats off this computer.",
+      "open": "Open the agent",
+      "title": "You are ready",
+      "tray1": "Closing the window does not stop the agent.",
+      "tray2": "You will find it next to the clock, under the ^ arrow. Right-click it to pause or to quit.",
+      "whatToDo": "What to do",
+      "whatsapp": "WhatsApp",
+      "whatsappPending": "not linked yet",
+      "whatsappReady": "linked"
+    },
+    "welcome": {
+      "accept": "I understand the risk and accept it",
+      "beforeTitle": "Before you start",
+      "body1": "This app reads your WhatsApp chats, drafts replies for you and prepares calendar events.",
+      "body2": "Everything runs on this computer, and setup takes about five minutes.",
+      "languageLabel": "Interface language",
+      "risk1": "The app links to WhatsApp as a companion device through an unofficial component. WhatsApp does not support this.",
+      "risk2": "Your WhatsApp account could be limited or blocked. Use the app at your own risk.",
+      "title": "Welcome"
+    }
+  },
+  "pair": {
+    "connected": "Connected. Older messages are ignored - the agent starts from now.",
+    "title": "Link your WhatsApp"
+  },
+  "pairing": {
+    "countdown": "Code expires in {{time}}",
+    "expired": "The code expired.",
+    "newCode": "New code",
+    "noSlot": "WhatsApp allows a limited number of linked devices. Remove one on your phone and try again.",
+    "preparing": "Preparing a code...",
+    "qrAlt": "Linking code",
+    "step1": "On your phone open WhatsApp, then Settings.",
+    "step2": "Tap Linked devices, then Link a device.",
+    "step3": "Point the phone at the code on this screen.",
+    "stepsLabel": "How to link from your phone",
+    "unavailableBody": "The WhatsApp component is not running. Open Settings to see why.",
+    "unavailableTitle": "Linking is not available",
+    "waiting": "Waiting for your phone..."
+  },
+  "settings": {
+    "ai": {
+      "accel": {
+        "auto": "Automatic",
+        "off": "Off"
+      },
+      "accelerationLabel": "Graphics acceleration",
+      "budgetLabel": "Daily cloud budget",
+      "budgetSuffix": "tokens per day",
+      "deleteModel": "Delete the model",
+      "deleteModelBody": "This frees the disk space. You can download it again later.",
+      "deleteModelTitle": "Delete the downloaded model?",
+      "speedGood": "Good",
+      "speedLabel": "Speed on this computer",
+      "speedSlow": "Slow - an answer may take a few minutes",
+      "speedUnknown": "Not measured yet",
+      "testAgain": "Test again",
+      "tier": {
+        "auto": "Automatic"
+      }
+    },
+    "calendar": {
+      "accountLabel": "Google account",
+      "conflictLabel": "Calendars to check for clashes",
+      "disconnect": "Disconnect",
+      "disconnectBody": "The agent keeps drafting replies but stops creating events.",
+      "disconnectTitle": "Disconnect Google Calendar?",
+      "noAccount": "Not connected",
+      "reconnect": "Connect",
+      "replaceKey": "Replace the key file",
+      "targetLabel": "Calendar for new events"
+    },
+    "dialog": {
+      "keep": "Keep as it is"
+    },
+    "general": {
+      "autostartDesc": "The agent starts in the tray when you sign in.",
+      "autostartLabel": "Start with Windows",
+      "lang": {
+        "system": "Windows language"
+      },
+      "languageLabel": "Language",
+      "notif": {
+        "generic": "On",
+        "off": "Off"
+      },
+      "notificationsDesc": "A notification never contains message text.",
+      "notificationsLabel": "Notifications",
+      "pauseDesc": "While paused nothing is analysed, drafted, sent or created.",
+      "pauseLabel": "Pause the agent",
+      "timeZoneLabel": "Time zone",
+      "timeZoneValue": "{{zone}} - taken from Windows"
+    },
+    "group": {
+      "ai": "AI engine",
+      "calendar": "Google Calendar",
+      "general": "General",
+      "privacy": "Privacy and data",
+      "replies": "Replies",
+      "rules": "Working rules",
+      "whatsapp": "WhatsApp"
+    },
+    "navLabel": "Settings groups",
+    "privacy": {
+      "diag": "Export diagnostics",
+      "diagDesc": "A zip with logs and settings - message text and keys are removed first.",
+      "diagLabel": "Diagnostics",
+      "head": {
+        "provider": "Service",
+        "what": "What is sent",
+        "who": "Who receives it"
+      },
+      "licences": "Show the licences",
+      "licencesBody": "The full notices are in the file THIRD_PARTY_NOTICES.txt inside the app's folder.",
+      "licencesLabel": "Open-source licences",
+      "purge": "Delete now",
+      "purgeBody": "Chats, drafts and closed cards older than the retention limit are removed from this computer.",
+      "purgeLabel": "Delete old data now",
+      "purgeTitle": "Delete everything past the limit?",
+      "purged": "{{items}} removed",
+      "retention": "{{days}} days",
+      "retentionLabel": "Keep chats and drafts for",
+      "row": {
+        "calendar": {
+          "name": "Google Calendar",
+          "what": "The busy and free times, and the events you approved",
+          "who": "Google"
+        },
+        "claude": {
+          "name": "Claude (cloud AI)",
+          "what": "The text of the chat being analysed, without names or phone numbers",
+          "who": "Anthropic"
+        },
+        "gemini": {
+          "name": "Gemini (cloud AI)",
+          "what": "The text of the chat being analysed, without names or phone numbers",
+          "who": "Google"
+        },
+        "local": {
+          "name": "AI on this computer",
+          "what": "Nothing",
+          "who": "Nobody"
+        },
+        "whatsapp": {
+          "name": "WhatsApp",
+          "what": "The replies you approved",
+          "who": "The person you are replying to"
+        }
+      },
+      "tableLabel": "What leaves this computer"
+    },
+    "replies": {
+      "gender": {
+        "f": "Feminine",
+        "m": "Masculine",
+        "unspecified": "Neutral wording"
+      },
+      "genderLabel": "Your grammatical gender in Hebrew replies"
+    },
+    "rules": {
+      "ambiguous": {
+        "ask": "Ask the person which hour they meant",
+        "assume": "Assume the likely hour and say so in the reply"
+      },
+      "ambiguousLabel": "When the hour is ambiguous",
+      "backlogHours": "Up to {{hours}} hours back",
+      "backlogLabel": "Start from",
+      "backlogNow": "From the moment of linking",
+      "duration": "{{minutes}} minutes",
+      "durationLabel": "Default event length",
+      "ignoredEmpty": "No chat has its own rule.",
+      "ignoredLabel": "Chats with their own rule",
+      "policy": {
+        "default": "Analyse normally",
+        "never": "Never analyse"
+      },
+      "policyLabel": "Rule for this chat",
+      "removePolicy": "Remove the rule",
+      "unknownDesc": "Off by default: only chats with people in your contacts are analysed.",
+      "unknownLabel": "Analyse unknown senders"
+    },
+    "saveFailed": "Not saved",
+    "saved": "Saved",
+    "title": "Settings",
+    "whatsapp": {
+      "relink": "Link again",
+      "relinkBody": "You will scan a new code. Older messages stay ignored.",
+      "relinkTitle": "Link WhatsApp again?",
+      "statusLabel": "Connection",
+      "wipe": "Unlink and erase",
+      "wipeBody": "The WhatsApp link, the stored chats and every draft on this computer are deleted. Events already in your calendar stay.",
+      "wipeLabel": "Unlink and erase",
+      "wipeTitle": "Unlink and erase everything?"
+    }
+  },
+  "setup": {
+    "ai": {
+      "action": "Set up AI",
+      "text": "The AI is not set up yet - chats appear as plain cards."
+    },
+    "calendar": {
+      "action": "Connect",
+      "text": "Google Calendar is not connected - replies only."
+    },
+    "hide": "Hide",
+    "title": "Setup still to finish",
+    "whatsapp": {
+      "action": "Link WhatsApp",
+      "text": "WhatsApp is not linked yet."
+    }
+  },
+  "sheet": {
+    "conversation": "Conversation",
+    "discardBody": "The reply and the event details you changed will not be kept.",
+    "discardCancel": "Keep editing",
+    "discardConfirm": "Discard",
+    "discardTitle": "Discard your edits?",
+    "event": "Event",
+    "loading": "Loading the card...",
+    "title": "Item",
+    "whatAiRead": "What the AI read"
+  },
+  "tray": {
+    "open": "Open",
+    "pause": "Pause processing",
+    "quit": "Quit",
+    "resume": "Resume processing",
+    "settings": "Settings",
+    "status": {
+      "active_claude": "Active - Claude",
+      "active_gemini": "Active - Gemini",
+      "active_local": "Active - local model",
+      "attention": "Needs attention - open the app",
+      "paused": "Paused",
+      "setup": "Setting up",
+      "wa_offline": "WhatsApp offline"
+    },
+    "tooltip": "WhatsApp Calendar Agent",
+    "tooltipWaiting_one": "WhatsApp Calendar Agent - {{count}} waiting",
+    "tooltipWaiting_other": "WhatsApp Calendar Agent - {{count}} waiting"
+  },
+  "trayHint": {
+    "body": "Closing the window does not stop it. You will find it next to the clock, under the ^ arrow (hidden icons). To quit: right-click the icon, then Quit.",
+    "gotIt": "Got it",
+    "title": "The agent keeps running"
+  },
+  "welcome": {
+    "promise": "Nothing is sent or scheduled without your approval.",
+    "start": "Get started"
+  }
+}

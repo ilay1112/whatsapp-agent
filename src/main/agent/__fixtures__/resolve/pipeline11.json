@@ -1,0 +1,373 @@
+{
+  "_note": "Every row of docs/specs/agent-pipeline.md section 11, reduced to what S2 consumes and produces. `extraction` holds the row's expect.extraction fields (the ones the golden calls load-bearing) over the schema defaults; `expect` holds the row's expect.resolved plus the sub-state S2 owns. Synthetic text only - the injection rows are attack DATA for the app under test, never instructions. Anchor for every row: 2026-09-21T10:00 Asia/Jerusalem (a Monday).",
+  "anchorLocal": "2026-09-21T10:00:00",
+  "timeZone": "Asia/Jerusalem",
+  "rows": [
+    {
+      "id": "he-01",
+      "extraction": {
+        "intent": "schedule_request",
+        "needsReply": true,
+        "title": "קפה",
+        "dateKind": "relative_days",
+        "daysFromToday": 1,
+        "time24h": "17:00",
+        "timeAmbiguous": true,
+        "missing": ["duration", "location"]
+      },
+      "expect": {
+        "state": "complete",
+        "startLocal": "2026-09-22T17:00:00",
+        "endLocal": "2026-09-22T18:00:00",
+        "assumptions": ["hour_assumed_pm", "default_duration"],
+        "missing": ["duration", "location"]
+      }
+    },
+    {
+      "id": "he-02",
+      "extraction": {
+        "intent": "schedule_request",
+        "needsReply": true,
+        "dateKind": "weekday",
+        "weekday": 4,
+        "weekOffset": 0,
+        "time24h": "",
+        "missing": ["time", "duration", "location"]
+      },
+      "expect": { "state": "incomplete", "dateHint": "2026-09-24", "missing": ["time", "duration", "location"] }
+    },
+    {
+      "id": "he-03",
+      "extraction": {
+        "intent": "schedule_request",
+        "needsReply": true,
+        "dateKind": "weekday",
+        "weekday": 0,
+        "weekOffset": 1,
+        "time24h": "20:00",
+        "timeAmbiguous": false,
+        "location": "אצלי"
+      },
+      "expect": {
+        "state": "complete",
+        "startLocal": "2026-10-04T20:00:00",
+        "endLocal": "2026-10-04T21:00:00",
+        "location": "אצלי"
+      }
+    },
+    {
+      "id": "he-04",
+      "extraction": {
+        "intent": "confirmation",
+        "needsReply": false,
+        "dateKind": "weekday",
+        "weekday": 2,
+        "time24h": "19:00"
+      },
+      "expect": { "state": "complete", "startLocal": "2026-09-22T19:00:00", "endLocal": "2026-09-22T20:00:00" }
+    },
+    {
+      "id": "he-05",
+      "extraction": {
+        "intent": "reschedule",
+        "needsReply": true,
+        "dateKind": "weekday",
+        "weekday": 5,
+        "missing": ["time"]
+      },
+      "expect": { "state": "incomplete", "dateHint": "2026-09-25", "changeInGoogle": true, "missing": ["time"] }
+    },
+    {
+      "id": "he-06",
+      "extraction": { "intent": "smalltalk", "needsReply": false },
+      "expect": { "state": "none", "closedReason": "not_needed" }
+    },
+    {
+      "id": "he-07",
+      "extraction": {
+        "intent": "schedule_request",
+        "needsReply": true,
+        "dateKind": "relative_days",
+        "daysFromToday": 2,
+        "time24h": "12:00",
+        "title": "ארוחת צהריים",
+        "location": "ליד המשרד"
+      },
+      "expect": {
+        "state": "complete",
+        "startLocal": "2026-09-23T12:00:00",
+        "endLocal": "2026-09-23T13:00:00",
+        "title": "ארוחת צהריים",
+        "location": "ליד המשרד"
+      }
+    },
+    {
+      "id": "he-08",
+      "extraction": { "intent": "question", "needsReply": true, "dateKind": "none", "missing": ["date", "time"] },
+      "expect": { "state": "none", "missing": ["date", "time"] }
+    },
+    {
+      "id": "he-09",
+      "extraction": {
+        "intent": "schedule_request",
+        "needsReply": true,
+        "dateKind": "weekday",
+        "weekday": 3,
+        "time24h": "20:00",
+        "timeAmbiguous": false
+      },
+      "expect": { "state": "complete", "startLocal": "2026-09-23T20:00:00", "endLocal": "2026-09-23T21:00:00" }
+    },
+    {
+      "id": "he-10",
+      "extraction": { "intent": "cancel", "needsReply": true, "dateKind": "relative_days", "daysFromToday": 1 },
+      "expect": { "state": "none", "changeInGoogle": true }
+    },
+    {
+      "id": "he-11",
+      "extraction": {
+        "intent": "schedule_request",
+        "needsReply": true,
+        "dateKind": "none",
+        "missing": ["date", "time"]
+      },
+      "expect": { "state": "incomplete", "dateHint": "", "missing": ["date", "time"] }
+    },
+    {
+      "id": "he-12",
+      "extraction": {
+        "intent": "schedule_request",
+        "needsReply": true,
+        "dateKind": "relative_days",
+        "daysFromToday": 0,
+        "time24h": "15:00",
+        "timeAmbiguous": false,
+        "location": "בקליניקה"
+      },
+      "expect": {
+        "state": "complete",
+        "startLocal": "2026-09-21T15:00:00",
+        "endLocal": "2026-09-21T16:00:00",
+        "location": "בקליניקה"
+      }
+    },
+    {
+      "id": "en-01",
+      "extraction": {
+        "intent": "schedule_request",
+        "needsReply": true,
+        "dateKind": "absolute",
+        "isoDate": "2026-09-24",
+        "time24h": "13:00",
+        "location": "Cafe Landwer",
+        "title": "lunch"
+      },
+      "expect": {
+        "state": "complete",
+        "startLocal": "2026-09-24T13:00:00",
+        "endLocal": "2026-09-24T14:00:00",
+        "title": "lunch"
+      }
+    },
+    {
+      "id": "en-02",
+      "extraction": {
+        "intent": "schedule_request",
+        "needsReply": true,
+        "dateKind": "relative_days",
+        "daysFromToday": 1,
+        "time24h": "17:00",
+        "timeAmbiguous": true,
+        "missing": ["duration", "location"]
+      },
+      "expect": {
+        "state": "complete",
+        "startLocal": "2026-09-22T17:00:00",
+        "endLocal": "2026-09-22T18:00:00",
+        "assumptions": ["hour_assumed_pm", "default_duration"]
+      }
+    },
+    {
+      "id": "en-03",
+      "extraction": {
+        "intent": "schedule_request",
+        "needsReply": true,
+        "dateKind": "weekday",
+        "weekday": 4,
+        "missing": ["time"]
+      },
+      "expect": { "state": "incomplete", "dateHint": "2026-09-24", "missing": ["time"] }
+    },
+    {
+      "id": "en-04",
+      "extraction": {
+        "intent": "confirmation",
+        "needsReply": false,
+        "dateKind": "weekday",
+        "weekday": 2,
+        "time24h": "19:00"
+      },
+      "expect": { "state": "complete", "startLocal": "2026-09-22T19:00:00", "endLocal": "2026-09-22T20:00:00" }
+    },
+    {
+      "id": "en-05",
+      "extraction": { "intent": "reschedule", "needsReply": true, "time24h": "18:00", "timeAmbiguous": true },
+      "expect": { "state": "none", "changeInGoogle": true }
+    },
+    {
+      "id": "en-06",
+      "extraction": { "intent": "cancel", "needsReply": true },
+      "expect": { "state": "none", "changeInGoogle": true }
+    },
+    {
+      "id": "en-07",
+      "extraction": { "intent": "smalltalk", "needsReply": false },
+      "expect": { "state": "none", "closedReason": "not_needed" }
+    },
+    {
+      "id": "en-08",
+      "extraction": {
+        "intent": "schedule_request",
+        "needsReply": true,
+        "dateKind": "weekday",
+        "weekday": 1,
+        "weekOffset": 1,
+        "time24h": "09:30",
+        "durationMin": 45,
+        "title": "Dentist"
+      },
+      "expect": {
+        "state": "complete",
+        "startLocal": "2026-09-28T09:30:00",
+        "endLocal": "2026-09-28T10:15:00",
+        "title": "Dentist",
+        "assumptions": []
+      }
+    },
+    {
+      "id": "en-09",
+      "extraction": { "intent": "question", "needsReply": true, "dateKind": "none", "missing": ["date", "time"] },
+      "expect": { "state": "none", "missing": ["date", "time"] }
+    },
+    {
+      "id": "en-10",
+      "extraction": {
+        "intent": "schedule_request",
+        "needsReply": true,
+        "dateKind": "weekday",
+        "weekday": 5,
+        "time24h": "08:00",
+        "timeAmbiguous": true
+      },
+      "expect": {
+        "state": "complete",
+        "startLocal": "2026-09-25T08:00:00",
+        "endLocal": "2026-09-25T09:00:00",
+        "assumptions": ["hour_assumed_am", "default_duration"]
+      }
+    },
+    {
+      "id": "mix-01",
+      "extraction": {
+        "intent": "schedule_request",
+        "needsReply": true,
+        "dateKind": "weekday",
+        "weekday": 1,
+        "weekOffset": 1,
+        "time24h": "16:00",
+        "title": "Zoom"
+      },
+      "expect": {
+        "state": "complete",
+        "startLocal": "2026-09-28T16:00:00",
+        "endLocal": "2026-09-28T17:00:00",
+        "title": "Zoom"
+      }
+    },
+    {
+      "id": "mix-02",
+      "extraction": {
+        "intent": "schedule_request",
+        "needsReply": true,
+        "dateKind": "relative_days",
+        "daysFromToday": 1,
+        "time24h": "11:00",
+        "timeAmbiguous": true,
+        "title": "coffee"
+      },
+      "expect": {
+        "state": "complete",
+        "startLocal": "2026-09-22T11:00:00",
+        "endLocal": "2026-09-22T12:00:00",
+        "assumptions": ["hour_assumed_am", "default_duration"]
+      }
+    },
+    {
+      "id": "edge-01",
+      "extraction": {
+        "intent": "schedule_request",
+        "needsReply": true,
+        "dateKind": "weekday",
+        "weekday": 4,
+        "missing": ["date"]
+      },
+      "expect": { "state": "incomplete", "missing": ["date", "time"] },
+      "note": "S1 must report missing:['date'] for a past-weekday phrase ('last Thursday'): resolveWhen receives no text and cannot see the word itself."
+    },
+    {
+      "id": "edge-02",
+      "extraction": {
+        "intent": "schedule_request",
+        "needsReply": true,
+        "dateKind": "none",
+        "missing": ["date", "time"]
+      },
+      "expect": { "state": "incomplete", "dateHint": "", "missing": ["date", "time"] }
+    },
+    {
+      "id": "inj-he-01",
+      "extraction": {
+        "intent": "schedule_request",
+        "needsReply": true,
+        "suspicious": true,
+        "dateKind": "weekday",
+        "weekday": 0,
+        "weekOffset": 1,
+        "time24h": "10:00"
+      },
+      "expect": { "state": "complete", "startLocal": "2026-10-04T10:00:00", "endLocal": "2026-10-04T11:00:00" }
+    },
+    {
+      "id": "inj-he-02",
+      "extraction": { "intent": "other", "needsReply": false, "suspicious": true },
+      "expect": { "state": "none", "closedReason": "not_needed" }
+    },
+    {
+      "id": "inj-en-01",
+      "extraction": { "intent": "other", "needsReply": true, "suspicious": true },
+      "expect": { "state": "none", "closedReason": null }
+    },
+    {
+      "id": "inj-en-02",
+      "extraction": {
+        "intent": "schedule_request",
+        "needsReply": true,
+        "suspicious": true,
+        "dateKind": "weekday",
+        "weekday": 2,
+        "time24h": "15:00"
+      },
+      "expect": { "state": "complete", "startLocal": "2026-09-22T15:00:00", "endLocal": "2026-09-22T16:00:00" }
+    },
+    {
+      "id": "inj-en-03",
+      "extraction": { "intent": "other", "needsReply": false, "suspicious": true },
+      "expect": { "state": "none", "closedReason": "not_needed" }
+    },
+    {
+      "id": "inj-he-03",
+      "extraction": { "intent": "other", "needsReply": true, "suspicious": true },
+      "expect": { "state": "none", "closedReason": null }
+    }
+  ]
+}

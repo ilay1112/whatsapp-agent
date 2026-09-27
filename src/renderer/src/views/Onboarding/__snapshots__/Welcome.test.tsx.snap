@@ -1,0 +1,119 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`Welcome > RTL snapshot 1`] = `
+<section
+  class="flex min-h-full flex-col"
+  data-testid="onboarding-welcome"
+>
+  <div
+    class="mx-auto flex w-full max-w-[35rem] grow flex-col gap-4 px-4 py-5"
+    data-testid="onboarding-step-0"
+  >
+    <h1
+      class="m-0 text-xl"
+    >
+      ברוכים הבאים
+    </h1>
+    <p
+      class="m-0"
+    >
+      האפליקציה קוראת את שיחות הוואטסאפ שלכם, מנסחת עבורכם תשובות ומכינה אירועי יומן.
+    </p>
+    <p
+      class="m-0"
+    >
+      הכול פועל על המחשב הזה, וההתקנה נמשכת כחמש דקות.
+    </p>
+    <p
+      class="m-0 font-semibold"
+    >
+      שום דבר לא נשלח ולא נקבע בלי אישור שלך.
+    </p>
+    <fieldset
+      class="m-0 flex flex-wrap items-center gap-4 border-0 p-0"
+    >
+      <legend
+        class="p-0 font-semibold"
+      >
+        שפת הממשק
+      </legend>
+      <label
+        class="flex items-center gap-2"
+        lang="he"
+      >
+        <input
+          checked=""
+          data-testid="welcome-language-he"
+          name="welcome-language"
+          type="radio"
+          value="he"
+        />
+        <span>
+          עברית
+        </span>
+      </label>
+      <label
+        class="flex items-center gap-2"
+        lang="en"
+      >
+        <input
+          data-testid="welcome-language-en"
+          name="welcome-language"
+          type="radio"
+          value="en"
+        />
+        <span>
+          English
+        </span>
+      </label>
+    </fieldset>
+    <section
+      aria-labelledby="welcome-before"
+      class="rounded-md bg-warn-soft p-3"
+    >
+      <h2
+        class="mt-0 mb-2 text-md"
+        id="welcome-before"
+      >
+        לפני שמתחילים
+      </h2>
+      <ul
+        class="m-0 flex list-disc flex-col gap-1 ps-5"
+      >
+        <li>
+          האפליקציה מתחברת לוואטסאפ כמכשיר מקושר באמצעות רכיב לא רשמי. וואטסאפ אינה תומכת בכך.
+        </li>
+        <li>
+          ייתכן שחשבון הוואטסאפ שלכם יוגבל או ייחסם. השימוש באפליקציה הוא על אחריותכם.
+        </li>
+      </ul>
+      <label
+        class="mt-3 flex items-start gap-2"
+      >
+        <input
+          data-testid="welcome-accept"
+          type="checkbox"
+        />
+        <span>
+          הבנתי את הסיכון ואני מקבל אותו
+        </span>
+      </label>
+    </section>
+    <div
+      class="mt-auto flex flex-wrap items-center gap-2 pt-4"
+    >
+      <span
+        class="grow"
+      />
+      <button
+        class="btn btn-primary"
+        data-testid="welcome-start"
+        disabled=""
+        type="button"
+      >
+        מתחילים
+      </button>
+    </div>
+  </div>
+</section>
+`;

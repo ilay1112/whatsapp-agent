@@ -1,0 +1,67 @@
+/*
+ * src/renderer/src/views/dashboard.css - the ONE extra stylesheet allowed to W1-15 (build-plan 1.2 hot-spot table).
+ * Everything expressible with the tokens and recipes of styles.css (owner W1-14) lives there; this file holds only the
+ * four things Tailwind utilities cannot express for the dashboard:
+ *   1. the three-column grid and its independently scrolling columns (UX 6.1);
+ *   2. the sheet / drawer panel: LEADING corners rounded, so the radius flips with the writing direction (UX 7);
+ *   3. the 12 px queue spinner (UX 6.3), which must stop under prefers-reduced-motion (UX 2.4);
+ *   4. the sticky column headers of the one-column layout (UX 6.2).
+ * Logical properties only - no left/right/margin-left/... anywhere (TESTS section 9 "Physical-CSS ban").
+ */
+
+/* ---- 1. three columns (UX 6.1). Each column scrolls on its own so a long column never pushes the others. ---- */
+.dash-columns {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.dash-column {
+  min-inline-size: 0;
+}
+
+/* ---- 4. one-column mode (UX 6.2): the disclosure header stays visible while its section scrolls. ---- */
+.dash-column > h2 {
+  position: sticky;
+  inset-block-start: 0;
+  z-index: 1;
+  background: var(--color-canvas);
+}
+
+/* ---- 2. sheet / drawer panel (UX 7 geometry): the LEADING corners are round, the trailing edge meets the window. ---- */
+.wca-panel {
+  border-start-start-radius: var(--radius-lg);
+  border-end-start-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sheet);
+}
+
+/* Under 900 px the panel is the whole window, so it has no rounded corners and no leading border. */
+@media (max-width: 56.1875rem) {
+  .wca-panel {
+    inline-size: 100%;
+    border-radius: 0;
+    border-inline-start: 0;
+  }
+}
+
+/* ---- 3. queue spinner (UX 6.3). Rotation is direction-agnostic, so it is correct in LTR and RTL alike. ---- */
+@keyframes wca-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.wca-spin {
+  animation: wca-spin 900ms linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .wca-spin {
+    animation: none;
+  }
+}
+
+/* Windows high-contrast: soft fills drop out, so the cards and panels keep their shape through borders (UX 13.6). */
+@media (forced-colors: active) {
+  .wca-panel {
+    border-inline-start: 1px solid CanvasText;
+  }
+}

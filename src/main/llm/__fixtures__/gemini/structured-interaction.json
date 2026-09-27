@@ -1,0 +1,16 @@
+{
+  "_unverified": true,
+  "_note": "interactions.create response for S1 EXTRACT with response_format json; output_text is the SDK convenience field",
+  "id": "int_TESTONLY_0002",
+  "status": "completed",
+  "output_text": "{\"category\":\"needs_reply\",\"language\":\"en\",\"confidence\":\"medium\"}",
+  "steps": [
+    {
+      "type": "model_output",
+      "content": [
+        { "type": "text", "text": "{\"category\":\"needs_reply\",\"language\":\"en\",\"confidence\":\"medium\"}" }
+      ]
+    }
+  ],
+  "usage": { "total_input_tokens": 800, "total_output_tokens": 35 }
+}

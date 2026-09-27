@@ -1,0 +1,129 @@
+
+ RUN  v4.1.11 C:/dev/whatsapp agent
+
+ ✓ |main| scripts/import-bridge.test.mjs (8 tests) 32ms
+ ✓ |main| src/shared/i18n/format.test.ts (15 tests) 75ms
+ ✓ |main| src/main/bridge/janitor.test.ts (8 tests) 144ms
+ ✓ |main| src/main/proc/reaper.test.ts (31 tests) 202ms
+ ✓ |main| src/main/agent/prompt.purity.test.ts (3 tests) 132ms
+ ✓ |main| src/main/bridge/sendClient.test.ts (20 tests) 204ms
+ ✓ |main| src/main/llm/local/llamaServer.test.ts (35 tests) 283ms
+ ✓ |main| src/main/llm/local.test.ts (48 tests) 202ms
+ ✓ |main| src/main/bridge/readClient.test.ts (17 tests) 337ms
+ ✓ |main| src/main/mcp/googleAuth.test.ts (26 tests) 151ms
+ ✓ |main| src/main/db/repos/items.test.ts (20 tests) 77ms
+ ✓ |main| src/main/mcp/host.test.ts (54 tests) 259ms
+ ✓ |main| scripts/make-icons.test.mjs (18 tests) 48ms
+ ✓ |main| src/main/agent/stage0.test.ts (36 tests) 112ms
+ ✓ |main| src/main/agent/validate.test.ts (31 tests) 117ms
+ ✓ |main| src/main/agent/orchestrator.test.ts (26 tests) 181ms
+ ✓ |main| src/main/agent/items.test.ts (33 tests) 168ms
+ ✓ |main| src/main/db/retention.test.ts (9 tests) 178ms
+ ✓ |main| src/main/db/repos/actions.test.ts (52 tests) 198ms
+ ✓ |main| src/main/db/backup.test.ts (12 tests) 279ms
+ ✓ |main| src/main/app/window.test.ts (36 tests) 44ms
+ ✓ |main| src/main/exec/reconcile.test.ts (19 tests) 126ms
+ ✓ |main| src/main/proc/supervisor.test.ts (66 tests) 884ms
+ ✓ |main| src/main/llm/local/download.test.ts (42 tests) 816ms
+ ✓ |main| src/shared/locales/locales.test.ts (26 tests) 100ms
+ ✓ |main| src/main/proc/freePort.test.ts (8 tests) 40ms
+ ✓ |main| src/main/agent/toolGate.test.ts (55 tests) 61ms
+ ✓ |main| src/shared/when.test.ts (45 tests) 50ms
+ ✓ |main| src/main/health/healthHub.test.ts (19 tests) 45ms
+ ✓ |main| src/main/db/repos/repos.test.ts (11 tests) 40ms
+ ✓ |main| src/main/agent/queue.test.ts (17 tests) 95ms
+ ✓ |main| src/main/db/migrations.test.ts (19 tests) 32ms
+ ✓ |main| src/main/exec/actionExecutor.test.ts (82 tests) 286ms
+ ✓ |main| src/preload/index.test.ts (15 tests) 216ms
+ ✓ |main| src/shared/state.test.ts (253 tests) 25ms
+ ✓ |main| src/main/db/repos/chats.test.ts (9 tests) 45ms
+ ✓ |main| src/main/exec/outcome.test.ts (13 tests) 83ms
+ ✓ |main| src/main/agent/draft.test.ts (25 tests) 53ms
+ ✓ |main| src/main/agent/resolve.test.ts (55 tests) 41ms
+ ✓ |main| src/main/db/repos/settings.test.ts (5 tests) 39ms
+ ✓ |main| src/main/app/notifications.test.ts (23 tests) 30ms
+ ✓ |main| src/main/app/tray.test.ts (32 tests) 27ms
+ ✓ |main| src/main/app/protocol.test.ts (48 tests) 24ms
+ ✓ |main| src/main/ipc/register.test.ts (14 tests) 60ms
+ ✓ |main| scripts/hash-bridge.test.mjs (6 tests) 29ms
+ ✓ |main| src/main/mcp/projection.test.ts (29 tests) 44ms
+ ✓ |main| src/main/agent/toolGate.corpus.test.ts (17 tests) 38ms
+ ✓ |main| src/main/agent/minimize.test.ts (12 tests) 15ms
+ ✓ |main| src/main/agent/contextBuilder.test.ts (17 tests) 18ms
+ ✓ |main| src/main/mcp/readClient.test.ts (18 tests) 37ms
+ ✓ |main| src/shared/schemas.test.ts (12 tests) 20ms
+ ✓ |main| src/main/llm/gemini.test.ts (51 tests) 33ms
+ ✓ |main| src/main/logger.test.ts (38 tests) 14ms
+ ✓ |main| src/main/db/index.test.ts (13 tests) 1111ms
+     ✓ warns about a statement slower than 20 ms, and only in development  1029ms
+ ✓ |main| src/main/app/i18n.test.ts (9 tests) 19ms
+ ✓ |main| src/shared/types.test.ts (21 tests) 13ms
+ ✓ |main| src/main/agent/sanitize.test.ts (27 tests) 18ms
+ ✓ |main| src/main/ipc/handlers/app.test.ts (20 tests) 41ms
+ ✓ |main| src/main/llm/claude.test.ts (50 tests) 32ms
+ ✓ |main| src/main/bridge/invariants.test.ts (30 tests) 27ms
+ ✓ |main| src/main/exec/rateLimiter.test.ts (13 tests) 34ms
+ ✓ |main| scripts/stage-calendar-mcp.test.mjs (11 tests) 11ms
+ ✓ |main| src/shared/ipc.test.ts (6 tests) 15ms
+ ✓ |main| src/main/agent/extract.test.ts (11 tests) 18ms
+ ✓ |main| src/main/ipc/sender.test.ts (9 tests) 11ms
+ ✓ |main| scripts/fetch-llama.test.mjs (37 tests) 23ms
+ ✓ |main| src/main/testSeams.test.ts (14 tests) 12ms
+ ✓ |main| src/main/agent/dateTable.test.ts (10 tests) 15ms
+ ✓ |main| src/main/ipc/handlers/settings.test.ts (11 tests) 21ms
+ ✓ |main| src/main/agent/toolDefs.test.ts (7 tests) 9ms
+ ✓ |main| src/main/agent/prompt.test.ts (17 tests) 12ms
+ ✓ |main| src/main/llm/local/selfTest.test.ts (23 tests) 17ms
+ ✓ |main| src/main/llm/factory.test.ts (29 tests) 26ms
+ ✓ |main| src/main/mcp/adminClient.test.ts (17 tests) 14ms
+ ✓ |main| src/main/paths.test.ts (23 tests) 15ms
+ ✓ |main| src/main/bridge/pairing.test.ts (9 tests) 12ms
+ ✓ |main| src/main/llm/local/hardware.test.ts (46 tests) 12ms
+ ✓ |main| src/main/agent/replyLang.test.ts (6 tests) 6ms
+ ✓ |main| scripts/pin-models.test.mjs (22 tests) 16ms
+ ✓ |main| src/shared/i18n/bidi.test.ts (19 tests) 8ms
+ ✓ |main| src/main/secrets.test.ts (22 tests) 13ms
+ ✓ |main| src/main/ipc/handlers/llm.test.ts (16 tests) 17ms
+ ✓ |main| src/shared/i18n/languages.test.ts (15 tests) 8ms
+ ✓ |main| src/main/ipc/handlers/google.test.ts (11 tests) 16ms
+ ✓ |main| src/main/bridge/stdoutMarkers.test.ts (11 tests) 11ms
+ ✓ |main| src/main/ipc/handlers/model.test.ts (6 tests) 11ms
+ ✓ |main| src/main/llm/consent.test.ts (11 tests) 10ms
+ ✓ |main| src/main/exec/buildCreateEventArgs.test.ts (10 tests) 14ms
+ ✓ |main| src/main/mcp/writeClient.test.ts (9 tests) 12ms
+ ✓ |main| src/main/ipc/handlers/actions.test.ts (15 tests) 12ms
+ ✓ |main| src/main/bridge/timestamps.test.ts (34 tests) 6ms
+ ✓ |main| src/main/app/autostart.test.ts (5 tests) 5ms
+ ✓ |main| src/main/llm/local/manifest.test.ts (8 tests) 4ms
+ ✓ |main| src/main/ipc/handlers/data.test.ts (7 tests) 6ms
+ ✓ |main| src/main/ipc/handlers/pairing.test.ts (6 tests) 6ms
+ ✓ |main| src/main/exec/buildSendArgs.test.ts (4 tests) 4ms
+ ✓ |main| src/main/ipc/handlers/secrets.test.ts (5 tests) 5ms
+ ✓ |main| src/main/exec/actionHash.test.ts (5 tests) 3ms
+ ✓ |main| src/main/ipc/handlers/items.test.ts (3 tests) 4ms
+ ✓ |main| src/main/bridge/ingest.test.ts (41 tests) 3137ms
+     ✓ pages through more than one batch of LIMITS.ingestBatch rows  1727ms
+     ✓ a 300-row history sync produces zero queue rows  469ms
+ ✓ |main| src/main/bridge/bridgeDb.test.ts (18 tests) 3864ms
+     ✓ surfaces SQLITE_BUSY instead of corrupting or waiting forever  3262ms
+ ✓ |main| src/main/bridge/doorbell.test.ts (35 tests) 7258ms
+     ✓ never drains more than the cap from a 25 MB body on the VALID path  6017ms
+     ✓ rejects beyond 30 requests per second and recovers in the next window  1128ms
+ ✓ |main| src/main/bridge/launcher.test.ts (53 tests) 14929ms
+     ✓ the rest_starting stdout hint only starts the poll early - it is not the readiness signal  394ms
+     ✓ 503 => reconnecting, and 10 minutes of 503 => respawn  2103ms
+     ✓ the breaker opens after 5 exits in 10 minutes => failed, BRIDGE_CRASH_LOOP territory  642ms
+     ✓ BRIDGE_OUTDATED only when a client_outdated annotation is less than 60 s old when the breaker opens  708ms
+     ✓ an old client_outdated annotation does NOT select BRIDGE_OUTDATED  689ms
+     ✓ every BRIDGE_MARKERS string, echoed as a message line AND as multi-line content, is inert  1478ms
+     ✓ token_banner / invalid_port / token_too_short only act while STARTING with no REST answer yet  1780ms
+     ✓ a stdout chunk split mid-UTF-8 and mid-line is reassembled before matching  305ms
+     ✓ a stdout chunk without a newline is buffered, and an absurd one is dropped rather than grown  386ms
+     ✓ the exit window forgets crashes older than 10 minutes, so the breaker never opens on a slow drip  915ms
+
+ Test Files  103 passed (103)
+      Tests  2499 passed (2499)
+   Start at  02:27:08
+   Duration  15.86s (transform 14.74s, setup 7.54s, import 26.37s, tests 37.82s, environment 11ms)
+
+EXIT=0

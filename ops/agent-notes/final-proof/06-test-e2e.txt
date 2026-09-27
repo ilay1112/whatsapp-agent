@@ -1,0 +1,71 @@
+
+> whatsapp-calendar-agent@0.1.0 test:e2e
+> npm run build:e2e && playwright test
+
+
+> whatsapp-calendar-agent@0.1.0 build:e2e
+> electron-vite build --mode e2e && node scripts/mark-e2e-build.mjs
+
+[36mvite v7.3.6 [32mbuilding ssr environment for e2e...[36m[39m
+transforming...
+[32m✓[39m 113 modules transformed.
+rendering chunks...
+[2mout/main/[22m[36mtypes-BN7M8LP5.js              [39m[1m[2m  0.43 kB[22m[1m[22m[2m │ map:     4.10 kB[22m
+[2mout/main/[22m[36mtestSeams-WWeO8Euq.js          [39m[1m[2m  2.60 kB[22m[1m[22m[2m │ map:     7.95 kB[22m
+[2mout/main/[22m[36mscripted.fixtures-BZhCCNWf.js  [39m[1m[2m  6.83 kB[22m[1m[22m[2m │ map:    16.95 kB[22m
+[2mout/main/[22m[36mindex.js                       [39m[1m[33m522.50 kB[39m[22m[2m │ map: 1,149.35 kB[22m
+[32m✓ built in 475ms[39m
+[36mvite v7.3.6 [32mbuilding ssr environment for e2e...[36m[39m
+transforming...
+[32m✓[39m 1 modules transformed.
+rendering chunks...
+[2mout/preload/[22m[36mindex.cjs  [39m[1m[2m2.26 kB[22m[1m[22m
+[32m✓ built in 7ms[39m
+[36mvite v7.3.6 [32mbuilding client environment for e2e...[36m[39m
+transforming...
+[33mnode_modules/zod/v4/core/util.js (400:0): A comment
+
+"// Wrapped in a `@__PURE__` IIFE: esbuild never tree-shakes a top-level initializer that contains a member access on `Number`, so the bare object literal survived into every bundle."
+
+in "node_modules/zod/v4/core/util.js" contains an annotation that Rollup cannot interpret due to the position of the comment. The comment will be removed to avoid issues.[39m
+[33mnode_modules/zod/v4/core/regexes.js (74:0): A comment
+
+"/** Anchors a pattern source. The interpolation lives here rather than at the call site because
+ * esbuild will not drop a `@__PURE__` call whose own argument interpolates a variable, but it
+ * will drop `anchor(dateSource)`. Keeping it inline pinned `date` into every bundle. */"
+
+in "node_modules/zod/v4/core/regexes.js" contains an annotation that Rollup cannot interpret due to the position of the comment. The comment will be removed to avoid issues.[39m
+[32m✓[39m 196 modules transformed.
+rendering chunks...
+[2m../../out/renderer/[22m[32mindex.html                 [39m[1m[2m    1.12 kB[22m[1m[22m
+[2m../../out/renderer/[22m[35massets/index-DXThaU5a.css  [39m[1m[2m   34.32 kB[22m[1m[22m
+[2m../../out/renderer/[22m[36massets/index-BJg4lHy5.js   [39m[1m[33m1,245.16 kB[39m[22m
+[32m✓ built in 838ms[39m
+
+Running 22 tests using 1 worker
+
+  ok  1 tests\e2e\app.spec.ts:14:1 › seeded profile boots to a dashboard with three empty lists, a healthy bridge and the setup strip (959ms)
+  ok  2 tests\e2e\approval-first.spec.ts:79:1 › an inbound message is ingested and NOTHING is sent or written without an approval (6.2s)
+  ok  3 tests\e2e\approval-first.spec.ts:153:1 › approve -> exactly one send with the edited text; add to calendar -> exactly one create-event (29.1s)
+  ok  4 tests\e2e\approval-first.spec.ts:248:1 › an obedient attacker model causes no side effect and the card is badged as manipulation (26.9s)
+  ok  5 tests\e2e\i18n-rtl.spec.ts:19:1 › the header toggle flips dir without a reload and the choice survives a restart (1.3s)
+  ok  6 tests\e2e\i18n-rtl.spec.ts:65:1 › a language change reaches the tray menu in the main process (770ms)
+  ok  7 tests\e2e\i18n-rtl.spec.ts:92:1 › a Hebrew dashboard lays out towards the right and neither language scrolls horizontally at 420 px (980ms)
+  ok  8 tests\e2e\i18n-rtl.spec.ts:127:1 › every view is screenshotted in both languages for the Hebrew review (1.7s)
+  ok  9 tests\e2e\onboarding.spec.ts:85:1 › Welcome runs nothing before the disclosure is accepted, then the local model starts downloading (1.1s)
+  ok 10 tests\e2e\onboarding.spec.ts:150:1 › accepting the disclosure starts the bridge, and the QR can be scanned, expired and re-issued (5.0s)
+  ok 11 tests\e2e\onboarding.spec.ts:210:3 › the Google step offers "Later" and the Ready checklist hands over to a reply-only dashboard (en) (774ms)
+  ok 12 tests\e2e\onboarding.spec.ts:210:3 › the Google step offers "Later" and the Ready checklist hands over to a reply-only dashboard (he) (729ms)
+  ok 13 tests\e2e\onboarding.spec.ts:245:1 › a history sync after pairing produces zero cards (5.2s)
+  ok 14 tests\e2e\onboarding.spec.ts:278:1 › the wizard resumes at the step it was killed on (1.9s)
+  ok 15 tests\e2e\onboarding.spec.ts:310:1 › choosing a cloud provider blocks on the consent dialog, and declining writes no consent row (901ms)
+  ok 16 tests\e2e\onboarding.spec.ts:335:1 › the Choose AI step renders right-to-left in Hebrew (659ms)
+  ok 17 tests\e2e\onboarding.spec.ts:363:1 › the Google sign-in leg records the opened URL instead of opening a browser (618ms)
+  ok 18 tests\e2e\tray-lifecycle.spec.ts:79:1 › close hides to the tray within 200 ms, shows the coach mark exactly once, and the tray re-opens it (1.2s)
+  ok 19 tests\e2e\tray-lifecycle.spec.ts:125:1 › a --hidden start paints no window but builds the tray (597ms)
+  ok 20 tests\e2e\tray-lifecycle.spec.ts:145:1 › a second launch on the same profile exits and re-shows the first window (1.1s)
+  ok 21 tests\e2e\tray-lifecycle.spec.ts:172:1 › the tray menu follows health and Pause, and the quit sequence kills every child (1.2s)
+  ok 22 tests\e2e\tray-lifecycle.spec.ts:248:1 › a pid file pointing at an unrelated process is discarded, never killed (2.1s)
+
+  22 passed (1.5m)
+TEST_E2E_EXIT=0

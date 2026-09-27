@@ -1,0 +1,302 @@
+
+> whatsapp-calendar-agent@0.1.0 verify
+> npm run lint && npm run format:check && npm run typecheck && npm run stage:mcp && npm run test:coverage && npm run test:e2e && npm run test:smoke && npm run audit:prod
+
+
+> whatsapp-calendar-agent@0.1.0 lint
+> eslint . --max-warnings 0
+
+
+> whatsapp-calendar-agent@0.1.0 format:check
+> prettier --check .
+
+Checking formatting...
+All matched files use Prettier code style!
+
+> whatsapp-calendar-agent@0.1.0 typecheck
+> tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json && tsc --noEmit -p tsconfig.tests.json
+
+
+> whatsapp-calendar-agent@0.1.0 stage:mcp
+> node scripts/stage-calendar-mcp.mjs
+
+stage-calendar-mcp: already staged - C:\dev\whatsapp agent\build-resources\calendar-mcp\node_modules\@cocal\google-calendar-mcp\build\index.js
+
+> whatsapp-calendar-agent@0.1.0 test:coverage
+> vitest run --project main --project renderer --project integration --project security --coverage
+
+
+ RUN  v4.1.11 C:/dev/whatsapp agent
+      Coverage enabled with v8
+
+Failed to parse file:///C:/dev/whatsapp agent/src/renderer/index.html. Excluding it from coverage.
+ Error [RollupError]: Expression expected
+    at getRollupError (file:///C:/dev/whatsapp%20agent/node_modules/rollup/dist/es/shared/parseAst.js:319:41)
+    at convertProgram (file:///C:/dev/whatsapp%20agent/node_modules/rollup/dist/es/shared/parseAst.js:1134:26)
+    at parseAstAsync (file:///C:/dev/whatsapp%20agent/node_modules/rollup/dist/es/shared/parseAst.js:2124:106)
+    at V8CoverageProvider.remapCoverage (file:///C:/dev/whatsapp%20agent/node_modules/@vitest/coverage-v8/dist/provider.js:133:10)
+    at file:///C:/dev/whatsapp%20agent/node_modules/@vitest/coverage-v8/dist/provider.js:119:23
+    at async Promise.all (index 1)
+    at V8CoverageProvider.getCoverageMapForUncoveredFiles (file:///C:/dev/whatsapp%20agent/node_modules/@vitest/coverage-v8/dist/provider.js:109:4)
+    at V8CoverageProvider.generateCoverage (file:///C:/dev/whatsapp%20agent/node_modules/@vitest/coverage-v8/dist/provider.js:56:29)
+    at file:///C:/dev/whatsapp%20agent/node_modules/vitest/dist/chunks/cli-api.CnMVyzaz.js:13671:23
+    at file:///C:/dev/whatsapp%20agent/node_modules/vitest/dist/chunks/cli-api.CnMVyzaz.js:13684:11 {
+  code: 'PARSE_ERROR',
+  pos: 0
+}
+
+ Test Files  168 passed (168)
+      Tests  3836 passed (3836)
+   Start at  11:38:27
+   Duration  20.93s (transform 34.96s, setup 32.38s, import 65.06s, tests 146.53s, environment 37.24s)
+
+ % Coverage report from v8
+-------------------|---------|----------|---------|---------|-------------------
+File               | % Stmts | % Branch | % Funcs | % Lines | Uncovered Line #s 
+-------------------|---------|----------|---------|---------|-------------------
+All files          |   96.22 |    91.24 |   93.72 |    97.4 |                   
+ main              |   85.78 |    69.56 |   79.14 |   88.02 |                   
+  compose.ts       |   82.62 |    59.93 |   75.62 |   85.47 | ...1544-1552,1580 
+ main/agent        |   99.46 |     98.7 |   99.25 |   99.87 |                   
+  draft.ts         |   98.48 |    97.14 |     100 |     100 | 101               
+  items.ts         |    99.4 |    97.54 |     100 |     100 | 87,226,303        
+  orchestrator.ts  |   98.46 |     97.1 |    92.3 |     100 | 150,262           
+  queue.ts         |   99.06 |    97.95 |     100 |   98.94 | 97                
+  validate.ts      |     100 |    98.71 |     100 |     100 | 180               
+ main/bridge       |   97.32 |    92.24 |   98.36 |   98.86 |                   
+  bridgeDb.ts      |   97.89 |    86.36 |     100 |     100 | ...17-127,169,189 
+  ingest.ts        |   98.36 |    91.19 |     100 |    99.5 | 100               
+  launcher.ts      |   94.21 |    85.84 |   95.52 |   97.17 | ...33,605-606,699 
+  readClient.ts    |     100 |    96.29 |     100 |     100 | 126               
+  sendClient.ts    |     100 |    97.22 |     100 |     100 | 47                
+  timestamps.ts    |   95.83 |    96.15 |     100 |     100 | 56,66             
+ main/db           |   94.36 |    83.07 |   97.95 |   95.78 |                   
+  backup.ts        |   88.52 |    73.91 |   92.85 |   92.45 | 45,102-120        
+  index.ts         |   95.34 |    83.33 |     100 |      96 | 71,92-93          
+  migrations.ts    |   96.15 |     87.5 |     100 |   95.83 | 212               
+ main/db/repos     |   99.72 |    96.83 |     100 |     100 |                   
+  actions.ts       |   98.46 |    96.66 |     100 |     100 | 139               
+  chats.ts         |     100 |    95.23 |     100 |     100 | 78,111            
+  consents.ts      |     100 |    83.33 |     100 |     100 | 36                
+  items.ts         |     100 |    95.45 |     100 |     100 | 119               
+ main/exec         |     100 |     97.7 |     100 |     100 |                   
+  ...onExecutor.ts |     100 |     97.2 |     100 |     100 | ...36,426,448,513 
+  reconcile.ts     |     100 |    97.43 |     100 |     100 | 66                
+ main/ipc/handlers |   99.15 |    97.53 |   98.82 |   99.51 |                   
+  app.ts           |   98.41 |    92.59 |     100 |     100 | 42-46             
+  data.ts          |   83.33 |      100 |      80 |   83.33 | 21                
+ main/llm          |   99.81 |    93.53 |   99.08 |     100 |                   
+  claude.ts        |     100 |    92.41 |     100 |     100 | ...91-299,334,345 
+  gemini.ts        |     100 |    94.08 |     100 |     100 | ...71-285,329-335 
+  local.ts         |   99.06 |     90.9 |   93.75 |     100 | ...18,225,230,238 
+ main/llm/local    |   97.35 |     93.2 |   98.93 |   98.33 |                   
+  download.ts      |   96.29 |    94.07 |     100 |   96.69 | ...56-257,348-350 
+  hardware.ts      |   96.29 |     93.1 |   94.11 |   98.41 | 124               
+  llamaServer.ts   |   98.43 |     91.2 |     100 |     100 | ...77-280,335-341 
+  selfTest.ts      |     100 |    93.75 |     100 |     100 | 159-160,163       
+ main/mcp          |   99.58 |    97.62 |   98.13 |     100 |                   
+  adminClient.ts   |     100 |    99.02 |     100 |     100 | 97                
+  host.ts          |   98.75 |    93.33 |   95.45 |     100 | ...08,434,437-445 
+  projection.ts    |     100 |    98.87 |     100 |     100 | 145,201           
+ main/proc         |   96.08 |    92.06 |   95.65 |   97.97 |                   
+  freePort.ts      |   91.17 |    83.33 |     100 |     100 | 28-39             
+  reaper.ts        |   97.84 |     93.1 |   88.88 |     100 | 33,59,75,139      
+  supervisor.ts    |   96.09 |    92.94 |   97.05 |   97.23 | ...91,415,492-497 
+ renderer/src      |   93.61 |    88.61 |   89.28 |   95.03 |                   
+  App.tsx          |   91.41 |    88.43 |   79.72 |    92.7 | ...10-522,562,564 
+  api.ts           |     100 |    85.71 |     100 |     100 | 85-86             
+  i18n.ts          |   96.29 |     92.3 |     100 |     100 | 59                
+ ...src/components |   94.18 |    89.09 |   91.82 |   96.14 |                   
+  ...entDialog.tsx |   89.79 |    75.86 |    87.5 |   95.23 | 48-49             
+  DownloadPill.tsx |   93.75 |    89.28 |   91.66 |   95.23 | 42-43             
+  DraftBox.tsx     |     100 |    96.77 |     100 |     100 | 112               
+  EventEditor.tsx  |    95.4 |    90.19 |   85.71 |   95.94 | 206-221,252       
+  HealthPill.tsx   |   97.89 |    93.33 |     100 |     100 | ...35,169,195,231 
+  ItemCard.tsx     |   90.28 |    85.37 |   85.89 |    92.2 | ...5,735,834,1001 
+  ItemList.tsx     |   91.66 |      100 |   83.33 |   91.66 | 121               
+  ...ageToggle.tsx |   94.44 |    72.22 |     100 |     100 | 25-35             
+  QrPairing.tsx    |     100 |    97.29 |     100 |     100 | 115               
+  RawCard.tsx      |     100 |    91.66 |     100 |     100 | 50,94,126,189     
+  ...issDrawer.tsx |   96.29 |    86.27 |     100 |     100 | ...78,117-118,141 
+ ...erer/src/store |   93.79 |     86.2 |   97.43 |   96.84 |                   
+  dashboard.ts     |   91.76 |    77.77 |     100 |   95.16 | 147-149           
+  settings.ts      |      96 |      100 |   88.88 |     100 |                   
+ ...erer/src/views |   93.75 |    83.12 |    87.5 |   96.67 |                   
+  Dashboard.tsx    |   97.24 |    88.18 |   97.72 |     100 | ...64,171-173,189 
+  Settings.tsx     |   91.09 |    78.74 |   82.14 |    94.4 | ...56,704,793,942 
+ ...ews/Onboarding |   91.56 |    83.57 |   88.97 |   93.47 |                   
+  ChooseAi.tsx     |   85.71 |    77.17 |   79.24 |   89.24 | ...21,471,491-492 
+  GoogleWizard.tsx |   95.41 |    87.05 |   91.42 |   95.87 | 225,290-293       
+  LinkWhatsApp.tsx |     100 |    95.83 |     100 |     100 | 53                
+  Ready.tsx        |     100 |     87.5 |     100 |     100 | 69-81,91          
+ shared            |   98.95 |    98.36 |     100 |   99.61 |                   
+  errors.ts        |   94.44 |    92.85 |     100 |   93.33 | 170               
+  settings.ts      |   86.66 |    77.77 |     100 |     100 | 103-105           
+ shared/i18n       |   99.06 |    94.73 |     100 |     100 |                   
+  format.ts        |     100 |    92.85 |     100 |     100 | 28                
+  resources.ts     |    97.5 |    86.66 |     100 |     100 | 47-61             
+-------------------|---------|----------|---------|---------|-------------------
+
+=============================== Coverage summary ===============================
+Statements   : 96.22% ( 8686/9027 )
+Branches     : 91.24% ( 5449/5972 )
+Functions    : 93.72% ( 1883/2009 )
+Lines        : 97.4% ( 7530/7731 )
+================================================================================
+
+> whatsapp-calendar-agent@0.1.0 test:e2e
+> npm run build:e2e && playwright test
+
+
+> whatsapp-calendar-agent@0.1.0 build:e2e
+> electron-vite build --mode e2e && node scripts/mark-e2e-build.mjs
+
+[36mvite v7.3.6 [32mbuilding ssr environment for e2e...[36m[39m
+transforming...
+[32m✓[39m 113 modules transformed.
+rendering chunks...
+[2mout/main/[22m[36mtypes-BN7M8LP5.js              [39m[1m[2m  0.43 kB[22m[1m[22m[2m │ map:     4.10 kB[22m
+[2mout/main/[22m[36mtestSeams-WWeO8Euq.js          [39m[1m[2m  2.60 kB[22m[1m[22m[2m │ map:     7.95 kB[22m
+[2mout/main/[22m[36mscripted.fixtures-BZhCCNWf.js  [39m[1m[2m  6.83 kB[22m[1m[22m[2m │ map:    16.95 kB[22m
+[2mout/main/[22m[36mindex.js                       [39m[1m[33m522.50 kB[39m[22m[2m │ map: 1,149.35 kB[22m
+[32m✓ built in 489ms[39m
+[36mvite v7.3.6 [32mbuilding ssr environment for e2e...[36m[39m
+transforming...
+[32m✓[39m 1 modules transformed.
+rendering chunks...
+[2mout/preload/[22m[36mindex.cjs  [39m[1m[2m2.26 kB[22m[1m[22m
+[32m✓ built in 8ms[39m
+[36mvite v7.3.6 [32mbuilding client environment for e2e...[36m[39m
+transforming...
+[33mnode_modules/zod/v4/core/regexes.js (74:0): A comment
+
+"/** Anchors a pattern source. The interpolation lives here rather than at the call site because
+ * esbuild will not drop a `@__PURE__` call whose own argument interpolates a variable, but it
+ * will drop `anchor(dateSource)`. Keeping it inline pinned `date` into every bundle. */"
+
+in "node_modules/zod/v4/core/regexes.js" contains an annotation that Rollup cannot interpret due to the position of the comment. The comment will be removed to avoid issues.[39m
+[33mnode_modules/zod/v4/core/util.js (400:0): A comment
+
+"// Wrapped in a `@__PURE__` IIFE: esbuild never tree-shakes a top-level initializer that contains a member access on `Number`, so the bare object literal survived into every bundle."
+
+in "node_modules/zod/v4/core/util.js" contains an annotation that Rollup cannot interpret due to the position of the comment. The comment will be removed to avoid issues.[39m
+[32m✓[39m 196 modules transformed.
+rendering chunks...
+[2m../../out/renderer/[22m[32mindex.html                 [39m[1m[2m    1.12 kB[22m[1m[22m
+[2m../../out/renderer/[22m[35massets/index-DXThaU5a.css  [39m[1m[2m   34.32 kB[22m[1m[22m
+[2m../../out/renderer/[22m[36massets/index-BJg4lHy5.js   [39m[1m[33m1,245.16 kB[39m[22m
+[32m✓ built in 840ms[39m
+
+Running 22 tests using 1 worker
+
+  ok  1 tests\e2e\app.spec.ts:14:1 › seeded profile boots to a dashboard with three empty lists, a healthy bridge and the setup strip (998ms)
+  ok  2 tests\e2e\approval-first.spec.ts:79:1 › an inbound message is ingested and NOTHING is sent or written without an approval (6.1s)
+  ok  3 tests\e2e\approval-first.spec.ts:153:1 › approve -> exactly one send with the edited text; add to calendar -> exactly one create-event (29.2s)
+  ok  4 tests\e2e\approval-first.spec.ts:248:1 › an obedient attacker model causes no side effect and the card is badged as manipulation (26.9s)
+  ok  5 tests\e2e\i18n-rtl.spec.ts:19:1 › the header toggle flips dir without a reload and the choice survives a restart (1.2s)
+  ok  6 tests\e2e\i18n-rtl.spec.ts:65:1 › a language change reaches the tray menu in the main process (688ms)
+  ok  7 tests\e2e\i18n-rtl.spec.ts:92:1 › a Hebrew dashboard lays out towards the right and neither language scrolls horizontally at 420 px (938ms)
+  ok  8 tests\e2e\i18n-rtl.spec.ts:127:1 › every view is screenshotted in both languages for the Hebrew review (1.7s)
+  ok  9 tests\e2e\onboarding.spec.ts:85:1 › Welcome runs nothing before the disclosure is accepted, then the local model starts downloading (1.2s)
+  ok 10 tests\e2e\onboarding.spec.ts:150:1 › accepting the disclosure starts the bridge, and the QR can be scanned, expired and re-issued (5.0s)
+  ok 11 tests\e2e\onboarding.spec.ts:210:3 › the Google step offers "Later" and the Ready checklist hands over to a reply-only dashboard (en) (826ms)
+  ok 12 tests\e2e\onboarding.spec.ts:210:3 › the Google step offers "Later" and the Ready checklist hands over to a reply-only dashboard (he) (722ms)
+  ok 13 tests\e2e\onboarding.spec.ts:245:1 › a history sync after pairing produces zero cards (5.2s)
+  ok 14 tests\e2e\onboarding.spec.ts:278:1 › the wizard resumes at the step it was killed on (1.8s)
+  ok 15 tests\e2e\onboarding.spec.ts:310:1 › choosing a cloud provider blocks on the consent dialog, and declining writes no consent row (762ms)
+  ok 16 tests\e2e\onboarding.spec.ts:335:1 › the Choose AI step renders right-to-left in Hebrew (692ms)
+  ok 17 tests\e2e\onboarding.spec.ts:363:1 › the Google sign-in leg records the opened URL instead of opening a browser (638ms)
+  ok 18 tests\e2e\tray-lifecycle.spec.ts:79:1 › close hides to the tray within 200 ms, shows the coach mark exactly once, and the tray re-opens it (1.2s)
+  ok 19 tests\e2e\tray-lifecycle.spec.ts:125:1 › a --hidden start paints no window but builds the tray (603ms)
+  ok 20 tests\e2e\tray-lifecycle.spec.ts:145:1 › a second launch on the same profile exits and re-shows the first window (1.0s)
+  ok 21 tests\e2e\tray-lifecycle.spec.ts:172:1 › the tray menu follows health and Pause, and the quit sequence kills every child (1.3s)
+  ok 22 tests\e2e\tray-lifecycle.spec.ts:248:1 › a pid file pointing at an unrelated process is discarded, never killed (2.1s)
+
+  22 passed (1.5m)
+
+> whatsapp-calendar-agent@0.1.0 test:smoke
+> npm run pack:dir && node scripts/smoke-packaged.mjs dist/win-unpacked
+
+
+> whatsapp-calendar-agent@0.1.0 pack:dir
+> npm run build && node scripts/hash-bridge.mjs && electron-builder --win --x64 --dir
+
+
+> whatsapp-calendar-agent@0.1.0 build
+> npm run typecheck && electron-vite build && node -e "require('node:fs').rmSync('out/.e2e-build',{force:true})"
+
+
+> whatsapp-calendar-agent@0.1.0 typecheck
+> tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json && tsc --noEmit -p tsconfig.tests.json
+
+[36mvite v7.3.6 [32mbuilding ssr environment for production...[36m[39m
+transforming...
+[32m✓[39m 111 modules transformed.
+rendering chunks...
+[2mout/main/[22m[36mindex.js  [39m[1m[33m520.55 kB[39m[22m[2m │ map: 1,151.77 kB[22m
+[32m✓ built in 465ms[39m
+[36mvite v7.3.6 [32mbuilding ssr environment for production...[36m[39m
+transforming...
+[32m✓[39m 1 modules transformed.
+rendering chunks...
+[2mout/preload/[22m[36mindex.cjs  [39m[1m[2m2.26 kB[22m[1m[22m
+[32m✓ built in 7ms[39m
+[36mvite v7.3.6 [32mbuilding client environment for production...[36m[39m
+transforming...
+[33mnode_modules/zod/v4/core/regexes.js (74:0): A comment
+
+"/** Anchors a pattern source. The interpolation lives here rather than at the call site because
+ * esbuild will not drop a `@__PURE__` call whose own argument interpolates a variable, but it
+ * will drop `anchor(dateSource)`. Keeping it inline pinned `date` into every bundle. */"
+
+in "node_modules/zod/v4/core/regexes.js" contains an annotation that Rollup cannot interpret due to the position of the comment. The comment will be removed to avoid issues.[39m
+[33mnode_modules/zod/v4/core/util.js (400:0): A comment
+
+"// Wrapped in a `@__PURE__` IIFE: esbuild never tree-shakes a top-level initializer that contains a member access on `Number`, so the bare object literal survived into every bundle."
+
+in "node_modules/zod/v4/core/util.js" contains an annotation that Rollup cannot interpret due to the position of the comment. The comment will be removed to avoid issues.[39m
+[32m✓[39m 196 modules transformed.
+rendering chunks...
+[2m../../out/renderer/[22m[32mindex.html                 [39m[1m[2m    1.12 kB[22m[1m[22m
+[2m../../out/renderer/[22m[35massets/index-DXThaU5a.css  [39m[1m[2m   34.32 kB[22m[1m[22m
+[2m../../out/renderer/[22m[36massets/index-BJg4lHy5.js   [39m[1m[33m1,245.16 kB[39m[22m
+[32m✓ built in 840ms[39m
+hash-bridge: OK 43540541 bytes sha256 AC23221E8BCF3937A4CA346B3BD80A8DA09DF94CBECD949AF2916C4BC8D22FF5
+  • electron-builder  version=26.15.3 os=10.0.26200
+  • loaded configuration  file=C:\dev\whatsapp agent\electron-builder.yml
+  • description is missed in the package.json  appPackageFile=C:\dev\whatsapp agent\package.json
+  • author is missed in the package.json  appPackageFile=C:\dev\whatsapp agent\package.json
+  • skipped dependencies rebuild  reason=npmRebuild is set to false
+  • packaging       platform=win32 arch=x64 electron=44.4.3 appOutDir=dist\win-unpacked
+  • downloaded      label=electron progress=100%
+  • downloaded electron zip extracted successfully  output=C:\dev\whatsapp agent\dist\win-unpacked
+  • searching for node modules  pm=npm searchDir=C:\dev\whatsapp agent
+  • duplicate dependency references  dependencies=["@modelcontextprotocol/sdk@1.30.0","debug@4.4.3","fetch-blob@3.2.0","gaxios@7.3.1","ecdsa-sig-formatter@1.0.11","ajv@8.20.0","express@5.2.1","mime-types@3.0.2","debug@4.4.3","http-errors@2.0.1","iconv-lite@0.7.3","on-finished@2.4.1","qs@6.16.0","raw-body@3.0.2","type-is@2.1.0","debug@4.4.3","debug@4.4.3","on-finished@2.4.1","get-intrinsic@1.3.0","call-bind-apply-helpers@1.0.2","call-bind-apply-helpers@1.0.2","es-object-atoms@1.1.2","call-bound@1.0.4","get-intrinsic@1.3.0","side-channel-map@1.0.1","debug@4.4.3","debug@4.4.3","http-errors@2.0.1","mime-types@3.0.2","on-finished@2.4.1","send@1.2.1","mime-types@3.0.2","http-errors@2.0.1"]
+  • updating asar integrity executable resource  executablePath=dist\win-unpacked\WhatsApp Calendar Agent.exe
+  • signing with signtool.exe  path=dist\win-unpacked\resources\bridge\whatsapp-bridge.exe
+  • signing with signtool.exe  path=dist\win-unpacked\resources\llama\llama-server.exe
+  • executing @electron/fuses  electronPath=dist\win-unpacked\WhatsApp Calendar Agent.exe
+  • signing with signtool.exe  path=dist\win-unpacked\WhatsApp Calendar Agent.exe
+smoke-packaged: C:\dev\whatsapp agent\dist\win-unpacked
+  [ok]   check 4a - calendar server packaged: all 156 staged package folder(s), calendar-mcp\node_modules\@cocal\google-calendar-mcp\build\index.js and the ARCH 15.3 package.json/package-lock.json are in <resources>\calendar-mcp
+      initialize OK (server google-calendar 2.6.3)
+  [ok]   check 1 - the packaged exe ran as Node and the real MCP server listed exactly the six ARCH 5.1 tools
+(node:169952) ExperimentalWarning: stripTypeScriptTypes is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+      initialize OK (server fake-google-calendar-mcp 2.6.3)
+  [ok]   check 2 - one tools/call round trip completed over stdio through the packaged binary
+  [ok]   check 3 - the fuse wire read back equals the seven ARCH 15.2 values
+  [ok]   check 4 - packaged whatsapp-bridge.exe streams to the pinned SHA-256 (43540541 bytes, never executed)
+  [ok]   check 4 - all 24 files of vendor/llama/MANIFEST.txt are in resources\llama (none executed)
+  [ok]   check 4 - the five tray/notification icons are present
+  [ok]   check 4 - THIRD_PARTY_NOTICES.txt is present
+  [ok]   check 5 - app.asar listing clean (4499 entries, no map/test/native/seam content, nothing unpacked)
+  [ok]   check 6 - no-GUI rule held: all 2 spawn(s) ran the packaged exe as plain Node. Starting the packaged GUI is manual item M9.
+
+smoke-packaged: PASS - all six checks green.
+
+> whatsapp-calendar-agent@0.1.0 audit:prod
+> npm audit --omit=dev
+
+found 0 vulnerabilities
+VERIFY_EXIT=0

@@ -1,0 +1,485 @@
+
+ RUN  v4.1.11 C:/dev/whatsapp agent
+
+ ✓ |renderer| src/renderer/src/styles.test.ts (21 tests) 14ms
+ ✓ |renderer| src/renderer/src/components/QuotedBubble.test.tsx (9 tests) 44ms
+ ✓ |renderer| src/renderer/src/api.test.ts (7 tests) 11ms
+ ✓ |renderer| src/renderer/src/store/settings.test.ts (4 tests) 11ms
+ ✓ |renderer| src/renderer/src/store/dashboard.test.ts (14 tests) 15ms
+ ✓ |renderer| src/renderer/src/components/SetupStrip.test.tsx (6 tests) 291ms
+ ✓ |renderer| src/renderer/src/components/LanguageToggle.test.tsx (4 tests) 274ms
+ ✓ |renderer| src/renderer/src/components/Badges.test.tsx (9 tests) 287ms
+ ✓ |renderer| src/renderer/src/main.test.tsx (2 tests) 505ms
+     ✓ initialises i18n and mounts the app into #root  477ms
+ ✓ |renderer| src/renderer/src/components/QrPairing.test.tsx (13 tests) 303ms
+ ✓ |renderer| src/renderer/src/components/ConsentDialog.test.tsx (8 tests) 488ms
+ ✓ |renderer| src/renderer/src/components/ItemList.test.tsx (13 tests) 415ms
+ ✓ |renderer| src/renderer/src/views/Onboarding/LinkWhatsApp.test.tsx (16 tests) 483ms
+ ✓ |renderer| src/renderer/src/views/Onboarding/Welcome.test.tsx (7 tests) 587ms
+ ✓ |renderer| src/renderer/src/components/EventEditor.test.tsx (20 tests) 622ms
+ ✓ |renderer| src/renderer/src/components/DownloadPill.test.tsx (8 tests) 709ms
+ ✓ |renderer| src/renderer/src/components/HealthPill.test.tsx (15 tests) 702ms
+ ✓ |renderer| src/renderer/src/views/Onboarding/Ready.test.tsx (9 tests) 720ms
+ ✓ |renderer| src/renderer/src/components/UndoDismissDrawer.test.tsx (17 tests) 743ms
+ ✓ |renderer| src/renderer/src/components/DraftBox.test.tsx (12 tests) 869ms
+ ✓ |renderer| src/renderer/src/i18n.test.ts (4 tests) 7ms
+ ✓ |renderer| src/renderer/src/store/health.test.ts (6 tests) 7ms
+ ✓ |renderer| src/renderer/src/i18n.usage.test.ts (6 tests) 7ms
+ ✓ |renderer| src/renderer/src/views/Onboarding/GoogleWizard.test.tsx (27 tests) 1191ms
+ ✓ |renderer| src/renderer/src/components/RawCard.test.tsx (14 tests) 1495ms
+     ✓ shows Send when a pending send_reply exists, disabled until the user writes something  374ms
+     ✓ copies through clipboard:writeText and is disabled while empty  301ms
+ ✓ |renderer| src/renderer/src/components/ItemCard.test.tsx (34 tests) 1980ms
+     ✓ sends the textarea content as it was at click time  375ms
+ ✓ |renderer| src/renderer/src/views/Dashboard.test.tsx (36 tests) 2222ms
+     ✓ asks "Discard your edits?" before closing a dirty card, and keeps it open on Cancel  426ms
+ ✓ |renderer| src/renderer/src/views/Onboarding/ChooseAi.test.tsx (26 tests) 3206ms
+     ✓ hands the key to main, validates it, and then shows only the last four characters  719ms
+     ✓ a rejected key names the provider in the failure row  673ms
+ ❯ |renderer| src/renderer/src/App.test.tsx (24 tests | 1 failed) 3225ms
+     ✓ calls app:getBootstrap exactly once and paints the dashboard 169ms
+     × starts in onboarding when the bootstrap step is not done and walks the steps 1173ms
+     ✓ ui:navigate switches the view and ui:languageChanged flips <html dir> without reload 87ms
+     ✓ the gear opens Settings and turns into "Back to dashboard" 132ms
+     ✓ shows the blocking DB_RECOVERY dialog and nothing else 15ms
+     ✓ keeps the loading frame with the ErrorCode title when the bootstrap fails otherwise 16ms
+     ✓ renders the landmarks, the version and one pill of each kind 20ms
+     ✓ the pause toggle reports aria-pressed and sends agent:setPaused once 107ms
+     ✓ the language toggle asks main to persist the choice 79ms
+     ✓ offers "Undo dismiss" only when something was dismissed 31ms
+     ✓ shows the download pill while a model is downloading 32ms
+     ✓ a WhatsApp row action opens the linking step, a calendar row action opens the Google step 242ms
+     ✓ an "export diagnostics" ErrorCode exports instead of navigating 111ms
+     ✓ any other ErrorCode action opens Settings 128ms
+     ✓ wires the pill buttons to the model:* channels  371ms
+     ✓ announces a finished download once 21ms
+     ✓ shows a row per unfinished task and hides the calendar row on request 74ms
+     ✓ a setup action opens the matching onboarding step 63ms
+     ✓ shows the coach mark on ui:navigate tray_hint, focuses its button and acknowledges it 126ms
+     ✓ Escape dismisses the coach mark the same way 96ms
+     ✓ has one polite and one assertive live region and announces the health state 32ms
+     ✓ renders one toast at a time with an Undo that restores the item 96ms
+     ✓ toPillProgress keeps the four pill statuses and drops the rest 1ms
+     ✓ setupTasksOf follows the UX 5.4 conditions and respects hidden rows 0ms
+ ✓ |renderer| src/renderer/src/views/Settings.test.tsx (31 tests) 4619ms
+     ✓ every control sends a patch the zod schema accepts, and main answers with the merged settings  785ms
+     ✓ the cloud budget is only sent when it is a valid number  415ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |renderer| src/renderer/src/App.test.tsx > App - bootstrap and routing > starts in onboarding when the bootstrap step is not done and walks the steps
+TestingLibraryElementError: Unable to find an element by: [data-testid="onboarding-choose-ai"]
+
+Ignored nodes: comments, script, style
+[36m<body>[39m
+  [36m<div>[39m
+    [36m<div[39m
+      [33mclass[39m=[32m"flex min-h-full flex-col bg-canvas text-text"[39m
+      [33mdata-testid[39m=[32m"app"[39m
+      [33mdata-view[39m=[32m"onboarding"[39m
+    [36m>[39m
+      [36m<header[39m
+        [33mclass[39m=[32m"flex h-12 shrink-0 items-center gap-2 px-4 border-b border-line bg-surface"[39m
+        [33mrole[39m=[32m"banner"[39m
+      [36m>[39m
+        [36m<span[39m
+          [33mclass[39m=[32m"text-md font-semibold whitespace-nowrap max-roomy:sr-only"[39m
+        [36m>[39m
+          [0mWA Calendar Agent[0m
+        [36m</span>[39m
+        [36m<span[39m
+          [33mclass[39m=[32m"grow"[39m
+        [36m/>[39m
+        [36m<div[39m
+          [33maria-label[39m=[32m"Language"[39m
+          [33mclass[39m=[32m"inline-flex items-center overflow-hidden rounded-sm border border-line-strong"[39m
+          [33mdata-testid[39m=[32m"lang-toggle"[39m
+          [33mdata-value[39m=[32m"en"[39m
+          [33mrole[39m=[32m"radiogroup"[39m
+        [36m>[39m
+          [36m<button[39m
+            [33maria-checked[39m=[32m"false"[39m
+            [33maria-label[39m=[32m"עברית"[39m
+            [33mclass[39m=[32m"focus-ring min-h-8 px-2 text-xs font-semibold min-w-8 bg-surface text-text-muted"[39m
+            [33mdata-lang[39m=[32m"he"[39m
+            [33mlang[39m=[32m"he"[39m
+            [33mrole[39m=[32m"radio"[39m
+            [33mtabindex[39m=[32m"-1"[39m
+            [33mtype[39m=[32m"button"[39m
+          [36m>[39m
+            [0mעב[0m
+          [36m</button>[39m
+          [36m<button[39m
+            [33maria-checked[39m=[32m"true"[39m
+            [33maria-label[39m=[32m"English"[39m
+            [33mclass[39m=[32m"focus-ring min-h-8 px-2 text-xs font-semibold min-w-8 bg-accent text-on-accent"[39m
+            [33mdata-lang[39m=[32m"en"[39m
+            [33mlang[39m=[32m"en"[39m
+            [33mrole[39m=[32m"radio"[39m
+            [33mtabindex[39m=[32m"0"[39m
+            [33mtype[39m=[32m"button"[39m
+          [36m>[39m
+            [0mEN[0m
+          [36m</button>[39m
+        [36m</div>[39m
+      [36m</header>[39m
+      [36m<div[39m
+        [33mclass[39m=[32m"min-h-0 grow"[39m
+      [36m>[39m
+        [36m<main[39m
+          [33maria-label[39m=[32m"Main content"[39m
+          [33mdata-testid[39m=[32m"onboarding"[39m
+        [36m>[39m
+          [36m<section[39m
+            [33mclass[39m=[32m"flex min-h-full flex-col"[39m
+            [33mdata-testid[39m=[32m"onboarding-welcome"[39m
+          [36m>[39m
+            [36m<div[39m
+              [33mclass[39m=[32m"mx-auto flex w-full max-w-[35rem] grow flex-col gap-4 px-4 py-5"[39m
+              [33mdata-testid[39m=[32m"onboarding-step-0"[39m
+            [36m>[39m
+              [36m<h1[39m
+                [33mclass[39m=[32m"m-0 text-xl"[39m
+              [36m>[39m
+                [0mWelcome[0m
+              [36m</h1>[39m
+              [36m<p[39m
+                [33mclass[39m=[32m"m-0"[39m
+              [36m>[39m
+                [0mThis app reads your WhatsApp chats, drafts replies for you and prepares calendar events.[0m
+              [36m</p>[39m
+              [36m<p[39m
+                [33mclass[39m=[32m"m-0"[39m
+              [36m>[39m
+                [0mEverything runs on this computer, and setup takes about five minutes.[0m
+              [36m</p>[39m
+              [36m<p[39m
+                [33mclass[39m=[32m"m-0 font-semibold"[39m
+              [36m>[39m
+                [0mNothing is sent or scheduled without your approval.[0m
+              [36m</p>[39m
+              [36m<fieldset[39m
+                [33mclass[39m=[32m"m-0 flex flex-wrap items-center gap-4 border-0 p-0"[39m
+              [36m>[39m
+                [36m<legend[39m
+                  [33mclass[39m=[32m"p-0 font-semibold"[39m
+                [36m>[39m
+                  [0mInterface language[0m
+                [36m</legend>[39m
+                [36m<label[39m
+                  [33mclass[39m=[32m"flex items-center gap-2"[39m
+                  [33mlang[39m=[32m"he"[39m
+                [36m>[39m
+                  [36m<input[39m
+                    [33mdata-testid[39m=[32m"welcome-language-he"[39m
+                    [33mname[39m=[32m"welcome-language"[39m
+                    [33mtype[39m=[32m"radio"[39m
+                    [33mvalue[39m=[32m"he"[39m
+                  [36m/>[39m
+                  [36m<span>[39m
+                    [0mעברית[0m
+                  [36m</span>[39m
+                [36m</label>[39m
+                [36m<label[39m
+                  [33mclass[39m=[32m"flex items-center gap-2"[39m
+                  [33mlang[39m=[32m"en"[39m
+                [36m>[39m
+                  [36m<input[39m
+                    [33mchecked[39m=[32m""[39m
+                    [33mdata-testid[39m=[32m"welcome-language-en"[39m
+                    [33mname[39m=[32m"welcome-language"[39m
+                    [33mtype[39m=[32m"radio"[39m
+                    [33mvalue[39m=[32m"en"[39m
+                  [36m/>[39m
+                  [36m<span>[39m
+                    [0mEnglish[0m
+                  [36m</span>[39m
+                [36m</label>[39m
+              [36m</fieldset>[39m
+              [36m<section[39m
+                [33maria-labelledby[39m=[32m"welcome-before"[39m
+                [33mclass[39m=[32m"rounded-md bg-warn-soft p-3"[39m
+              [36m>[39m
+                [36m<h2[39m
+                  [33mclass[39m=[32m"mt-0 mb-2 text-md"[39m
+                  [33mid[39m=[32m"welcome-before"[39m
+                [36m>[39m
+                  [0mBefore you start[0m
+                [36m</h2>[39m
+                [36m<ul[39m
+                  [33mclass[39m=[32m"m-0 flex list-disc flex-col gap-1 ps-5"[39m
+                [36m>[39m
+                  [36m<li>[39m
+                    [0mThe app links to WhatsApp as a companion device through an unofficial component. WhatsApp does not support this.[0m
+                  [36m</li>[39m
+                  [36m<li>[39m
+                    [0mYour WhatsApp account could be limited or blocked. Use the app at your own risk.[0m
+                  [36m</li>[39m
+                [36m</ul>[39m
+                [36m<label[39m
+                  [33mclass[39m=[32m"mt-3 flex items-start gap-2"[39m
+                [36m>[39m
+                  [36m<input[39m
+                    [33mdata-testid[39m=[32m"welcome-accept"[39m
+                    [33mtype[39m=[32m"checkbox"[39m
+                  [36m/>[39m
+                  [36m<span>[39m
+                    [0mI understand the risk and accept it[0m
+                  [36m</span>[39m
+                [36m</label>[39m
+              [36m</section>[39m
+              [36m<div[39m
+                [33mclass[39m=[32m"mt-auto flex flex-wrap items-center gap-2 pt-4"[39m
+              [36m>[39m
+                [36m<span[39m
+                  [33mclass[39m=[32m"grow"[39m
+                [36m/>[39m
+                [36m<button[39m
+                  [33mclass[39m=[32m"btn btn-primary"[39m
+                  [33mdata-testid[39m=[32m"welcome-start"[39m
+                  [33mdisabled[39m=[32m""[39m
+                  [33mtype[39m=[32m"button"[39m
+                [36m>[39m
+                  [0mGet started[0m
+                [36m</button>[39m
+              [36m</div>[39m
+            [36m</div>[39m
+          [36m</section>[39m
+        [36m</main>[39m
+      [36m</div>[39m
+      [36m<div[39m
+        [33maria-live[39m=[32m"polite"[39m
+        [33mclass[39m=[32m"sr-only"[39m
+        [33mdata-testid[39m=[32m"live-polite"[39m
+        [33mrole[39m=[32m"status"[39m
+      [36m>[39m
+        [0mAll running[0m
+      [36m</div>[39m
+      [36m<div[39m
+        [33maria-live[39m=[32m"assertive"[39m
+        [33mclass[39m=[32m"sr-only"[39m
+        [33mdata-testid[39m=[32m"live-assertive"[39m
+        [33mrole[39m=[32m"alert"[39m
+      [36m/>[39m
+    [36m</div>[39m
+  [36m</div>[39m
+[36m</body>[39m
+
+Ignored nodes: comments, script, style
+[36m<html[39m
+  [33mdir[39m=[32m"ltr"[39m
+  [33mlang[39m=[32m"en"[39m
+[36m>[39m
+  [36m<head />[39m
+  [36m<body>[39m
+    [36m<div>[39m
+      [36m<div[39m
+        [33mclass[39m=[32m"flex min-h-full flex-col bg-canvas text-text"[39m
+        [33mdata-testid[39m=[32m"app"[39m
+        [33mdata-view[39m=[32m"onboarding"[39m
+      [36m>[39m
+        [36m<header[39m
+          [33mclass[39m=[32m"flex h-12 shrink-0 items-center gap-2 px-4 border-b border-line bg-surface"[39m
+          [33mrole[39m=[32m"banner"[39m
+        [36m>[39m
+          [36m<span[39m
+            [33mclass[39m=[32m"text-md font-semibold whitespace-nowrap max-roomy:sr-only"[39m
+          [36m>[39m
+            [0mWA Calendar Agent[0m
+          [36m</span>[39m
+          [36m<span[39m
+            [33mclass[39m=[32m"grow"[39m
+          [36m/>[39m
+          [36m<div[39m
+            [33maria-label[39m=[32m"Language"[39m
+            [33mclass[39m=[32m"inline-flex items-center overflow-hidden rounded-sm border border-line-strong"[39m
+            [33mdata-testid[39m=[32m"lang-toggle"[39m
+            [33mdata-value[39m=[32m"en"[39m
+            [33mrole[39m=[32m"radiogroup"[39m
+          [36m>[39m
+            [36m<button[39m
+              [33maria-checked[39m=[32m"false"[39m
+              [33maria-label[39m=[32m"עברית"[39m
+              [33mclass[39m=[32m"focus-ring min-h-8 px-2 text-xs font-semibold min-w-8 bg-surface text-text-muted"[39m
+              [33mdata-lang[39m=[32m"he"[39m
+              [33mlang[39m=[32m"he"[39m
+              [33mrole[39m=[32m"radio"[39m
+              [33mtabindex[39m=[32m"-1"[39m
+              [33mtype[39m=[32m"button"[39m
+            [36m>[39m
+              [0mעב[0m
+            [36m</button>[39m
+            [36m<button[39m
+              [33maria-checked[39m=[32m"true"[39m
+              [33maria-label[39m=[32m"English"[39m
+              [33mclass[39m=[32m"focus-ring min-h-8 px-2 text-xs font-semibold min-w-8 bg-accent text-on-accent"[39m
+              [33mdata-lang[39m=[32m"en"[39m
+              [33mlang[39m=[32m"en"[39m
+              [33mrole[39m=[32m"radio"[39m
+              [33mtabindex[39m=[32m"0"[39m
+              [33mtype[39m=[32m"button"[39m
+            [36m>[39m
+              [0mEN[0m
+            [36m</button>[39m
+          [36m</div>[39m
+        [36m</header>[39m
+        [36m<div[39m
+          [33mclass[39m=[32m"min-h-0 grow"[39m
+        [36m>[39m
+          [36m<main[39m
+            [33maria-label[39m=[32m"Main content"[39m
+            [33mdata-testid[39m=[32m"onboarding"[39m
+          [36m>[39m
+            [36m<section[39m
+              [33mclass[39m=[32m"flex min-h-full flex-col"[39m
+              [33mdata-testid[39m=[32m"onboarding-welcome"[39m
+            [36m>[39m
+              [36m<div[39m
+                [33mclass[39m=[32m"mx-auto flex w-full max-w-[35rem] grow flex-col gap-4 px-4 py-5"[39m
+                [33mdata-testid[39m=[32m"onboarding-step-0"[39m
+              [36m>[39m
+                [36m<h1[39m
+                  [33mclass[39m=[32m"m-0 text-xl"[39m
+                [36m>[39m
+                  [0mWelcome[0m
+                [36m</h1>[39m
+                [36m<p[39m
+                  [33mclass[39m=[32m"m-0"[39m
+                [36m>[39m
+                  [0mThis app reads your WhatsApp chats, drafts replies for you and prepares calendar events.[0m
+                [36m</p>[39m
+                [36m<p[39m
+                  [33mclass[39m=[32m"m-0"[39m
+                [36m>[39m
+                  [0mEverything runs on this computer, and setup takes about five minutes.[0m
+                [36m</p>[39m
+                [36m<p[39m
+                  [33mclass[39m=[32m"m-0 font-semibold"[39m
+                [36m>[39m
+                  [0mNothing is sent or scheduled without your approval.[0m
+                [36m</p>[39m
+                [36m<fieldset[39m
+                  [33mclass[39m=[32m"m-0 flex flex-wrap items-center gap-4 border-0 p-0"[39m
+                [36m>[39m
+                  [36m<legend[39m
+                    [33mclass[39m=[32m"p-0 font-semibold"[39m
+                  [36m>[39m
+                    [0mInterface language[0m
+                  [36m</legend>[39m
+                  [36m<label[39m
+                    [33mclass[39m=[32m"flex items-center gap-2"[39m
+                    [33mlang[39m=[32m"he"[39m
+                  [36m>[39m
+                    [36m<input[39m
+                      [33mdata-testid[39m=[32m"welcome-language-he"[39m
+                      [33mname[39m=[32m"welcome-language"[39m
+                      [33mtype[39m=[32m"radio"[39m
+                      [33mvalue[39m=[32m"he"[39m
+                    [36m/>[39m
+                    [36m<span>[39m
+                      [0mעברית[0m
+                    [36m</span>[39m
+                  [36m</label>[39m
+                  [36m<label[39m
+                    [33mclass[39m=[32m"flex items-center gap-2"[39m
+                    [33mlang[39m=[32m"en"[39m
+                  [36m>[39m
+                    [36m<input[39m
+                      [33mchecked[39m=[32m""[39m
+                      [33mdata-testid[39m=[32m"welcome-language-en"[39m
+                      [33mname[39m=[32m"welcome-language"[39m
+                      [33mtype[39m=[32m"radio"[39m
+                      [33mvalue[39m=[32m"en"[39m
+                    [36m/>[39m
+                    [36m<span>[39m
+                      [0mEnglish[0m
+                    [36m</span>[39m
+                  [36m</label>[39m
+                [36m</fieldset>[39m
+                [36m<section[39m
+                  [33maria-labelledby[39m=[32m"welcome-before"[39m
+                  [33mclass[39m=[32m"rounded-md bg-warn-soft p-3"[39m
+                [36m>[39m
+                  [36m<h2[39m
+                    [33mclass[39m=[32m"mt-0 mb-2 text-md"[39m
+                    [33mid[39m=[32m"welcome-before"[39m
+                  [36m>[39m
+                    [0mBefore you start[0m
+                  [36m</h2>[39m
+                  [36m<ul[39m
+                    [33mclass[39m=[32m"m-0 flex list-disc flex-col gap-1 ps-5"[39m
+                  [36m>[39m
+                    [36m<li>[39m
+                      [0mThe app links to WhatsApp as a companion device through an unofficial component. WhatsApp does not support this.[0m
+                    [36m</li>[39m
+                    [36m<li>[39m
+                      [0mYour WhatsApp account could be limited or blocked. Use the app at your own risk.[0m
+                    [36m</li>[39m
+                  [36m</ul>[39m
+                  [36m<label[39m
+                    [33mclass[39m=[32m"mt-3 flex items-start gap-2"[39m
+                  [36m>[39m
+                    [36m<input[39m
+                      [33mdata-testid[39m=[32m"welcome-accept"[39m
+                      [33mtype[39m=[32m"checkbox"[39m
+                    [36m/>[39m
+                    [36m<span>[39m
+                      [0mI understand the risk and accept it[0m
+                    [36m</span>[39m
+                  [36m</label>[39m
+                [36m</section>[39m
+                [36m<div[39m
+                  [33mclass[39m=[32m"mt-auto flex flex-wrap items-center gap-2 pt-4"[39m
+                [36m>[39m
+                  [36m<span[39m
+                    [33mclass[39m=[32m"grow"[39m
+                  [36m/>[39m
+                  [36m<button[39m
+                    [33mclass[39m=[32m"btn btn-primary"[39m
+                    [33mdata-testid[39m=[32m"welcome-start"[39m
+                    [33mdisabled[39m=[32m""[39m
+                    [33mtype[39m=[32m"button"[39m
+                  [36m>[39m
+                    [0mGet started[0m
+                  [36m</button>[39m
+                [36m</div>[39m
+              [36m</div>[39m
+            [36m</section>[39m
+          [36m</main>[39m
+        [36m</div>[39m
+        [36m<div[39m
+          [33maria-live[39m=[32m"polite"[39m
+          [33mclass[39m=[32m"sr-only"[39m
+          [33mdata-testid[39m=[32m"live-polite"[39m
+          [33mrole[39m=[32m"status"[39m
+        [36m>[39m
+          [0mAll running[0m
+        [36m</div>[39m
+        [36m<div[39m
+          [33maria-live[39m=[32m"assertive"[39m
+          [33mclass[39m=[32m"sr-only"[39m
+          [33mdata-testid[39m=[32m"live-assertive"[39m
+          [33mrole[39m=[32m"alert"[39m
+        [36m/>[39m
+      [36m</div>[39m
+    [36m</div>[39m
+  [36m</body>[39m
+[36m</html>[39m
+ ❯ waitForWrapper node_modules/@testing-library/dom/dist/wait-for.js:163:27
+ ❯ src/renderer/src/App.test.tsx:52:11
+     50|     expect(screen.queryByTestId('health-pill')).not.toBeInTheDocument(…
+     51|     await userEvent.click(screen.getByTestId('onboarding-welcome'));
+     52|     await waitFor(() => expect(screen.getByTestId('onboarding-choose-a…
+       |           ^
+     53|     expect(invokeMocks['onboarding:setStep']).toHaveBeenCalledExactlyO…
+     54|   });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed | 29 passed (30)
+      Tests  1 failed | 421 passed (422)
+   Start at  02:27:31
+   Duration  7.19s (transform 5.85s, setup 15.59s, import 7.27s, tests 26.05s, environment 38.23s)
+
+EXIT=1

@@ -1,0 +1,38 @@
+{
+  "_comment": "Compile-time pins for the local runtime (ARCHITECTURE section 9). Owner: W1-07-llm-local. The binaries are NEVER executed by the app's build scripts or by any test.",
+  "llama": {
+    "_comment": "size + sha256 are the REAL pin of record, copied byte-for-byte from ARCHITECTURE.md section 9 (verified by fetch-llama.test.mjs). They are not placeholders. fetch-llama.mjs refuses to download at all if sha256 is ever nulled.",
+    "tag": "b10964",
+    "asset": "llama-b10964-bin-win-vulkan-x64.zip",
+    "url": "https://github.com/ggml-org/llama.cpp/releases/download/b10964/llama-b10964-bin-win-vulkan-x64.zip",
+    "size": 31674542,
+    "sha256": "1ee3ad952f4ba71f438bd6d7bebef19e1c7af04adcaa35d08b4ddabb27d4c642",
+    "licenseUrl": "https://raw.githubusercontent.com/ggml-org/llama.cpp/b10964/LICENSE",
+    "targetDir": "vendor/llama/win-x64-vulkan"
+  },
+  "files": {
+    "_comment": "EXPLICIT allow-list (ARCHITECTURE section 9) - never a *.dll glob. `prefix` entries cover the CPUID-dispatched ggml-cpu-*.dll set, which must never be pruned.",
+    "exact": [
+      "llama-server.exe",
+      "llama-server-impl.dll",
+      "llama-common.dll",
+      "llama.dll",
+      "mtmd.dll",
+      "ggml.dll",
+      "ggml-base.dll",
+      "ggml-vulkan.dll",
+      "libomp.dll",
+      "LICENSE-LLVM-OpenMP"
+    ],
+    "prefix": ["ggml-cpu-"]
+  },
+  "vcRedistCrt": {
+    "_comment": "[R2] MSVC CRT copied app-locally from $env:VC_REDIST_CRT_DIR (a Microsoft.VC143.CRT folder). Microsoft permits redistributing these three files. A null sha256 means UNPINNED and fetch-llama.mjs REFUSES to stage that file - an unverified DLL must never reach the installer. The hashes are machine-specific to the redist version being shipped, so they cannot be pre-filled from a spec: on the staging machine set VC_REDIST_CRT_DIR and run `node scripts/fetch-llama.mjs --pin-crt` once, review the printed hashes, commit them, then run the normal fetch. Leaving VC_REDIST_CRT_DIR unset is still allowed and only warns (no CRT is staged at all).",
+    "sourceEnvVar": "VC_REDIST_CRT_DIR",
+    "files": {
+      "msvcp140.dll": null,
+      "vcruntime140.dll": null,
+      "vcruntime140_1.dll": null
+    }
+  }
+}

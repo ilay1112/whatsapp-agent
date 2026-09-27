@@ -1,0 +1,16 @@
+{
+  "gcp_new_project": "https://console.cloud.google.com/projectcreate",
+  "gcp_enable_calendar_api": "https://console.cloud.google.com/apis/library/calendar-json.googleapis.com",
+  "gcp_oauth_consent": "https://console.cloud.google.com/auth/overview",
+  "gcp_create_credentials": "https://console.cloud.google.com/auth/clients",
+  "gcp_publish_app": "https://console.cloud.google.com/auth/audience",
+  "anthropic_api_keys": "https://console.anthropic.com/settings/keys",
+  "gemini_api_keys": "https://aistudio.google.com/apikey",
+  "whatsapp_linked_devices_help": "https://faq.whatsapp.com/1317564962315842",
+  "antivirus_help": "https://support.microsoft.com/windows/add-an-exclusion-to-windows-security-811816c0-4dfd-af4a-47e4-c301afe13b26",
+  "bridge_update_help": "https://github.com/lharries/whatsapp-mcp#readme",
+  "bitlocker_help": "https://support.microsoft.com/windows/bitlocker-recovery-6c2b4fd5-4b3c-4a55-9a66-0ffb06f39cfb",
+  "google_unverified_app_help": "https://support.google.com/cloud/answer/7454865",
+  "project_readme": "https://github.com/ilay1112/whatsapp-calendar-agent#readme",
+  "vcredist_download": "https://aka.ms/vs/17/release/vc_redist.x64.exe"
+}

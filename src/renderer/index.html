@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="en" dir="ltr">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- Defence in depth only. The ENFORCED policy is the `Content-Security-Policy` response header served by
+         src/main/app/protocol.ts (`CSP`); this tag is `META_CSP`, the same string minus `frame-ancestors`, which
+         Chromium ignores in a <meta> tag and reports as a console error on every load. Keep the two in sync -
+         tests/security/electron-hardening.test.ts asserts this content is exactly `META_CSP`. -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'none'; base-uri 'none'; form-action 'none'; object-src 'none'"
+    />
+    <title>WhatsApp Calendar Agent</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

@@ -1,0 +1,10 @@
+
+ RUN  v4.1.11 C:/dev/whatsapp agent
+
+
+ Test Files  169 passed (169)
+      Tests  3837 passed | 1 skipped (3838)
+   Start at  11:34:46
+   Duration  19.94s (transform 38.60s, setup 30.54s, import 66.49s, tests 142.54s, environment 38.62s)
+
+VITEST_EXIT=0

@@ -1,0 +1,1407 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`Settings - RTL > RTL snapshot 1`] = `
+<main
+  class="flex min-h-full gap-6 overflow-auto p-4"
+  data-group="general"
+  data-testid="settings"
+>
+  <nav
+    aria-label="קבוצות ההגדרות"
+    class="sticky top-0 hidden h-fit shrink-0 cols:block"
+  >
+    <ul
+      class="m-0 flex list-none flex-col gap-1 p-0"
+    >
+      <li>
+        <button
+          class="btn btn-quiet"
+          data-testid="settings-nav-general"
+          type="button"
+        >
+          כללי
+        </button>
+      </li>
+      <li>
+        <button
+          class="btn btn-quiet"
+          data-testid="settings-nav-ai"
+          type="button"
+        >
+          מנוע הבינה
+        </button>
+      </li>
+      <li>
+        <button
+          class="btn btn-quiet"
+          data-testid="settings-nav-whatsapp"
+          type="button"
+        >
+          וואטסאפ
+        </button>
+      </li>
+      <li>
+        <button
+          class="btn btn-quiet"
+          data-testid="settings-nav-calendar"
+          type="button"
+        >
+          יומן Google
+        </button>
+      </li>
+      <li>
+        <button
+          class="btn btn-quiet"
+          data-testid="settings-nav-rules"
+          type="button"
+        >
+          כללי עבודה
+        </button>
+      </li>
+      <li>
+        <button
+          class="btn btn-quiet"
+          data-testid="settings-nav-replies"
+          type="button"
+        >
+          תשובות
+        </button>
+      </li>
+      <li>
+        <button
+          class="btn btn-quiet"
+          data-testid="settings-nav-privacy"
+          type="button"
+        >
+          פרטיות ונתונים
+        </button>
+      </li>
+    </ul>
+  </nav>
+  <div
+    class="flex w-full max-w-[45rem] flex-col gap-4"
+  >
+    <div
+      class="flex items-center gap-2"
+    >
+      <h1
+        class="m-0 text-xl"
+      >
+        הגדרות
+      </h1>
+      <span
+        class="grow"
+      />
+    </div>
+    <section
+      aria-labelledby="settings-h-general"
+      class="border-t border-line pt-4"
+      data-testid="settings-group-general"
+      id="settings-group-general"
+    >
+      <h2
+        class="mt-0 mb-1 text-md font-semibold"
+        id="settings-h-general"
+      >
+        כללי
+      </h2>
+      <div
+        class="flex flex-wrap items-center gap-3 border-b border-line py-3 last:border-b-0"
+        data-testid="settings-row-language"
+      >
+        <div
+          class="flex min-w-60 grow flex-col"
+        >
+          <span
+            class="font-semibold"
+            id="row-language"
+          >
+            שפה
+          </span>
+        </div>
+        <div
+          class="flex flex-wrap items-center gap-2"
+        >
+          <div
+            aria-labelledby="row-language"
+            class="flex items-center gap-2"
+            role="radiogroup"
+          >
+            <label
+              class="flex items-center gap-1"
+            >
+              <input
+                checked=""
+                data-testid="settings-language-system"
+                name="settings-language"
+                type="radio"
+                value="system"
+              />
+              <span>
+                השפה של Windows
+              </span>
+            </label>
+            <label
+              class="flex items-center gap-1"
+              lang="he"
+            >
+              <input
+                data-testid="settings-language-he"
+                name="settings-language"
+                type="radio"
+                value="he"
+              />
+              <span>
+                עברית
+              </span>
+            </label>
+            <label
+              class="flex items-center gap-1"
+              lang="en"
+            >
+              <input
+                data-testid="settings-language-en"
+                name="settings-language"
+                type="radio"
+                value="en"
+              />
+              <span>
+                English
+              </span>
+            </label>
+          </div>
+        </div>
+      </div>
+      <div
+        class="flex flex-wrap items-center gap-3 border-b border-line py-3 last:border-b-0"
+        data-testid="settings-row-autostart"
+      >
+        <div
+          class="flex min-w-60 grow flex-col"
+        >
+          <span
+            class="font-semibold"
+            id="row-autostart"
+          >
+            הפעלה עם Windows
+          </span>
+          <span
+            class="text-sm text-text-muted"
+          >
+            הסוכן עולה למגש המערכת עם הכניסה למחשב.
+          </span>
+        </div>
+        <div
+          class="flex flex-wrap items-center gap-2"
+        >
+          <button
+            aria-checked="false"
+            aria-labelledby="row-autostart"
+            class="switch"
+            data-testid="settings-autostart"
+            role="switch"
+            type="button"
+          >
+            <span
+              class="switch-thumb"
+            />
+          </button>
+        </div>
+      </div>
+      <div
+        class="flex flex-wrap items-center gap-3 border-b border-line py-3 last:border-b-0"
+        data-testid="settings-row-notifications"
+      >
+        <div
+          class="flex min-w-60 grow flex-col"
+        >
+          <label
+            class="font-semibold"
+            for="settings-notifications"
+          >
+            התראות
+          </label>
+          <span
+            class="text-sm text-text-muted"
+          >
+            התראה לעולם אינה מכילה טקסט של הודעה.
+          </span>
+        </div>
+        <div
+          class="flex flex-wrap items-center gap-2"
+        >
+          <select
+            class="field"
+            data-testid="settings-notifications"
+            id="settings-notifications"
+          >
+            <option
+              value="off"
+            >
+              כבויות
+            </option>
+            <option
+              value="generic"
+            >
+              פועלות
+            </option>
+          </select>
+        </div>
+      </div>
+      <div
+        class="flex flex-wrap items-center gap-3 border-b border-line py-3 last:border-b-0"
+        data-testid="settings-row-timezone"
+      >
+        <div
+          class="flex min-w-60 grow flex-col"
+        >
+          <span
+            class="font-semibold"
+          >
+            אזור זמן
+          </span>
+        </div>
+        <div
+          class="flex flex-wrap items-center gap-2"
+        >
+          <span
+            data-testid="settings-timezone"
+          >
+            Asia/Jerusalem - נלקח מ-Windows
+          </span>
+        </div>
+      </div>
+      <div
+        class="flex flex-wrap items-center gap-3 border-b border-line py-3 last:border-b-0"
+        data-testid="settings-row-pause"
+      >
+        <div
+          class="flex min-w-60 grow flex-col"
+        >
+          <span
+            class="font-semibold"
+            id="row-pause"
+          >
+            השהיית הסוכן
+          </span>
+          <span
+            class="text-sm text-text-muted"
+          >
+            בזמן השהיה שום דבר לא מנותח, לא מנוסח, לא נשלח ולא נוצר.
+          </span>
+        </div>
+        <div
+          class="flex flex-wrap items-center gap-2"
+        >
+          <button
+            aria-checked="false"
+            aria-labelledby="row-pause"
+            class="switch"
+            data-testid="settings-pause"
+            role="switch"
+            type="button"
+          >
+            <span
+              class="switch-thumb"
+            />
+          </button>
+        </div>
+      </div>
+    </section>
+    <section
+      aria-labelledby="settings-h-ai"
+      class="border-t border-line pt-4"
+      data-testid="settings-group-ai"
+      id="settings-group-ai"
+    >
+      <h2
+        class="mt-0 mb-1 text-md font-semibold"
+        id="settings-h-ai"
+      >
+        מנוע הבינה
+      </h2>
+      <div
+        class="flex flex-col gap-3"
+        data-embedded="1"
+        data-testid="onboarding-choose-ai"
+      >
+        <div
+          aria-label="מנוע הבינה"
+          class="flex flex-col gap-3"
+          role="radiogroup"
+        >
+          <div
+            class="flex flex-col gap-2 rounded-md p-3 border-2 border-accent bg-accent-soft"
+            data-selected="1"
+            data-testid="ai-card-local"
+          >
+            <label
+              class="flex items-start gap-2"
+            >
+              <input
+                checked=""
+                data-testid="choose-ai-local"
+                name="ai-provider"
+                type="radio"
+                value="local"
+              />
+              <span
+                class="grow font-semibold"
+              >
+                במחשב הזה
+              </span>
+              <span
+                class="chip"
+              >
+                מומלץ
+              </span>
+            </label>
+            <p
+              class="m-0 text-text-muted"
+            >
+              פועל על המחשב הזה ושום דבר לא יוצא ממנו. נדרשת הורדה חד-פעמית של כ-4.6 ג׳יגה-בייט.
+            </p>
+            <p
+              class="m-0 flex items-start gap-2 text-sm text-text-muted"
+            >
+              <svg
+                aria-hidden="true"
+                class="shrink-0"
+                fill="none"
+                height="16"
+                stroke="currentColor"
+                stroke-width="1.5"
+                viewBox="0 0 16 16"
+                width="16"
+              >
+                <path
+                  d="M8 1.8 3.2 3.6v4.1c0 3 2 5.1 4.8 6.5 2.8-1.4 4.8-3.5 4.8-6.5V3.6L8 1.8Z"
+                  stroke-linejoin="round"
+                />
+                <path
+                  d="m5.9 7.9 1.5 1.6 2.9-3.1"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                />
+              </svg>
+              <span>
+                ההודעות שלך לא יוצאות מהמחשב.
+              </span>
+            </p>
+            <div
+              class="flex flex-col gap-2 border-t border-line pt-2"
+              data-testid="ai-local-body"
+            >
+              <p
+                class="m-0"
+              >
+                במחשב הזה יש 16 ג׳יגה-בייט זיכרון, בלי כרטיס מסך ייעודי, ו-100 ג׳יגה-בייט פנויים.
+              </p>
+              <p
+                class="m-0"
+              >
+                ההתאמה הטובה ביותר: רגיל.
+              </p>
+              <div
+                class="flex flex-wrap items-center gap-3"
+              >
+                <p
+                  class="m-0 text-ok"
+                  data-testid="ai-local-ready"
+                >
+                  המודל מוכן על המחשב הזה.
+                </p>
+                <button
+                  aria-expanded="false"
+                  class="btn btn-quiet"
+                  data-testid="ai-size-toggle"
+                  type="button"
+                >
+                  לבחור גודל אחר
+                </button>
+              </div>
+            </div>
+          </div>
+          <div
+            class="flex flex-col gap-2 rounded-md p-3 border border-line bg-surface"
+            data-selected="0"
+            data-testid="ai-card-claude"
+          >
+            <label
+              class="flex items-start gap-2"
+            >
+              <input
+                data-testid="choose-ai-claude"
+                name="ai-provider"
+                type="radio"
+                value="claude"
+              />
+              <span
+                class="grow font-semibold"
+              >
+                Claude (בענן)
+              </span>
+            </label>
+            <p
+              class="m-0 text-text-muted"
+            >
+              מהיר וחזק. השיחה שמנותחת נשלחת אל Anthropic.
+            </p>
+            <p
+              class="m-0 flex items-start gap-2 text-sm text-text-muted"
+            >
+              <svg
+                aria-hidden="true"
+                class="shrink-0"
+                fill="none"
+                height="16"
+                stroke="currentColor"
+                stroke-width="1.5"
+                viewBox="0 0 16 16"
+                width="16"
+              >
+                <path
+                  d="M8 1.8 3.2 3.6v4.1c0 3 2 5.1 4.8 6.5 2.8-1.4 4.8-3.5 4.8-6.5V3.6L8 1.8Z"
+                  stroke-linejoin="round"
+                />
+                <path
+                  d="m5.9 7.9 1.5 1.6 2.9-3.1"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                />
+              </svg>
+              <span>
+                השיחה שמנותחת נשלחת אל חברת Anthropic - בלי שמות ובלי מספרי טלפון.
+              </span>
+            </p>
+          </div>
+          <div
+            class="flex flex-col gap-2 rounded-md p-3 border border-line bg-surface"
+            data-selected="0"
+            data-testid="ai-card-gemini"
+          >
+            <label
+              class="flex items-start gap-2"
+            >
+              <input
+                data-testid="choose-ai-gemini"
+                name="ai-provider"
+                type="radio"
+                value="gemini"
+              />
+              <span
+                class="grow font-semibold"
+              >
+                Gemini (בענן)
+              </span>
+            </label>
+            <p
+              class="m-0 text-text-muted"
+            >
+              מהיר, ויש מסלול חינמי. השיחה שמנותחת נשלחת אל Google.
+            </p>
+            <p
+              class="m-0 flex items-start gap-2 text-sm text-text-muted"
+            >
+              <svg
+                aria-hidden="true"
+                class="shrink-0"
+                fill="none"
+                height="16"
+                stroke="currentColor"
+                stroke-width="1.5"
+                viewBox="0 0 16 16"
+                width="16"
+              >
+                <path
+                  d="M8 1.8 3.2 3.6v4.1c0 3 2 5.1 4.8 6.5 2.8-1.4 4.8-3.5 4.8-6.5V3.6L8 1.8Z"
+                  stroke-linejoin="round"
+                />
+                <path
+                  d="m5.9 7.9 1.5 1.6 2.9-3.1"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                />
+              </svg>
+              <span>
+                השיחה שמנותחת נשלחת אל חברת Google - בלי שמות ובלי מספרי טלפון.
+                 במסלול החינמי ייתכן ש-Google תשתמש בטקסט שלכם כדי לשפר את המודלים שלה.
+              </span>
+            </p>
+          </div>
+        </div>
+      </div>
+      <div
+        class="flex flex-wrap items-center gap-3 border-b border-line py-3 last:border-b-0"
+        data-testid="settings-row-acceleration"
+      >
+        <div
+          class="flex min-w-60 grow flex-col"
+        >
+          <label
+            class="font-semibold"
+            for="settings-acceleration"
+          >
+            האצת כרטיס מסך
+          </label>
+        </div>
+        <div
+          class="flex flex-wrap items-center gap-2"
+        >
+          <select
+            class="field"
+            data-testid="settings-acceleration"
+            id="settings-acceleration"
+          >
+            <option
+              value="auto"
+            >
+              אוטומטית
+            </option>
+            <option
+              value="off"
+            >
+              כבויה
+            </option>
+          </select>
+        </div>
+      </div>
+      <div
+        class="flex flex-wrap items-center gap-3 border-b border-line py-3 last:border-b-0"
+        data-testid="settings-row-speed"
+      >
+        <div
+          class="flex min-w-60 grow flex-col"
+        >
+          <span
+            class="font-semibold"
+          >
+            מהירות במחשב הזה
+          </span>
+        </div>
+        <div
+          class="flex flex-wrap items-center gap-2"
+        >
+          <span
+            data-testid="settings-speed"
+          >
+            טובה
+          </span>
+          <button
+            class="btn btn-outline"
+            data-testid="settings-self-test"
+            type="button"
+          >
+            לבדוק שוב
+          </button>
+          <button
+            class="btn btn-quiet"
+            data-testid="settings-delete-model"
+            type="button"
+          >
+            למחוק את המודל
+          </button>
+        </div>
+      </div>
+      <div
+        class="flex flex-wrap items-center gap-3 border-b border-line py-3 last:border-b-0"
+        data-testid="settings-row-budget"
+      >
+        <div
+          class="flex min-w-60 grow flex-col"
+        >
+          <label
+            class="font-semibold"
+            for="settings-budget"
+          >
+            תקציב ענן יומי
+          </label>
+        </div>
+        <div
+          class="flex flex-wrap items-center gap-2"
+        >
+          <input
+            class="field tnum w-40"
+            data-testid="settings-budget"
+            id="settings-budget"
+            inputmode="numeric"
+            max="5000000"
+            min="10000"
+            step="10000"
+            type="number"
+            value="200000"
+          />
+          <span
+            class="text-text-muted"
+          >
+            טוקנים ליום
+          </span>
+        </div>
+      </div>
+    </section>
+    <section
+      aria-labelledby="settings-h-whatsapp"
+      class="border-t border-line pt-4"
+      data-testid="settings-group-whatsapp"
+      id="settings-group-whatsapp"
+    >
+      <h2
+        class="mt-0 mb-1 text-md font-semibold"
+        id="settings-h-whatsapp"
+      >
+        וואטסאפ
+      </h2>
+      <div
+        class="flex flex-wrap items-center gap-3 border-b border-line py-3 last:border-b-0"
+        data-testid="settings-row-wa-status"
+      >
+        <div
+          class="flex min-w-60 grow flex-col"
+        >
+          <span
+            class="font-semibold"
+          >
+            חיבור
+          </span>
+        </div>
+        <div
+          class="flex flex-wrap items-center gap-2"
+        >
+          <span
+            data-testid="settings-wa-status"
+          >
+            מחובר
+          </span>
+          <button
+            class="btn btn-outline"
+            data-testid="settings-relink"
+            type="button"
+          >
+            לקשר מחדש
+          </button>
+        </div>
+      </div>
+      <div
+        class="flex flex-wrap items-center gap-3 border-b border-line py-3 last:border-b-0"
+        data-testid="settings-row-wipe"
+      >
+        <div
+          class="flex min-w-60 grow flex-col"
+        >
+          <span
+            class="font-semibold"
+          >
+            ניתוק ומחיקה
+          </span>
+        </div>
+        <div
+          class="flex flex-wrap items-center gap-2"
+        >
+          <button
+            class="btn btn-danger"
+            data-testid="settings-wipe"
+            type="button"
+          >
+            לנתק ולמחוק
+          </button>
+        </div>
+      </div>
+    </section>
+    <section
+      aria-labelledby="settings-h-calendar"
+      class="border-t border-line pt-4"
+      data-testid="settings-group-calendar"
+      id="settings-group-calendar"
+    >
+      <h2
+        class="mt-0 mb-1 text-md font-semibold"
+        id="settings-h-calendar"
+      >
+        יומן Google
+      </h2>
+      <div
+        class="flex flex-wrap items-center gap-3 border-b border-line py-3 last:border-b-0"
+        data-testid="settings-row-google-account"
+      >
+        <div
+          class="flex min-w-60 grow flex-col"
+        >
+          <span
+            class="font-semibold"
+          >
+            חשבון Google
+          </span>
+        </div>
+        <div
+          class="flex flex-wrap items-center gap-2"
+        >
+          <span
+            data-testid="settings-google-account"
+          >
+            לא מחובר
+          </span>
+          <button
+            class="btn btn-outline"
+            data-testid="settings-google-reconnect"
+            type="button"
+          >
+            להתחבר
+          </button>
+          <button
+            class="btn btn-quiet"
+            data-testid="settings-google-replace"
+            type="button"
+          >
+            להחליף את קובץ המפתח
+          </button>
+          <button
+            class="btn btn-quiet"
+            data-testid="settings-google-disconnect"
+            type="button"
+          >
+            להתנתק
+          </button>
+        </div>
+      </div>
+      <div
+        class="flex flex-wrap items-center gap-3 border-b border-line py-3 last:border-b-0"
+        data-testid="settings-row-target-calendar"
+      >
+        <div
+          class="flex min-w-60 grow flex-col"
+        >
+          <label
+            class="font-semibold"
+            for="settings-target-calendar"
+          >
+            היומן לאירועים חדשים
+          </label>
+        </div>
+        <div
+          class="flex flex-wrap items-center gap-2"
+        >
+          <select
+            class="field"
+            data-testid="settings-target-calendar"
+            id="settings-target-calendar"
+          >
+            <option
+              value="primary"
+            >
+              Personal
+            </option>
+          </select>
+        </div>
+      </div>
+      <div
+        class="flex flex-wrap items-center gap-3 border-b border-line py-3 last:border-b-0"
+        data-testid="settings-row-conflicts"
+      >
+        <div
+          class="flex min-w-60 grow flex-col"
+        >
+          <span
+            class="font-semibold"
+            id="row-conflicts"
+          >
+            יומנים לבדיקת התנגשויות
+          </span>
+        </div>
+        <div
+          class="flex flex-wrap items-center gap-2"
+        >
+          <div
+            aria-labelledby="row-conflicts"
+            class="flex flex-col gap-1"
+            role="group"
+          >
+            <label
+              class="flex items-center gap-2"
+            >
+              <input
+                checked=""
+                data-testid="settings-conflict-primary"
+                type="checkbox"
+              />
+              <bdi>
+                Personal
+              </bdi>
+            </label>
+          </div>
+        </div>
+      </div>
+    </section>
+    <section
+      aria-labelledby="settings-h-rules"
+      class="border-t border-line pt-4"
+      data-testid="settings-group-rules"
+      id="settings-group-rules"
+    >
+      <h2
+        class="mt-0 mb-1 text-md font-semibold"
+        id="settings-h-rules"
+      >
+        כללי עבודה
+      </h2>
+      <div
+        class="flex flex-wrap items-center gap-3 border-b border-line py-3 last:border-b-0"
+        data-testid="settings-row-unknown"
+      >
+        <div
+          class="flex min-w-60 grow flex-col"
+        >
+          <span
+            class="font-semibold"
+            id="row-unknown"
+          >
+            לנתח שולחים לא מוכרים
+          </span>
+          <span
+            class="text-sm text-text-muted"
+          >
+            כבוי כברירת מחדל: מנותחות רק שיחות עם אנשי קשר שמורים.
+          </span>
+        </div>
+        <div
+          class="flex flex-wrap items-center gap-2"
+        >
+          <button
+            aria-checked="false"
+            aria-labelledby="row-unknown"
+            class="switch"
+            data-testid="settings-unknown-senders"
+            role="switch"
+            type="button"
+          >
+            <span
+              class="switch-thumb"
+            />
+          </button>
+        </div>
+      </div>
+      <div
+        class="flex flex-wrap items-center gap-3 border-b border-line py-3 last:border-b-0"
+        data-testid="settings-row-backlog"
+      >
+        <div
+          class="flex min-w-60 grow flex-col"
+        >
+          <label
+            class="font-semibold"
+            for="settings-backlog"
+          >
+            להתחיל מ
+          </label>
+        </div>
+        <div
+          class="flex flex-wrap items-center gap-2"
+        >
+          <select
+            class="field"
+            data-testid="settings-backlog"
+            id="settings-backlog"
+          >
+            <option
+              value="0"
+            >
+              מרגע הקישור
+            </option>
+            <option
+              value="12"
+            >
+              עד 12 שעות אחורה
+            </option>
+            <option
+              value="24"
+            >
+              עד 24 שעות אחורה
+            </option>
+            <option
+              value="48"
+            >
+              עד 48 שעות אחורה
+            </option>
+            <option
+              value="72"
+            >
+              עד 72 שעות אחורה
+            </option>
+          </select>
+        </div>
+      </div>
+      <div
+        class="flex flex-wrap items-center gap-3 border-b border-line py-3 last:border-b-0"
+        data-testid="settings-row-ambiguous"
+      >
+        <div
+          class="flex min-w-60 grow flex-col"
+        >
+          <span
+            class="font-semibold"
+            id="row-ambiguous"
+          >
+            כששעה אינה חד-משמעית
+          </span>
+        </div>
+        <div
+          class="flex flex-wrap items-center gap-2"
+        >
+          <div
+            aria-labelledby="row-ambiguous"
+            class="flex flex-col gap-1"
+            role="radiogroup"
+          >
+            <label
+              class="flex items-center gap-2"
+            >
+              <input
+                checked=""
+                data-testid="settings-ambiguous-assume"
+                name="settings-ambiguous"
+                type="radio"
+                value="assume"
+              />
+              <span>
+                להניח את השעה הסבירה ולציין זאת בתשובה
+              </span>
+            </label>
+            <label
+              class="flex items-center gap-2"
+            >
+              <input
+                data-testid="settings-ambiguous-ask"
+                name="settings-ambiguous"
+                type="radio"
+                value="ask"
+              />
+              <span>
+                לשאול את האדם לאיזו שעה התכוון
+              </span>
+            </label>
+          </div>
+        </div>
+      </div>
+      <div
+        class="flex flex-wrap items-center gap-3 border-b border-line py-3 last:border-b-0"
+        data-testid="settings-row-duration"
+      >
+        <div
+          class="flex min-w-60 grow flex-col"
+        >
+          <label
+            class="font-semibold"
+            for="settings-duration"
+          >
+            אורך ברירת מחדל לאירוע
+          </label>
+        </div>
+        <div
+          class="flex flex-wrap items-center gap-2"
+        >
+          <select
+            class="field"
+            data-testid="settings-duration"
+            id="settings-duration"
+          >
+            <option
+              value="30"
+            >
+              30 דקות
+            </option>
+            <option
+              value="45"
+            >
+              45 דקות
+            </option>
+            <option
+              value="60"
+            >
+              60 דקות
+            </option>
+            <option
+              value="90"
+            >
+              90 דקות
+            </option>
+            <option
+              value="120"
+            >
+              120 דקות
+            </option>
+          </select>
+        </div>
+      </div>
+      <div
+        class="flex flex-wrap items-center gap-3 border-b border-line py-3 last:border-b-0"
+        data-testid="settings-row-ignored"
+      >
+        <div
+          class="flex min-w-60 grow flex-col"
+        >
+          <span
+            class="font-semibold"
+            id="row-ignored"
+          >
+            שיחות עם כלל משלהן
+          </span>
+        </div>
+        <div
+          class="flex flex-wrap items-center gap-2"
+        >
+          <span
+            class="text-text-muted"
+            data-testid="settings-ignored-empty"
+          >
+            לאף שיחה אין כלל משלה.
+          </span>
+        </div>
+      </div>
+    </section>
+    <section
+      aria-labelledby="settings-h-replies"
+      class="border-t border-line pt-4"
+      data-testid="settings-group-replies"
+      id="settings-group-replies"
+    >
+      <h2
+        class="mt-0 mb-1 text-md font-semibold"
+        id="settings-h-replies"
+      >
+        תשובות
+      </h2>
+      <div
+        class="flex flex-wrap items-center gap-3 border-b border-line py-3 last:border-b-0"
+        data-testid="settings-row-gender"
+      >
+        <div
+          class="flex min-w-60 grow flex-col"
+        >
+          <span
+            class="font-semibold"
+            id="row-gender"
+          >
+            המין הדקדוקי שלכם בתשובות בעברית
+          </span>
+        </div>
+        <div
+          class="flex flex-wrap items-center gap-2"
+        >
+          <div
+            aria-labelledby="row-gender"
+            class="flex flex-wrap items-center gap-3"
+            role="radiogroup"
+          >
+            <label
+              class="flex items-center gap-2"
+            >
+              <input
+                data-testid="settings-gender-m"
+                name="settings-gender"
+                type="radio"
+                value="m"
+              />
+              <span>
+                זכר
+              </span>
+            </label>
+            <label
+              class="flex items-center gap-2"
+            >
+              <input
+                data-testid="settings-gender-f"
+                name="settings-gender"
+                type="radio"
+                value="f"
+              />
+              <span>
+                נקבה
+              </span>
+            </label>
+            <label
+              class="flex items-center gap-2"
+            >
+              <input
+                checked=""
+                data-testid="settings-gender-unspecified"
+                name="settings-gender"
+                type="radio"
+                value="unspecified"
+              />
+              <span>
+                ניסוח ניטרלי
+              </span>
+            </label>
+          </div>
+        </div>
+      </div>
+    </section>
+    <section
+      aria-labelledby="settings-h-privacy"
+      class="border-t border-line pt-4"
+      data-testid="settings-group-privacy"
+      id="settings-group-privacy"
+    >
+      <h2
+        class="mt-0 mb-1 text-md font-semibold"
+        id="settings-h-privacy"
+      >
+        פרטיות ונתונים
+      </h2>
+      <table
+        class="w-full border-collapse text-start text-sm"
+        data-testid="settings-privacy-table"
+      >
+        <caption
+          class="pb-1 text-start font-semibold"
+        >
+          מה יוצא מהמחשב הזה
+        </caption>
+        <thead>
+          <tr>
+            <th
+              class="border-b border-line py-1 text-start"
+              scope="col"
+            >
+              שירות
+            </th>
+            <th
+              class="border-b border-line py-1 text-start"
+              scope="col"
+            >
+              מה נשלח
+            </th>
+            <th
+              class="border-b border-line py-1 text-start"
+              scope="col"
+            >
+              מי מקבל
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <th
+              class="border-b border-line py-1 text-start font-normal"
+              scope="row"
+            >
+              בינה על המחשב הזה
+            </th>
+            <td
+              class="border-b border-line py-1"
+            >
+              שום דבר
+            </td>
+            <td
+              class="border-b border-line py-1"
+            >
+              אף אחד
+            </td>
+          </tr>
+          <tr>
+            <th
+              class="border-b border-line py-1 text-start font-normal"
+              scope="row"
+            >
+              Claude (בינה בענן)
+            </th>
+            <td
+              class="border-b border-line py-1"
+            >
+              הטקסט של השיחה שמנותחת, בלי שמות ובלי מספרי טלפון
+            </td>
+            <td
+              class="border-b border-line py-1"
+            >
+              חברת Anthropic
+            </td>
+          </tr>
+          <tr>
+            <th
+              class="border-b border-line py-1 text-start font-normal"
+              scope="row"
+            >
+              Gemini (בינה בענן)
+            </th>
+            <td
+              class="border-b border-line py-1"
+            >
+              הטקסט של השיחה שמנותחת, בלי שמות ובלי מספרי טלפון
+            </td>
+            <td
+              class="border-b border-line py-1"
+            >
+              חברת Google
+            </td>
+          </tr>
+          <tr>
+            <th
+              class="border-b border-line py-1 text-start font-normal"
+              scope="row"
+            >
+              יומן Google
+            </th>
+            <td
+              class="border-b border-line py-1"
+            >
+              השעות התפוסות והפנויות, והאירועים שאישרתם
+            </td>
+            <td
+              class="border-b border-line py-1"
+            >
+              חברת Google
+            </td>
+          </tr>
+          <tr>
+            <th
+              class="border-b border-line py-1 text-start font-normal"
+              scope="row"
+            >
+              וואטסאפ
+            </th>
+            <td
+              class="border-b border-line py-1"
+            >
+              התשובות שאישרתם
+            </td>
+            <td
+              class="border-b border-line py-1"
+            >
+              האדם שאליו אתם משיבים
+            </td>
+          </tr>
+        </tbody>
+      </table>
+      <div
+        class="flex flex-wrap items-center gap-3 border-b border-line py-3 last:border-b-0"
+        data-testid="settings-row-retention"
+      >
+        <div
+          class="flex min-w-60 grow flex-col"
+        >
+          <label
+            class="font-semibold"
+            for="settings-retention"
+          >
+            לשמור שיחות וטיוטות למשך
+          </label>
+        </div>
+        <div
+          class="flex flex-wrap items-center gap-2"
+        >
+          <select
+            class="field"
+            data-testid="settings-retention"
+            id="settings-retention"
+          >
+            <option
+              value="7"
+            >
+              7 ימים
+            </option>
+            <option
+              value="14"
+            >
+              14 ימים
+            </option>
+            <option
+              value="30"
+            >
+              30 ימים
+            </option>
+            <option
+              value="60"
+            >
+              60 ימים
+            </option>
+            <option
+              value="90"
+            >
+              90 ימים
+            </option>
+          </select>
+        </div>
+      </div>
+      <div
+        class="flex flex-wrap items-center gap-3 border-b border-line py-3 last:border-b-0"
+        data-testid="settings-row-purge"
+      >
+        <div
+          class="flex min-w-60 grow flex-col"
+        >
+          <span
+            class="font-semibold"
+          >
+            למחוק נתונים ישנים עכשיו
+          </span>
+        </div>
+        <div
+          class="flex flex-wrap items-center gap-2"
+        >
+          <button
+            class="btn btn-danger"
+            data-testid="settings-purge"
+            type="button"
+          >
+            למחוק עכשיו
+          </button>
+        </div>
+      </div>
+      <div
+        class="flex flex-wrap items-center gap-3 border-b border-line py-3 last:border-b-0"
+        data-testid="settings-row-diagnostics"
+      >
+        <div
+          class="flex min-w-60 grow flex-col"
+        >
+          <span
+            class="font-semibold"
+          >
+            אבחון
+          </span>
+          <span
+            class="text-sm text-text-muted"
+          >
+            קובץ zip עם יומנים והגדרות - טקסט של הודעות ומפתחות מוסרים תחילה.
+          </span>
+        </div>
+        <div
+          class="flex flex-wrap items-center gap-2"
+        >
+          <button
+            class="btn btn-outline"
+            data-testid="settings-diagnostics"
+            type="button"
+          >
+            לייצא אבחון
+          </button>
+        </div>
+      </div>
+      <div
+        class="flex flex-wrap items-center gap-3 border-b border-line py-3 last:border-b-0"
+        data-testid="settings-row-licences"
+      >
+        <div
+          class="flex min-w-60 grow flex-col"
+        >
+          <span
+            class="font-semibold"
+          >
+            רישיונות קוד פתוח
+          </span>
+        </div>
+        <div
+          class="flex flex-wrap items-center gap-2"
+        >
+          <button
+            class="btn btn-quiet"
+            data-testid="settings-licences"
+            type="button"
+          >
+            להציג את הרישיונות
+          </button>
+        </div>
+      </div>
+    </section>
+  </div>
+</main>
+`;

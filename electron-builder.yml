@@ -1,0 +1,66 @@
+appId: com.ilay.whatsapp-calendar-agent
+productName: WhatsApp Calendar Agent
+directories: { output: dist, buildResources: build }
+files: ['out/**', 'package.json', '!**/*.map', '!out/.e2e-build'] # [W2-04] never ship the e2e marker of scripts/mark-e2e-build.mjs
+asar: true
+npmRebuild: false # no native modules anywhere; NO asarUnpack
+electronLanguages: [en-US, he]
+extraResources:
+  - { from: resources/bridge, to: bridge, filter: ['whatsapp-bridge.exe', 'LICENSE', 'SHA256SUMS'] }
+  - {
+      from: vendor/llama/win-x64-vulkan,
+      to: llama,
+      filter:
+        [
+          'llama-server.exe',
+          'llama-server-impl.dll',
+          'llama-common.dll',
+          'llama.dll',
+          'mtmd.dll',
+          'ggml.dll',
+          'ggml-base.dll',
+          'ggml-vulkan.dll',
+          'ggml-cpu-*.dll',
+          'libomp.dll',
+          'msvcp140.dll',
+          'vcruntime140.dll',
+          'vcruntime140_1.dll',
+          'LICENSE-LLVM-OpenMP',
+        ],
+    } # [R2] explicit allow-list (fetch-llama.mjs already keeps only these)
+  - { from: build-resources/calendar-mcp, to: calendar-mcp }
+  # [W2-04] The entry above copies ONLY package.json + package-lock.json. electron-builder's copy filter
+  # (app-builder-lib/out/util/filter.js: `if (relative === "node_modules") return false`) drops a matcher's ROOT
+  # node_modules unconditionally, for extraResources too - so the staged server would be missing from the package and
+  # every calendar feature would be dead at run time. Pointing a second matcher AT that folder makes its children the
+  # relative paths, which the rule does not touch. The installed layout is exactly the one ARCH 15.3 specifies.
+  # [repair-packaging-blocker] Re-measured against electron-builder 26.15.3 with `--dir`, three forms, same staging
+  # (156 top-level packages / 6721 files):
+  #   a) ARCH 15.2 verbatim, this entry deleted .......................... 0 files under calendar-mcp/node_modules
+  #   b) one entry with `filter: ['**/*', 'node_modules/**']` ............ 0 files  <- an explicit include does NOT
+  #      work: `createFilter` rejects the directory BEFORE minimatch runs, so the walker never descends into it
+  #   c) the two entries below (this file) ............................... 6721 files, byte-identical relative paths
+  # Do not "simplify" this into one entry with a filter; `npm run test:smoke` check 4a fails the build if anyone does.
+  - { from: build-resources/calendar-mcp/node_modules, to: calendar-mcp/node_modules }
+  - { from: resources/icons, to: icons }
+  - { from: resources/links.json, to: links.json } # [R2] resources/onboarding/** removed: no raster onboarding assets in v1
+  - { from: resources/licenses, to: licenses }
+electronFuses:
+  runAsNode: true # REQUIRED by the MCP stdio child (A4) - do NOT "harden" this off; guarded by 15.4
+  enableNodeOptionsEnvironmentVariable: false
+  enableNodeCliInspectArguments: false # => Playwright runs against the UNPACKAGED build
+  onlyLoadAppFromAsar: true
+  enableEmbeddedAsarIntegrityValidation: false # [LR] UNVERIFIED on Windows with 26.15.3
+  enableCookieEncryption: true
+  grantFileProtocolExtraPrivileges: false
+win: { target: [{ target: nsis, arch: [x64] }], icon: build/icon.ico, requestedExecutionLevel: asInvoker }
+nsis: {
+    oneClick: true,
+    perMachine: false,
+    createDesktopShortcut: true,
+    createStartMenuShortcut: true, # Start-menu shortcut REQUIRED for toasts
+    shortcutName: WhatsApp Calendar Agent,
+    runAfterFinish: true,
+    deleteAppDataOnUninstall: false,
+    artifactName: 'WhatsAppCalendarAgent-Setup-${version}.${ext}',
+  }

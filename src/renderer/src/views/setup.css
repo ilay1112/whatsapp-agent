@@ -1,0 +1,131 @@
+/*
+ * src/renderer/src/views/setup.css - the ONE extra stylesheet allowed to W1-16 (build-plan 1.2 hot-spot table).
+ * Everything that can be expressed with the tokens and recipes of styles.css (owner W1-14) lives there; this file holds
+ * only the three things Tailwind utilities cannot express for the onboarding wizard and the settings page:
+ *   1. the QR plate, which must stay WHITE in both themes and must not be smoothed (UX 8.2);
+ *   2. the credentials drop zone's dashed edge and its drag-over state (UX 8.3);
+ *   3. the settings toggle track/thumb (UX 9: 36 x 20, thumb positioned with inset-inline-start so it flips in RTL).
+ * Logical properties only - no left/right/margin-left/... anywhere (TESTS section 9 "Physical-CSS ban").
+ */
+
+/* ---- QR plate (UX 8.2): white in light AND dark, 16 px quiet zone, never mirrored, never smoothed ---- */
+.qr-plate {
+  display: grid;
+  place-items: center;
+  inline-size: 272px;
+  block-size: 272px;
+  padding: 16px;
+  border-radius: var(--radius-lg);
+  background: #ffffff; /* deliberate literal: a QR code needs a white quiet zone in both themes */
+  forced-color-adjust: none;
+}
+
+.qr-image {
+  inline-size: 240px;
+  block-size: 240px;
+  image-rendering: pixelated;
+}
+
+.qr-skeleton {
+  inline-size: 240px;
+  block-size: 240px;
+  border-radius: var(--radius-md);
+  background: var(--color-quote);
+}
+
+/* ---- credentials drop zone (UX 8.3) ---- */
+.drop-zone {
+  display: grid;
+  place-items: center;
+  gap: 8px;
+  inline-size: 100%;
+  min-block-size: 120px;
+  padding: 12px;
+  border: 2px dashed var(--color-line-strong);
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--color-text);
+  font: inherit;
+  text-align: center;
+  cursor: pointer;
+}
+
+.drop-zone:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
+.drop-zone[data-dragover='1'] {
+  border-color: var(--color-accent);
+  background: var(--color-accent-soft);
+}
+
+/* ---- settings toggle (UX 9): the thumb uses inset-inline-start, so "on" is the reading-end side in both scripts ---- */
+.switch {
+  position: relative;
+  flex: none;
+  inline-size: 36px;
+  block-size: 20px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: var(--color-line-strong);
+  cursor: pointer;
+  transition: background-color var(--dur-fast) var(--ease);
+}
+
+.switch:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
+.switch[aria-checked='true'] {
+  background: var(--color-accent);
+}
+
+.switch:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.switch > .switch-thumb {
+  position: absolute;
+  inset-block-start: 1px;
+  inset-inline-start: 1px;
+  display: grid;
+  place-items: center;
+  inline-size: 16px;
+  block-size: 16px;
+  border-radius: 999px;
+  background: var(--color-surface);
+  color: var(--color-accent);
+  transition: inset-inline-start var(--dur-fast) var(--ease);
+}
+
+.switch[aria-checked='true'] > .switch-thumb {
+  inset-inline-start: 17px;
+}
+
+@media (forced-colors: active) {
+  .switch {
+    border-color: CanvasText;
+  }
+  .switch[aria-checked='true'] {
+    background: Highlight;
+  }
+  .drop-zone {
+    border-color: CanvasText;
+  }
+}
+
+/* ---- wizard progress rail (UX 8): a real numbered sequence, so it is an <ol> ---- */
+.rail-connector {
+  flex: 1 1 auto;
+  block-size: 2px;
+  min-inline-size: 12px;
+  background: var(--color-line);
+}
+
+.rail-connector[data-done='1'] {
+  background: var(--color-ok);
+}

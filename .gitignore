@@ -1,0 +1,23 @@
+node_modules/
+out/
+dist/
+release/
+coverage/
+test-results/
+playwright-report/
+*.log
+.env
+.env.*
+!.env.example
+
+# never commit runtime data: WhatsApp session, messages, tokens, models
+store/
+*.db
+*.db-wal
+*.db-shm
+.bridge-token
+*.gguf
+
+# build-time downloads and staged third-party trees (W0)
+vendor/llama/
+build-resources/calendar-mcp/node_modules/

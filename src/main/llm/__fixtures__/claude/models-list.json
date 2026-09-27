@@ -1,0 +1,20 @@
+{
+  "_unverified": true,
+  "_note": "models.list() page. The renderer intersects CLAUDE_MODEL_PRESETS with THIS list; a preset absent here is never rendered.",
+  "data": [
+    { "type": "model", "id": "claude-opus-5", "display_name": "Claude Opus 5", "created_at": "2026-07-24T00:00:00Z" },
+    {
+      "type": "model",
+      "id": "claude-sonnet-5",
+      "display_name": "Claude Sonnet 5",
+      "created_at": "2026-06-30T00:00:00Z"
+    },
+    {
+      "type": "model",
+      "id": "claude-testonly-9",
+      "display_name": "Claude TestOnly 9",
+      "created_at": "2026-09-01T00:00:00Z"
+    }
+  ],
+  "has_more": false
+}

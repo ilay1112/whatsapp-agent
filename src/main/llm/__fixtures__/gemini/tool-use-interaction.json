@@ -1,0 +1,17 @@
+{
+  "_unverified": true,
+  "_note": "interactions.create response, status=requires_action; the thought step carries the signature that must be replayed verbatim",
+  "id": "int_TESTONLY_0001",
+  "status": "requires_action",
+  "steps": [
+    { "type": "thought", "signature": "thoughtsig_TESTONLY_aaa" },
+    { "type": "model_output", "content": [{ "type": "text", "text": "Checking the calendar." }] },
+    {
+      "type": "function_call",
+      "id": "fc_TESTONLY_01",
+      "name": "list_events",
+      "arguments": { "timeMin": "2026-09-24T06:00:00Z", "timeMax": "2026-09-24T18:00:00Z" }
+    }
+  ],
+  "usage": { "total_input_tokens": 1400, "total_output_tokens": 110 }
+}

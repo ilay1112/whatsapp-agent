@@ -1,0 +1,1082 @@
+{
+  "action": {
+    "addAgain": "הוספה נוספת",
+    "addAnyway": "הוספה בכל זאת",
+    "addToCalendar": "הוספה ליומן",
+    "added": "נוסף ליומן",
+    "adding": "מוסיף...",
+    "analyse": "ניתוח",
+    "analyseAgain": "ניתוח מחדש",
+    "analyseChat": "ניתוח השיחה",
+    "approveSend": "אישור ושליחה",
+    "askDetails": "בקשת פרטים",
+    "copied": "הועתק",
+    "copy": "העתקה",
+    "copyReply": "העתקת התשובה",
+    "createAnyway": "יצירה בכל זאת",
+    "dismiss": "התעלמות",
+    "dismissed": "הוסר מהרשימה",
+    "edit": "עריכה",
+    "openInCalendar": "פתיחה ביומן",
+    "resetSuggestion": "חזרה להצעה",
+    "restore": "שחזור",
+    "send": "שליחה",
+    "sendAgain": "שליחה נוספת",
+    "sending": "שולח...",
+    "sent": "נשלח",
+    "undo": "ביטול"
+  },
+  "ai": {
+    "cloud": {
+      "privacy": "השיחה שמנותחת נשלחת אל {{vendor}} - בלי שמות ובלי מספרי טלפון."
+    },
+    "local": {
+      "name": "במחשב הזה",
+      "privacy": "ההודעות שלך לא יוצאות מהמחשב."
+    }
+  },
+  "app": {
+    "announce": {
+      "added": "נוסף ליומן: {{when}}.",
+      "newCards_one": "שיחה אחת חדשה ממתינה לתשובה.",
+      "newCards_other": "{{count}} שיחות חדשות ממתינות לתשובה.",
+      "newCards_two": "{{count}} שיחות חדשות ממתינות לתשובה.",
+      "saved": "נשמר.",
+      "sent": "נשלח אל {{name, bdi}}."
+    },
+    "back": "חזרה",
+    "close": "סגירה",
+    "dashboard": "לוח",
+    "loading": "טוען...",
+    "mainRegion": "תוכן ראשי",
+    "name": "WhatsApp Calendar Agent",
+    "settings": "הגדרות",
+    "tryAgain": "ניסיון נוסף",
+    "version": "גרסה {{version}}",
+    "wordmark": "סוכן יומן לוואטסאפ"
+  },
+  "calendar": {
+    "eventDescription": "נוסף מוואטסאפ על ידי סוכן היומן של וואטסאפ לאחר אישורך.",
+    "primaryName": "היומן הראשי"
+  },
+  "card": {
+    "analyseCancel": "ביטול",
+    "analyseExplain": {
+      "cloud": "ההודעה תישלח אל {{vendor}} לניתוח.",
+      "local": "ההודעה תיקרא על ידי הבינה שבמחשב הזה."
+    },
+    "busyAtThatTime": "יש לך משהו בזמן הזה.",
+    "calendarUnavailable": "היומן לא זמין כרגע.",
+    "changeTime": "שינוי השעה",
+    "changed": "הכרטיס השתנה - כדאי לעבור עליו שוב.",
+    "clickAgain": "לחצו שוב על הכפתור.",
+    "counterLabel": "תווים בשימוש",
+    "draftHidden": "הטיוטה מוסתרת. אפשר לכתוב תשובה משלכם.",
+    "draftLabel": "טיוטת תשובה",
+    "duplicateEvent": "כבר קיים אירוע דומה.",
+    "expired": "ההצעה הזו פגה.",
+    "lidCopyOnly": "המספר מוסתר על ידי וואטסאפ - העתקה בלבד",
+    "media": {
+      "location": "מיקום",
+      "other": "קובץ מצורף",
+      "photo": "תמונה",
+      "sticker": "מדבקה",
+      "voice": "הודעה קולית"
+    },
+    "messageRemoved": "טקסט ההודעה הוסר אחרי 30 ימים.",
+    "neverAnalyse": "לא לנתח את השיחה הזו",
+    "openDetails": "פתיחת הפרטים",
+    "overflow": "פעולות נוספות",
+    "ownLabel": "התשובה שלך",
+    "rateLimited": "הגעת למגבלת השליחות לשעה - זה מגן על החשבון שלך.",
+    "refresh": "רענון הכרטיס",
+    "replyNotSent": "התשובה עוד לא נשלחה",
+    "sendFailed": "השליחה נכשלה. שום דבר לא נשלח.",
+    "sendsTo": "יישלח אל <bdi>{{name}}</bdi>, <bdi dir=\"ltr\">{{phone}}</bdi>",
+    "show": "הצגה",
+    "showDraftAnyway": "הצגת הטיוטה בכל זאת",
+    "showMore": "הצגת הכול",
+    "stillSending": "עדיין שולח - השליחות מרווחות בזמן כדי להגן על החשבון שלך.",
+    "unknownOutcome": "לא הצלחנו לוודא שזה בוצע - כדאי לבדוק בוואטסאפ.",
+    "unknownOutcomeCalendar": "לא הצלחנו לוודא שזה בוצע - כדאי לבדוק ביומן.",
+    "waOffline": "וואטסאפ לא מחובר - השליחה מושהית. אפשר עדיין להעתיק את התשובה.",
+    "writeMyOwn": "כתיבת תשובה משלי",
+    "writeReplyFirst": "כדאי לכתוב תשובה קודם.",
+    "you": "אני:"
+  },
+  "consent": {
+    "cancel": "לא עכשיו",
+    "cloud_claude": {
+      "v1": {
+        "accept": "שליחה אל Claude",
+        "body": "השיחה שמנותחת נשלחת אל Anthropic (Claude) - בלי שמות ובלי מספרי טלפון. Anthropic מעבדת אותה לפי התנאים שלה. אפשר לחזור לבינה שבמחשב בכל רגע.",
+        "title": "שליחת שיחות אל Claude"
+      }
+    },
+    "cloud_gemini": {
+      "v1": {
+        "accept": "שליחה אל Gemini",
+        "body": "השיחה שמנותחת נשלחת אל Google (Gemini) - בלי שמות ובלי מספרי טלפון. Google מעבדת אותה לפי התנאים שלה. אפשר לחזור לבינה שבמחשב בכל רגע.",
+        "title": "שליחת שיחות אל Gemini"
+      }
+    },
+    "detail": {
+      "freeTier": "במסלול החינמי ייתכן ש-Google תשתמש בטקסט שלכם כדי לשפר את המודלים שלה. מפתח בתשלום אינו משמש לכך.",
+      "neverBody": "שמות, מספרי טלפון, קבצים מצורפים, וכל שיחה שהסוכן לא מנתח כרגע.",
+      "neverTitle": "מה לעולם לא נשלח",
+      "sentBody": "הטקסט של השיחה שמנותחת, התאריך של היום, והשעות התפוסות והפנויות ביומן שלכם.",
+      "sentTitle": "מה נשלח",
+      "who": {
+        "cloud_claude": "Anthropic, לפי התנאים שלה. אפשר לחזור בכל רגע למנוע שפועל על המחשב הזה.",
+        "cloud_gemini": "Google, לפי התנאים שלה. אפשר לחזור בכל רגע למנוע שפועל על המחשב הזה."
+      },
+      "whoTitle": "מי מעבד את זה"
+    },
+    "whatsapp_tos": {
+      "v1": {
+        "accept": "הבנתי ואני מאשר/ת",
+        "body": "האפליקציה מתקשרת לוואטסאפ שלכם כמכשיר מקושר באמצעות רכיב לא רשמי. ייתכן שוואטסאפ אינה מתירה זאת; השימוש על אחריותכם. שום דבר לא נשלח בלי אישור שלכם.",
+        "title": "תנאי וואטסאפ"
+      }
+    }
+  },
+  "dialog": {
+    "dbRecovery": {
+      "body": "אפשר לשחזר את הגיבוי מאתמול. הקישור לוואטסאפ נשמר כך או כך.",
+      "restore": "שחזור",
+      "startFresh": "התחלה מחדש",
+      "title": "לא ניתן לפתוח את נתוני האפליקציה"
+    }
+  },
+  "download": {
+    "bytes": "{{done}} מתוך {{total}}",
+    "cancel": "ביטול ההורדה",
+    "downloading": "בהורדה {{percent}} %",
+    "eta": "נשארו בערך {{minutes}} דקות",
+    "etaShort": "עוד {{minutes}} דק׳",
+    "failed": "ההורדה נכשלה",
+    "finished": "ההורדה הסתיימה - הבינה מוכנה.",
+    "pause": "השהיה",
+    "paused": "מושהה {{percent}} %",
+    "resume": "המשך",
+    "showDetails": "הצגת פרטי ההורדה",
+    "speed": "{{speed}} לשנייה",
+    "tier": {
+      "mid": "מודל גדול",
+      "small": "מודל רגיל",
+      "tiny": "מודל קומפקטי"
+    },
+    "title": "הורדת מודל הבינה",
+    "valueText": "{{percent}} אחוז, נשארו בערך {{minutes}} דקות",
+    "valueTextShort": "{{percent}} אחוז",
+    "verifying": "בודק את הקובץ..."
+  },
+  "errors": {
+    "ABORTED": {
+      "action": "המתנה",
+      "body": "הפעולה נעצרה.",
+      "title": "נעצר"
+    },
+    "ACTION_EXPIRED": {
+      "action": "בדיקה מחדש",
+      "body": "היא ישנה מיום. עברו עליה שוב.",
+      "title": "ההצעה הזו פגה"
+    },
+    "ACTION_STALE": {
+      "action": "בדיקה מחדש",
+      "body": "עברו עליו שוב לפני האישור.",
+      "title": "הכרטיס השתנה"
+    },
+    "ACTION_UNKNOWN_OUTCOME": {
+      "action": "שליחה נוספת",
+      "body": "בדקו בוואטסאפ לפני שליחה נוספת.",
+      "title": "לא הצלחנו לוודא שזה בוצע"
+    },
+    "BAD_REQUEST": {
+      "action": "המתנה",
+      "body": "הבקשה לא הייתה תקינה.",
+      "title": "משהו השתבש"
+    },
+    "BRIDGE_BINARY_BLOCKED": {
+      "action": "פתיחת הנחיות",
+      "body": "ייתכן שאנטי-וירוס הסיר אותו.",
+      "title": "רכיב הוואטסאפ חסר או נחסם"
+    },
+    "BRIDGE_CRASH_LOOP": {
+      "action": "ניסיון נוסף",
+      "body": "הוא הופעל מחדש כמה פעמים ועכשיו נח.",
+      "title": "חיבור הוואטסאפ נעצר שוב ושוב"
+    },
+    "BRIDGE_OUTDATED": {
+      "action": "איך מעדכנים",
+      "body": "טיוטות עדיין עובדות ואפשר להעתיק אותן; לשליחה נדרש עדכון של האפליקציה.",
+      "title": "וואטסאפ כבר לא מקבל את הגרסה הזו"
+    },
+    "BRIDGE_SPAWN_REFUSED": {
+      "action": "ייצוא אבחון",
+      "body": "בדיקת בטיחות נכשלה. כלי וואטסאפ אחרים במחשב לא נגעו.",
+      "title": "רכיב הוואטסאפ לא הופעל, מטעמי בטיחות"
+    },
+    "BRIDGE_TS_FORMAT": {
+      "action": "ייצוא אבחון",
+      "body": "תאריכי ההודעות בפורמט לא צפוי.",
+      "title": "לא ניתן לקרוא הודעות חדשות כראוי"
+    },
+    "CAL_CREATE_FAILED": {
+      "action": "ניסיון נוסף",
+      "body": "Google לא קיבל את האירוע.",
+      "title": "האירוע לא נוסף"
+    },
+    "CAL_DUPLICATE": {
+      "action": "יצירה בכל זאת",
+      "body": "Google מצא אירוע שנראה זהה.",
+      "title": "כבר קיים אירוע דומה"
+    },
+    "CAL_PORT_BUSY": {
+      "action": "ניסיון נוסף",
+      "body": "תוכנה אחרת משתמשת בפורטים הדרושים (3500-3505). סגרו אותה ונסו שוב.",
+      "title": "לא ניתן להתחיל את ההתחברות ל-Google"
+    },
+    "CAL_RECONNECT": {
+      "action": "התחברות מחדש",
+      "body": "התחברו שוב. אם זה קורה כל שבוע, פרסמו את פרויקט Google שלכם (ראו שלב 2 בהגדרה).",
+      "title": "החיבור ל-Google פג"
+    },
+    "CAL_TOOLSET_MISMATCH": {
+      "action": "ייצוא אבחון",
+      "body": "הוא כובה מטעמי בטיחות.",
+      "title": "רכיב היומן אינו בגרסה הצפויה"
+    },
+    "CAL_UNAVAILABLE": {
+      "action": "ניסיון נוסף",
+      "body": "תשובות עדיין עובדות; הוספת אירועים מושהית.",
+      "title": "החיבור ליומן נעצר"
+    },
+    "CLOUD_QUOTA": {
+      "action": "פתיחת הגדרות הבינה",
+      "body": "שיחות חדשות ממתינות עד שזה יסודר.",
+      "title": "נגמרה המכסה או היתרה בחשבון הבינה"
+    },
+    "CLOUD_UNAVAILABLE": {
+      "action": "המתנה",
+      "body": "הסוכן ינסה שוב בקרוב.",
+      "title": "שירות הבינה עמוס"
+    },
+    "CONSENT_REQUIRED": {
+      "action": "מתן הסכמה",
+      "body": "קראו ואשרו את הודעת הנתונים לפני השימוש בבינה הזו.",
+      "title": "נדרשת הסכמה קודם"
+    },
+    "DB_RECOVERY": {
+      "action": "שחזור",
+      "body": "אפשר לשחזר את הגיבוי של אתמול. וואטסאפ נשאר מקושר בכל מקרה.",
+      "title": "לא ניתן לפתוח את נתוני האפליקציה"
+    },
+    "DISK_FULL": {
+      "action": "פינוי {{gb}} GB",
+      "body": "פנו {{gb}} GB והמשיכו את ההורדה.",
+      "title": "אין מספיק מקום בדיסק למודל"
+    },
+    "DOWNLOAD_FAILED": {
+      "action": "הורדה מחדש",
+      "body": "היא תמשיך מהמקום שבו נעצרה.",
+      "title": "הורדת המודל נעצרה"
+    },
+    "EVENT_INVALID": {
+      "action": "בדיקה מחדש",
+      "body": "בדקו את התאריך, השעה והמשך.",
+      "title": "פרטי האירוע אינם תקינים"
+    },
+    "GOOGLE_CREDENTIALS_INVALID": {
+      "action": "החלפת קובץ המפתח",
+      "body": "הורידו קובץ מפתח מסוג Desktop app מפרויקט Google שלכם ונסו שוב.",
+      "title": "קובץ המפתח אינו תקין"
+    },
+    "GOOGLE_SIGNIN_TIMEOUT": {
+      "action": "ניסיון נוסף",
+      "body": "ההתחברות לא הושלמה בדפדפן.",
+      "title": "ההתחברות ל-Google לא הושלמה בזמן"
+    },
+    "INTERNAL": {
+      "action": "ייצוא אבחון",
+      "body": "קרתה שגיאה לא צפויה.",
+      "title": "משהו השתבש"
+    },
+    "KEY_INVALID": {
+      "action": "עדכון מפתח",
+      "body": "הבינה מושהית עד שתעדכנו אותו.",
+      "title": "מפתח ה-API לא התקבל"
+    },
+    "KEY_MISSING": {
+      "action": "הזנת מפתח",
+      "body": "לא ניתן לקרוא את המפתח השמור במחשב הזה.",
+      "title": "נדרש מפתח API"
+    },
+    "LLM_BAD_OUTPUT": {
+      "action": "ניתוח מחדש",
+      "body": "עדיין אפשר לענות בעצמכם.",
+      "title": "לא הצלחנו לנתח את השיחה"
+    },
+    "LLM_LOCAL_FAILED": {
+      "action": "בדיקה חוזרת",
+      "body": "אפשר לבדוק שוב או לבחור מודל קטן יותר. השיחות ממתינות ככרטיסים פשוטים.",
+      "title": "הבינה במחשב הזה לא עלתה"
+    },
+    "LLM_NOT_READY": {
+      "action": "המתנה",
+      "body": "השיחות ממתינות רגע עד שהיא מוכנה.",
+      "title": "הבינה מתכוננת"
+    },
+    "LLM_VCREDIST_MISSING": {
+      "action": "התקנת הרכיב של Microsoft",
+      "body": "הבינה במחשב הזה צריכה את Microsoft Visual C++ runtime.",
+      "title": "חסר רכיב הפעלה של Microsoft"
+    },
+    "MODEL_MISSING": {
+      "action": "הורדה מחדש",
+      "body": "צריך להוריד אותו מחדש.",
+      "title": "קובץ המודל חסר או פגום"
+    },
+    "MODEL_NOT_FOUND": {
+      "action": "בחירת מודל",
+      "body": "בחרו מודל אחר כדי להמשיך.",
+      "title": "המודל שנבחר כבר לא זמין"
+    },
+    "NOT_FOUND": {
+      "action": "המתנה",
+      "body": "ייתכן שהוא הוסר.",
+      "title": "הפריט הזה כבר לא קיים"
+    },
+    "RATE_LIMIT_CREATE": {
+      "action": "המתנה",
+      "body": "נוספו יותר מדי אירועים לאחרונה.",
+      "title": "הוספת אירועים מושהית לרגע"
+    },
+    "RATE_LIMIT_RETRIAGE": {
+      "action": "המתנה",
+      "body": "השיחה הזו נותחה יותר מדי פעמים לאחרונה.",
+      "title": "הניתוח מושהה לרגע"
+    },
+    "RATE_LIMIT_SEND": {
+      "action": "המתנה",
+      "body": "נשלחו יותר מדי הודעות לאחרונה.",
+      "title": "השליחה מושהית לרגע"
+    },
+    "SEND_FAILED": {
+      "action": "ניסיון נוסף",
+      "body": "וואטסאפ לא קיבל אותה.",
+      "title": "ההודעה לא נשלחה"
+    },
+    "SEND_NOT_CONNECTED": {
+      "action": "העתקה במקום",
+      "body": "אפשר להעתיק את התשובה ולשלוח מהטלפון.",
+      "title": "וואטסאפ לא מחובר"
+    },
+    "SEND_NOT_SENDABLE": {
+      "action": "העתקה במקום",
+      "body": "וואטסאפ מסתיר את המספר. העתיקו את התשובה ושלחו מהטלפון.",
+      "title": "אי אפשר לשלוח לשיחה הזו מכאן"
+    },
+    "WA_LOGGED_OUT": {
+      "action": "קישור מחדש",
+      "body": "קשרו אותו שוב כדי להמשיך. הכרטיסים נשארים.",
+      "title": "המחשב נותק מוואטסאפ"
+    },
+    "WA_OFFLINE": {
+      "action": "בדיקת החיבור לאינטרנט",
+      "body": "השליחה מושהית עד שהחיבור יחזור. העתקה עדיין עובדת.",
+      "title": "וואטסאפ לא מחובר כבר זמן מה"
+    },
+    "WA_TOS_REQUIRED": {
+      "action": "אישור התנאים",
+      "body": "רכיב הוואטסאפ מופעל רק אחרי אישור התנאים.",
+      "title": "יש לאשר קודם את תנאי וואטסאפ"
+    },
+    "WINDOW_NOT_FOCUSED": {
+      "action": "מעבר לחלון",
+      "body": "אישורים עובדים רק בחלון הפעיל.",
+      "title": "הביאו קודם את החלון לחזית"
+    }
+  },
+  "event": {
+    "calendarLabel": "יומן:",
+    "change": "שינוי",
+    "editDetails": "עריכת פרטי האירוע",
+    "error": {
+      "duration": "בחרו משך בין 5 דקות ל-12 שעות.",
+      "endBeforeStart": "שעת הסיום צריכה להיות אחרי ההתחלה.",
+      "past": "השעה הזו כבר עברה.",
+      "tooFar": "זה יותר משנה קדימה."
+    },
+    "field": {
+      "date": "תאריך",
+      "from": "משעה",
+      "title": "כותרת",
+      "to": "עד שעה",
+      "where": "מקום"
+    },
+    "inCalendar": "נוסף ליומן",
+    "missing": "חסר: {{fields}}",
+    "needed": "נדרש",
+    "noInvites": "לא נשלחות הזמנות",
+    "timeUnknown": "שעה?"
+  },
+  "footer": {
+    "undoDismiss": "ביטול התעלמות"
+  },
+  "google": {
+    "calendarLabel": "היומן לאירועים חדשים",
+    "connected": "מחובר ליומן Google.",
+    "goToStep": "מעבר לשלב {{number}}",
+    "hebrewNote": "הדפים של Google עשויים להיפתח באנגלית.",
+    "intro": {
+      "body1": "הסוכן יוצר אירועים ביומן שלכם. לשם כך דרוש מפתח חינמי ששייך לכם.",
+      "body2": "חמישה שלבים קצרים באתר של Google, כחמש דקות. אפשר גם לעשות זאת מאוחר יותר.",
+      "later": "אחר כך - תשובות בלבד",
+      "privacy": "הסוכן קורא את השעות התפוסות והפנויות ביומן ויוצר רק את האירועים שאישרתם.",
+      "start": "להתחיל"
+    },
+    "next": "הבא",
+    "step1": {
+      "btn1": "פתיחה: פרויקט חדש",
+      "btn2": "פתיחה: הפעלת Calendar API",
+      "i1": "פתחו את מסוף Google Cloud וצרו פרויקט חדש. כל שם מתאים.",
+      "i2": "כשהפרויקט הזה נבחר, פתחו את הדף של Google Calendar API ולחצו Enable.",
+      "tip": "אם דף מבקש לבחור ארגון, בחרו No organisation.",
+      "title": "יצירת פרויקט"
+    },
+    "step2": {
+      "btn1": "פתיחה: מסך ההסכמה",
+      "btn2": "פתיחה: פרסום האפליקציה",
+      "i1": "פתחו את OAuth consent screen ובחרו External.",
+      "i2": "מלאו שם אפליקציה ואת כתובת האימייל שלכם, ושמרו.",
+      "i3": "בדף Audience לחצו Publish app, כדי שההתחברות לא תפוג אחרי שבעה ימים.",
+      "testingBody": "במצב Testing גוגל מנתקת אתכם אחרי שבעה ימים, והסוכן מבקש להתחבר מחדש.",
+      "testingTitle": "מה קורה אם משאירים במצב Testing?",
+      "title": "הגדרת מסך ההסכמה"
+    },
+    "step3": {
+      "btn1": "פתיחה: Credentials",
+      "copyName": "להעתיק את השם",
+      "i1": "פתחו Credentials, לחצו Create credentials ואז OAuth client ID.",
+      "i2": "ב-Application type בחרו Desktop app - לא Web application.",
+      "i3": "השתמשו בשם שלמטה, כדי לזהות אותו בהמשך.",
+      "i4": "לחצו Create ואז Download JSON.",
+      "title": "יצירת המפתח"
+    },
+    "step4": {
+      "accepted": "קובץ המפתח התקבל.",
+      "browse": "לבחור קובץ",
+      "drop": "גררו לכאן את קובץ ה-JSON שהורדתם",
+      "hint": "הקובץ נשאר במקומו - נקרא רק תוכנו.",
+      "title": "הוספת קובץ המפתח"
+    },
+    "step5": {
+      "firewall": "ייתכן ש-Windows ישאל אם לאפשר לאפליקציה להשתמש ברשת - גם Cancel וגם Allow מתאימים.",
+      "helpUnverified": "עוד על ההודעה שהאפליקציה לא אומתה",
+      "openAgain": "לפתוח שוב את הדפדפן",
+      "signIn": "להתחבר עם Google",
+      "title": "התחברות",
+      "unverified": "Google תציג הודעה שהאפליקציה לא אומתה. זה צפוי: האפליקציה שלכם ואתם המשתמש היחיד שלה. בחרו Advanced ואז Go to (שם האפליקציה שלכם).",
+      "waiting": "ממתינים לדפדפן..."
+    },
+    "substep": "שלב {{current}} מתוך {{total}}",
+    "title": "חיבור ליומן Google"
+  },
+  "header": {
+    "backToDashboard": "חזרה ללוח",
+    "pause": "השהיה",
+    "resume": "המשך"
+  },
+  "health": {
+    "action": {
+      "connect": "חיבור",
+      "link": "קישור"
+    },
+    "attention": "דרוש טיפול",
+    "attentionPart": {
+      "calendar": "היומן דורש טיפול",
+      "llm": "הבינה דורשת טיפול",
+      "whatsapp": "וואטסאפ דורש טיפול"
+    },
+    "calendar": {
+      "connected": "מחובר",
+      "needs_sign_in": "התחברו ל-Google כדי להוסיף אירועים",
+      "not_configured": "לא מחובר - תשובות בלבד",
+      "port_busy": "לא ניתן להתחיל את ההתחברות ל-Google",
+      "reconnect_required": "החיבור ל-Google פג",
+      "signing_in": "מתחבר...",
+      "starting": "מתחיל...",
+      "toolset_mismatch": "רכיב היומן אינו בגרסה הצפויה",
+      "unavailable": "החיבור ליומן נעצר"
+    },
+    "llm": {
+      "consent_missing": "נדרש קודם אישור שלך.",
+      "degraded": "{{provider}} - מנסה שוב...",
+      "downloading": "{{provider}} - בהורדה, {{percent}} %",
+      "failed": "{{provider}} - לא פועל.",
+      "idle": "{{provider}} - מוכן, יופעל בעת הצורך",
+      "key_invalid": "מפתח ה-API לא התקבל.",
+      "key_missing": "נדרש מפתח API.",
+      "model_missing": "קובץ המודל חסר.",
+      "quota": "נגמרה המכסה או היתרה בחשבון הבינה.",
+      "ready": "{{provider}} - מוכן",
+      "self_testing": "{{provider}} - בודק מהירות...",
+      "starting": "{{provider}} - מתחיל...",
+      "verifying": "{{provider}} - בודק את הקובץ...",
+      "waitingNote": "השיחות ממתינות ככרטיסים פשוטים עד שהיא מוכנה."
+    },
+    "ok": "הכול פועל",
+    "panelTitle": "מצב",
+    "part": {
+      "calendar": "יומן",
+      "llm": "בינה",
+      "whatsapp": "וואטסאפ"
+    },
+    "paused": "מושהה",
+    "provider": {
+      "claude": "Claude",
+      "gemini": "Gemini",
+      "local": "מודל מקומי"
+    },
+    "showDetails": "הצגת פרטי המצב",
+    "since": "כבר {{value}}",
+    "whatsapp": {
+      "backoff": "יופעל מחדש עוד רגע...",
+      "failed": "נעצר אחרי שגיאות חוזרות.",
+      "logged_out": "המחשב נותק.",
+      "needs_pairing": "ממתין לקישור הוואטסאפ",
+      "not_started": "עוד לא הופעל - יש לאשר את תנאי וואטסאפ כדי להתחיל.",
+      "online": "מחובר",
+      "outdated": "וואטסאפ כבר לא מקבל את הגרסה הזו.",
+      "reconnecting": "מתחבר מחדש...",
+      "refused": "לא הופעל, מטעמי בטיחות.",
+      "starting": "מתחיל...",
+      "stopped": "עצור."
+    },
+    "working": "עובד על זה"
+  },
+  "ignored": {
+    "empty": "אין מה לשחזר.",
+    "title": "הוסרו מהרשימה"
+  },
+  "label": {
+    "assumption": {
+      "default_duration": "נעשה שימוש במשך ברירת המחדל",
+      "hour_assumed_am": "הונח בוקר",
+      "hour_assumed_pm": "הונח אחר הצהריים"
+    },
+    "badge": {
+      "change_in_google": "שונה ב-Google",
+      "conflict": "חופף לאירוע אחר",
+      "lang_mismatch": "שפה שונה",
+      "link_removed": "קישור הוסר",
+      "manipulation": "בקשה חשודה",
+      "older_message": "הודעה ישנה",
+      "personal_details": "פרטים אישיים",
+      "time_assumed": "השעה הונחה"
+    },
+    "bridgeStatus": {
+      "backoff": "יופעל מחדש בקרוב",
+      "failed": "נעצר אחרי שגיאות חוזרות",
+      "logged_out": "נותק",
+      "needs_pairing": "דורש קישור",
+      "not_started": "לא הופעל",
+      "online": "מחובר",
+      "outdated": "נדרש עדכון",
+      "reconnecting": "מתחבר מחדש",
+      "refused": "לא הופעל, מטעמי בטיחות",
+      "starting": "מתחיל",
+      "stopped": "נעצר"
+    },
+    "closedReason": {
+      "answered_elsewhere": "נענה מהטלפון",
+      "dismissed": "הוסר מהרשימה",
+      "expired": "פג תוקף",
+      "not_needed": "לא נדרשת תשובה",
+      "past": "כבר התקיים",
+      "replied": "נענה",
+      "superseded": "הוחלף בהודעה חדשה יותר"
+    },
+    "credentialsProblem": {
+      "bad_client_id": "מזהה הלקוח לא נראה כמו מזהה לקוח של Google",
+      "bad_endpoint": "הקובץ מפנה לשרת שאינו של Google",
+      "no_localhost_redirect": "בקובץ אין הפניה ל-localhost",
+      "no_secret": "בקובץ אין client secret",
+      "not_installed_type": "יצרתם לקוח מסוג Web application; צרו לקוח מסוג Desktop app במקום",
+      "not_json": "הקובץ אינו קובץ מפתח JSON",
+      "too_large": "הקובץ גדול מדי"
+    },
+    "errorAction": {
+      "accept_terms": "אישור התנאים",
+      "analyse_again": "ניתוח מחדש",
+      "check_internet": "בדיקת החיבור לאינטרנט",
+      "choose_model": "בחירת מודל",
+      "copy_instead": "העתקה במקום",
+      "create_anyway": "יצירה בכל זאת",
+      "download_again": "הורדה מחדש",
+      "enter_key": "הזנת מפתח",
+      "export_diagnostics": "ייצוא אבחון",
+      "focus_window": "מעבר לחלון",
+      "free_disk": "פינוי מקום בדיסק",
+      "give_consent": "מתן הסכמה",
+      "how_to_update": "איך מעדכנים",
+      "install_vcredist": "התקנת הרכיב של Microsoft",
+      "none": "",
+      "open_ai_settings": "פתיחת הגדרות הבינה",
+      "open_instructions": "פתיחת הנחיות",
+      "reconnect_google": "התחברות מחדש",
+      "relink": "קישור מחדש",
+      "replace_credentials": "החלפת קובץ המפתח",
+      "restore_db": "שחזור",
+      "review_again": "בדיקה מחדש",
+      "send_again": "שליחה נוספת",
+      "test_again": "בדיקה חוזרת",
+      "try_again": "ניסיון נוסף",
+      "update_key": "עדכון מפתח"
+    },
+    "holdReason": {
+      "budget": "המכסה היומית של הבינה נוצלה",
+      "paused": "מושהה",
+      "unknown_sender": "איש קשר חדש - לא נותח",
+      "waiting_llm": "ממתין לבינה"
+    },
+    "llmStatus": {
+      "consent_missing": "נדרשת הסכמה",
+      "degraded": "מנסה שוב",
+      "downloading": "מוריד",
+      "failed": "נכשל",
+      "idle": "במנוחה",
+      "key_invalid": "המפתח לא התקבל",
+      "key_missing": "המפתח חסר",
+      "model_missing": "המודל חסר",
+      "quota": "המכסה נגמרה",
+      "ready": "מוכן",
+      "self_testing": "בבדיקה",
+      "starting": "מתחיל",
+      "verifying": "מאמת"
+    },
+    "mcpStatus": {
+      "connected": "מחובר",
+      "needs_sign_in": "נדרשת התחברות",
+      "not_configured": "לא הוגדר",
+      "port_busy": "הפורט תפוס",
+      "reconnect_required": "נדרשת התחברות מחדש",
+      "signing_in": "מתחבר",
+      "starting": "מתחיל",
+      "toolset_mismatch": "גרסה לא צפויה",
+      "unavailable": "לא זמין"
+    },
+    "missingField": {
+      "confirmation": "אישור",
+      "date": "יום",
+      "duration": "משך",
+      "location": "מקום",
+      "time": "שעה",
+      "who": "עם מי"
+    },
+    "pairingStatus": {
+      "connected": "מחובר",
+      "connecting": "מתחבר",
+      "error": "משהו השתבש",
+      "logged_out": "נותק",
+      "qr_pending": "סרקו את הקוד",
+      "timeout": "הקוד פג",
+      "unavailable": "לא זמין"
+    }
+  },
+  "language": {
+    "en": "English",
+    "he": "עברית",
+    "label": "שפה"
+  },
+  "list": {
+    "analysing_one": "מנתח שיחה אחת...",
+    "analysing_other": "מנתח {{count}} שיחות...",
+    "analysing_two": "מנתח {{count}} שיחות...",
+    "empty": {
+      "inCalendar": "אירועים שתאשרו יופיעו כאן.",
+      "inCalendarNotConnected": "חברו את יומן Google כדי להוסיף אירועים.",
+      "infoMissing": "כשחסרים לתוכנית יום או שעה, היא תופיע כאן עם שאלה שאפשר לשלוח.",
+      "needsReply": "אין הודעות שמחכות לך. הסוכן ממשיך לעקוב ברקע.",
+      "needsReplyNotLinked": "קשרו את וואטסאפ כדי להתחיל.",
+      "needsReplyPaused": "הסוכן מושהה.",
+      "needsReplyQueue_one": "מנתח שיחה אחת... הכרטיסים יופיעו כאן כשיהיו מוכנים.",
+      "needsReplyQueue_other": "מנתח {{count}} שיחות... הכרטיסים יופיעו כאן כשיהיו מוכנים.",
+      "needsReplyQueue_two": "מנתח {{count}} שיחות... הכרטיסים יופיעו כאן כשיהיו מוכנים."
+    },
+    "in_calendar": "ביומן",
+    "info_missing": "חסרים פרטים",
+    "latestOf": "מוצגות 20 האחרונות מתוך {{count}}",
+    "loadFailed": "לא הצלחנו לטעון את הכרטיסים.",
+    "needs_reply": "ממתינות לתשובה",
+    "stillLoading": "עדיין נטען..."
+  },
+  "missing": {
+    "confirmation": "אישור",
+    "date": "יום",
+    "duration": "משך",
+    "location": "מקום",
+    "time": "שעה",
+    "who": "עם מי"
+  },
+  "notify": {
+    "attention": {
+      "body": "פתחו את האפליקציה כדי לתקן."
+    },
+    "firstHide": {
+      "body": "תחת הסמלים המוסתרים. ליציאה: לחיצה ימנית על הסמל ואז יציאה.",
+      "title": "ממשיך לפעול ליד השעון"
+    },
+    "needsReply": {
+      "body": "פתחו את האפליקציה כדי לעבור על ההצעה.",
+      "title": "שיחה ממתינה לתשובה שלך"
+    },
+    "needsReplyMany": {
+      "title_one": "שיחה אחת ממתינה לתשובה שלך",
+      "title_other": "{{count}} שיחות ממתינות לתשובה שלך",
+      "title_two": "{{count}} שיחות ממתינות לתשובה שלך"
+    }
+  },
+  "onboarding": {
+    "ai": {
+      "claude": {
+        "desc": "מהיר וחזק. השיחה שמנותחת נשלחת אל Anthropic.",
+        "name": "Claude (בענן)"
+      },
+      "err": {
+        "auth": "{{vendor}} לא קיבלה את המפתח הזה.",
+        "billing": "למפתח הזה לא נותרה מכסה אצל {{vendor}}.",
+        "format": "זה לא נראה כמו מפתח. העתיקו את כל השורה מהדף של הספק.",
+        "model_not_found": "{{vendor}} לא מציעה את המודל שנבחר עבור המפתח הזה.",
+        "network": "לא הצלחנו להגיע אל {{vendor}}. בדקו את החיבור ונסו שוב.",
+        "other": "הבדיקה נכשלה אצל {{vendor}}. נסו שוב."
+      },
+      "gemini": {
+        "desc": "מהיר, ויש מסלול חינמי. השיחה שמנותחת נשלחת אל Google.",
+        "freeTier": "במסלול החינמי ייתכן ש-Google תשתמש בטקסט שלכם כדי לשפר את המודלים שלה.",
+        "name": "Gemini (בענן)"
+      },
+      "groupLabel": "מנוע הבינה",
+      "key": {
+        "check": "לשמור ולבדוק",
+        "checking": "בודקים...",
+        "help": "איפה משיגים מפתח?",
+        "hide": "להסתיר",
+        "label": "מפתח API",
+        "ok": "המפתח עובד.",
+        "paste": "להדביק",
+        "remove": "להסיר",
+        "replace": "להחליף",
+        "saved": "המפתח נשמר, מסתיים ב-{{last4}}.",
+        "show": "להציג"
+      },
+      "local": {
+        "bestFit": "ההתאמה הטובה ביותר: {{model}}.",
+        "checkAgain": "לבדוק שוב",
+        "chooseSize": "לבחור גודל אחר",
+        "desc": "פועל על המחשב הזה ושום דבר לא יוצא ממנו. נדרשת הורדה חד-פעמית של כ-{{size}} ג׳יגה-בייט.",
+        "download": "להוריד ולהמשיך",
+        "downloading": "ההורדה ממשיכה ברקע - אפשר להמשיך הלאה.",
+        "graphicsCard": "כרטיס מסך ייעודי",
+        "graphicsNone": "בלי כרטיס מסך ייעודי",
+        "hardware": "במחשב הזה יש {{ram}} ג׳יגה-בייט זיכרון, {{graphics}}, ו-{{disk}} ג׳יגה-בייט פנויים.",
+        "noSpace": "אין מספיק מקום פנוי: נדרשים {{needed}} ג׳יגה-בייט, ופנויים {{available}}.",
+        "ready": "המודל מוכן על המחשב הזה.",
+        "sizeLabel": "גודל המודל"
+      },
+      "model": {
+        "customLabel": "או הקלידו מזהה מודל",
+        "label": "מודל"
+      },
+      "recommended": "מומלץ",
+      "reviewConsent": "לקרוא מה נשלח",
+      "tier": {
+        "mid": "גדול",
+        "small": "רגיל",
+        "tiny": "קומפקטי"
+      },
+      "tierNote": {
+        "mid": "התשובות הטובות ביותר, אבל איטי יותר במחשב בלי כרטיס מסך.",
+        "small": "הבחירה המאוזנת לרוב המחשבים.",
+        "tiny": "ההורדה הקטנה ביותר, והתשובות הפשוטות ביותר."
+      },
+      "tierWithSize": "{{name}} ({{size}} ג׳יגה-בייט)",
+      "title": "בחירת מנוע הבינה",
+      "vendor": {
+        "claude": "חברת Anthropic",
+        "gemini": "חברת Google"
+      }
+    },
+    "continue": "להמשיך",
+    "rail": {
+      "label": "שלבי ההתקנה",
+      "step1": "בינה",
+      "step2": "וואטסאפ",
+      "step3": "יומן",
+      "step4": "סיום"
+    },
+    "ready": {
+      "ai": "בינה",
+      "aiDownloading": "בהורדה, {{percent}}%",
+      "aiPending": "עדיין לא הוגדרה - שיחות יופיעו ככרטיסים פשוטים",
+      "aiReady": "מוכנה על המחשב הזה",
+      "autostart": "להפעיל את הסוכן עם ההפעלה של Windows",
+      "bitlocker": "השיחות והטיוטות נשמרות על המחשב הזה. הפעילו הצפנת מכשיר כדי שיישארו מוגנות אם הוא יאבד.",
+      "calendar": "יומן",
+      "calendarPending": "עדיין לא מחובר",
+      "calendarReady": "מחובר",
+      "calendarSkipped": "דולג - תשובות בלבד",
+      "checklistLabel": "רשימת ההתקנה",
+      "cloudSynced": "נראה שתיקיית האפליקציה מסונכרנת לענן, וכך עותק של השיחות יוצא מהמחשב הזה.",
+      "open": "לפתוח את הסוכן",
+      "title": "הכול מוכן",
+      "tray1": "סגירת החלון אינה עוצרת את הסוכן.",
+      "tray2": "תמצאו אותו ליד השעון, מתחת לחץ ^. לחיצה ימנית עליו פותחת השהיה או יציאה.",
+      "whatToDo": "מה עושים",
+      "whatsapp": "וואטסאפ",
+      "whatsappPending": "עדיין לא מקושר",
+      "whatsappReady": "מקושר"
+    },
+    "welcome": {
+      "accept": "הבנתי את הסיכון ואני מקבל אותו",
+      "beforeTitle": "לפני שמתחילים",
+      "body1": "האפליקציה קוראת את שיחות הוואטסאפ שלכם, מנסחת עבורכם תשובות ומכינה אירועי יומן.",
+      "body2": "הכול פועל על המחשב הזה, וההתקנה נמשכת כחמש דקות.",
+      "languageLabel": "שפת הממשק",
+      "risk1": "האפליקציה מתחברת לוואטסאפ כמכשיר מקושר באמצעות רכיב לא רשמי. וואטסאפ אינה תומכת בכך.",
+      "risk2": "ייתכן שחשבון הוואטסאפ שלכם יוגבל או ייחסם. השימוש באפליקציה הוא על אחריותכם.",
+      "title": "ברוכים הבאים"
+    }
+  },
+  "pair": {
+    "connected": "מחובר. הודעות ישנות לא נקראות - הסוכן מתחיל מעכשיו.",
+    "title": "קישור הוואטסאפ"
+  },
+  "pairing": {
+    "countdown": "הקוד יפוג בעוד {{time}}",
+    "expired": "הקוד פג.",
+    "newCode": "קוד חדש",
+    "noSlot": "וואטסאפ מאפשרת מספר מוגבל של מכשירים מקושרים. הסירו אחד בטלפון ונסו שוב.",
+    "preparing": "מכינים קוד...",
+    "qrAlt": "קוד קישור",
+    "step1": "בטלפון פתחו את וואטסאפ ואז הגדרות.",
+    "step2": "הקישו על מכשירים מקושרים ואז על קישור מכשיר.",
+    "step3": "כוונו את הטלפון אל הקוד שבמסך הזה.",
+    "stepsLabel": "איך לקשר מהטלפון",
+    "unavailableBody": "רכיב הוואטסאפ אינו פועל. פתחו את ההגדרות כדי לראות מדוע.",
+    "unavailableTitle": "הקישור אינו זמין",
+    "waiting": "ממתינים לטלפון..."
+  },
+  "settings": {
+    "ai": {
+      "accel": {
+        "auto": "אוטומטית",
+        "off": "כבויה"
+      },
+      "accelerationLabel": "האצת כרטיס מסך",
+      "budgetLabel": "תקציב ענן יומי",
+      "budgetSuffix": "טוקנים ליום",
+      "deleteModel": "למחוק את המודל",
+      "deleteModelBody": "זה משחרר מקום בדיסק. אפשר להוריד אותו שוב בהמשך.",
+      "deleteModelTitle": "למחוק את המודל שהורד?",
+      "speedGood": "טובה",
+      "speedLabel": "מהירות במחשב הזה",
+      "speedSlow": "איטית - תשובה עשויה לקחת כמה דקות",
+      "speedUnknown": "עדיין לא נמדדה",
+      "testAgain": "לבדוק שוב",
+      "tier": {
+        "auto": "אוטומטי"
+      }
+    },
+    "calendar": {
+      "accountLabel": "חשבון Google",
+      "conflictLabel": "יומנים לבדיקת התנגשויות",
+      "disconnect": "להתנתק",
+      "disconnectBody": "הסוכן ימשיך לנסח תשובות אבל יפסיק ליצור אירועים.",
+      "disconnectTitle": "להתנתק מיומן Google?",
+      "noAccount": "לא מחובר",
+      "reconnect": "להתחבר",
+      "replaceKey": "להחליף את קובץ המפתח",
+      "targetLabel": "היומן לאירועים חדשים"
+    },
+    "dialog": {
+      "keep": "להשאיר כמו שזה"
+    },
+    "general": {
+      "autostartDesc": "הסוכן עולה למגש המערכת עם הכניסה למחשב.",
+      "autostartLabel": "הפעלה עם Windows",
+      "lang": {
+        "system": "השפה של Windows"
+      },
+      "languageLabel": "שפה",
+      "notif": {
+        "generic": "פועלות",
+        "off": "כבויות"
+      },
+      "notificationsDesc": "התראה לעולם אינה מכילה טקסט של הודעה.",
+      "notificationsLabel": "התראות",
+      "pauseDesc": "בזמן השהיה שום דבר לא מנותח, לא מנוסח, לא נשלח ולא נוצר.",
+      "pauseLabel": "השהיית הסוכן",
+      "timeZoneLabel": "אזור זמן",
+      "timeZoneValue": "{{zone}} - נלקח מ-Windows"
+    },
+    "group": {
+      "ai": "מנוע הבינה",
+      "calendar": "יומן Google",
+      "general": "כללי",
+      "privacy": "פרטיות ונתונים",
+      "replies": "תשובות",
+      "rules": "כללי עבודה",
+      "whatsapp": "וואטסאפ"
+    },
+    "navLabel": "קבוצות ההגדרות",
+    "privacy": {
+      "diag": "לייצא אבחון",
+      "diagDesc": "קובץ zip עם יומנים והגדרות - טקסט של הודעות ומפתחות מוסרים תחילה.",
+      "diagLabel": "אבחון",
+      "head": {
+        "provider": "שירות",
+        "what": "מה נשלח",
+        "who": "מי מקבל"
+      },
+      "licences": "להציג את הרישיונות",
+      "licencesBody": "ההודעות המלאות נמצאות בקובץ THIRD_PARTY_NOTICES.txt שבתיקיית האפליקציה.",
+      "licencesLabel": "רישיונות קוד פתוח",
+      "purge": "למחוק עכשיו",
+      "purgeBody": "שיחות, טיוטות וכרטיסים סגורים ישנים ממגבלת השמירה יימחקו מהמחשב הזה.",
+      "purgeLabel": "למחוק נתונים ישנים עכשיו",
+      "purgeTitle": "למחוק את כל מה שמעבר למגבלה?",
+      "purged": "{{items}} נמחקו",
+      "retention": "{{days}} ימים",
+      "retentionLabel": "לשמור שיחות וטיוטות למשך",
+      "row": {
+        "calendar": {
+          "name": "יומן Google",
+          "what": "השעות התפוסות והפנויות, והאירועים שאישרתם",
+          "who": "חברת Google"
+        },
+        "claude": {
+          "name": "Claude (בינה בענן)",
+          "what": "הטקסט של השיחה שמנותחת, בלי שמות ובלי מספרי טלפון",
+          "who": "חברת Anthropic"
+        },
+        "gemini": {
+          "name": "Gemini (בינה בענן)",
+          "what": "הטקסט של השיחה שמנותחת, בלי שמות ובלי מספרי טלפון",
+          "who": "חברת Google"
+        },
+        "local": {
+          "name": "בינה על המחשב הזה",
+          "what": "שום דבר",
+          "who": "אף אחד"
+        },
+        "whatsapp": {
+          "name": "וואטסאפ",
+          "what": "התשובות שאישרתם",
+          "who": "האדם שאליו אתם משיבים"
+        }
+      },
+      "tableLabel": "מה יוצא מהמחשב הזה"
+    },
+    "replies": {
+      "gender": {
+        "f": "נקבה",
+        "m": "זכר",
+        "unspecified": "ניסוח ניטרלי"
+      },
+      "genderLabel": "המין הדקדוקי שלכם בתשובות בעברית"
+    },
+    "rules": {
+      "ambiguous": {
+        "ask": "לשאול את האדם לאיזו שעה התכוון",
+        "assume": "להניח את השעה הסבירה ולציין זאת בתשובה"
+      },
+      "ambiguousLabel": "כששעה אינה חד-משמעית",
+      "backlogHours": "עד {{hours}} שעות אחורה",
+      "backlogLabel": "להתחיל מ",
+      "backlogNow": "מרגע הקישור",
+      "duration": "{{minutes}} דקות",
+      "durationLabel": "אורך ברירת מחדל לאירוע",
+      "ignoredEmpty": "לאף שיחה אין כלל משלה.",
+      "ignoredLabel": "שיחות עם כלל משלהן",
+      "policy": {
+        "default": "לנתח כרגיל",
+        "never": "לא לנתח אף פעם"
+      },
+      "policyLabel": "הכלל לשיחה הזו",
+      "removePolicy": "להסיר את הכלל",
+      "unknownDesc": "כבוי כברירת מחדל: מנותחות רק שיחות עם אנשי קשר שמורים.",
+      "unknownLabel": "לנתח שולחים לא מוכרים"
+    },
+    "saveFailed": "לא נשמר",
+    "saved": "נשמר",
+    "title": "הגדרות",
+    "whatsapp": {
+      "relink": "לקשר מחדש",
+      "relinkBody": "תצטרכו לסרוק קוד חדש. הודעות ישנות ימשיכו להידלג.",
+      "relinkTitle": "לקשר מחדש את וואטסאפ?",
+      "statusLabel": "חיבור",
+      "wipe": "לנתק ולמחוק",
+      "wipeBody": "הקישור לוואטסאפ, השיחות השמורות וכל טיוטה שבמחשב הזה יימחקו. אירועים שכבר קיימים ביומן יישארו.",
+      "wipeLabel": "ניתוק ומחיקה",
+      "wipeTitle": "לנתק ולמחוק הכול?"
+    }
+  },
+  "setup": {
+    "ai": {
+      "action": "הגדרת הבינה",
+      "text": "הבינה עדיין לא מוגדרת - השיחות יופיעו ככרטיסים פשוטים."
+    },
+    "calendar": {
+      "action": "חיבור",
+      "text": "יומן Google לא מחובר - תשובות בלבד."
+    },
+    "hide": "הסתרה",
+    "title": "הגדרות להשלמה",
+    "whatsapp": {
+      "action": "קישור וואטסאפ",
+      "text": "הוואטסאפ עדיין לא מקושר."
+    }
+  },
+  "sheet": {
+    "conversation": "השיחה",
+    "discardBody": "התשובה ופרטי האירוע ששיניתם לא יישמרו.",
+    "discardCancel": "המשך עריכה",
+    "discardConfirm": "ביטול השינויים",
+    "discardTitle": "לבטל את השינויים?",
+    "event": "אירוע",
+    "loading": "טוען את הכרטיס...",
+    "title": "פריט",
+    "whatAiRead": "מה שהבינה קראה"
+  },
+  "tray": {
+    "open": "פתיחה",
+    "pause": "השהיית הסוכן",
+    "quit": "יציאה",
+    "resume": "המשך פעולה",
+    "settings": "הגדרות",
+    "status": {
+      "active_claude": "פעיל - Claude",
+      "active_gemini": "פעיל - Gemini",
+      "active_local": "פעיל - מודל מקומי",
+      "attention": "דרוש טיפול - פתחו את האפליקציה",
+      "paused": "מושהה",
+      "setup": "בהגדרה",
+      "wa_offline": "וואטסאפ לא מחובר"
+    },
+    "tooltip": "WhatsApp Calendar Agent",
+    "tooltipWaiting_one": "WhatsApp Calendar Agent - {{count}} ממתינה",
+    "tooltipWaiting_other": "WhatsApp Calendar Agent - {{count}} ממתינות",
+    "tooltipWaiting_two": "WhatsApp Calendar Agent - {{count}} ממתינות"
+  },
+  "trayHint": {
+    "body": "סגירת החלון לא עוצרת אותו. הוא נמצא ליד השעון, תחת החץ של הסמלים המוסתרים. ליציאה: לחיצה ימנית על הסמל ואז 'יציאה'.",
+    "gotIt": "הבנתי",
+    "title": "הסוכן ממשיך לפעול"
+  },
+  "welcome": {
+    "promise": "שום דבר לא נשלח ולא נקבע בלי אישור שלך.",
+    "start": "מתחילים"
+  }
+}

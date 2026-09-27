@@ -1,0 +1,22 @@
+node_modules/
+out/
+dist/
+release/
+coverage/
+test-results/
+playwright-report/
+build-resources/calendar-mcp/node_modules/
+vendor/
+resources/bridge/
+docs/
+ops/
+package-lock.json
+build-resources/calendar-mcp/package-lock.json
+tests/eslint-fixtures/
+*.md
+
+# Source files whose COLOCATED TESTS assert on their exact source text, so reformatting them turns a green test red
+# (W2-01, Wave-2 formatting pass): src/preload/index.test.ts greps the preload for its literal allow-list, and
+# src/renderer/src/styles.test.ts greps styles.css for the UX section 2 token declarations.
+src/preload/index.ts
+src/renderer/src/styles.css

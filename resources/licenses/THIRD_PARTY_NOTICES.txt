@@ -1,0 +1,283 @@
+====================================================================================================
+THIRD PARTY NOTICES - WhatsApp Calendar Agent
+====================================================================================================
+
+This application is distributed with the third-party components listed below.
+Each component remains under its own licence; the full licence text of every component that requires
+verbatim redistribution is reproduced in this file, except where the component ships its own licence file
+next to its binaries (those files are named explicitly).
+
+Local language models are NOT part of this installer. They are downloaded by the user, on request, at run time.
+
+====================================================================================================
+1. WhatsApp bridge - whatsapp-bridge.exe  (MIT)
+====================================================================================================
+
+Shipped at: resources\bridge\whatsapp-bridge.exe (pinned SHA-256 AC23221E8BCF3937A4CA346B3BD80A8DA09DF94CBECD949AF2916C4BC8D22FF5)
+A prebuilt Go binary; the corresponding source is vendored for reference in vendor/whatsapp-bridge-src/.
+Fork of https://github.com/lharries/whatsapp-mcp
+
+This is a fork of https://github.com/lharries/whatsapp-mcp
+Original work Copyright (c) 2025 Luke Harries
+Modifications Copyright (c) 2026 Very Good Plugins
+
+MIT License
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+====================================================================================================
+2. llama.cpp b10964 - Windows/Vulkan x64 build  (MIT)
+====================================================================================================
+
+Shipped at: resources\llama\ (llama-server.exe and the ggml/llama/mtmd DLLs of the pinned release)
+Source of the binaries: https://github.com/ggml-org/llama.cpp/releases/download/b10964/llama-b10964-bin-win-vulkan-x64.zip
+Project: https://github.com/ggml-org/llama.cpp
+
+MIT License
+
+Copyright (c) 2023-2026 The ggml authors
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+====================================================================================================
+3. LLVM OpenMP runtime - libomp.dll  (Apache-2.0 WITH LLVM-exception)
+====================================================================================================
+
+Shipped at: resources\llama\libomp.dll
+The complete licence text, as published in the same llama.cpp release archive, is shipped verbatim
+next to the binary as:  resources\llama\LICENSE-LLVM-OpenMP
+It is not duplicated here; that file is the copy required by the licence.
+
+====================================================================================================
+4. Microsoft Visual C++ 2015-2022 Redistributable runtime files
+====================================================================================================
+
+NOT SHIPPED IN THIS BUILD.
+The build machine did not set VC_REDIST_CRT_DIR, so msvcp140.dll / vcruntime140.dll / vcruntime140_1.dll
+were not staged next to llama-server.exe. On a PC without the Microsoft Visual C++ 2015-2022 x64
+Redistributable the local model runtime cannot start; the application detects this before spawning and
+shows the LLM_VCREDIST_MISSING error, whose single action opens Microsoft's own download page.
+Cloud providers and every other feature are unaffected.
+
+====================================================================================================
+5. Google Calendar MCP server  (MIT)
+====================================================================================================
+
+Shipped at: resources\calendar-mcp\ - @cocal/google-calendar-mcp 2.6.3 and its production
+dependency tree (googleapis, google-auth-library, @modelcontextprotocol/sdk, open, zod and their transitive
+dependencies), installed with `npm ci --omit=dev --ignore-scripts` from a committed lockfile.
+Project: https://github.com/nspady/google-calendar-mcp (MIT).
+Each package in that tree carries its own LICENSE file inside resources\calendar-mcp\node_modules\.
+This server is never imported by application code; it runs as a separate stdio child process.
+
+====================================================================================================
+6. Local language models  (downloaded by the user, not redistributed here)
+====================================================================================================
+
+No model weights are contained in this installer. When the user chooses the Local provider, the application
+downloads one of the following GGUF files from Hugging Face over HTTPS, pinned by commit and SHA-256:
+  - tiny  - Gemma 4 E2B-it Q4_K_M   (unsloth/gemma-4-E2B-it-GGUF)
+  - small - Gemma 4 E4B-it Q4_K_M   (unsloth/gemma-4-E4B-it-GGUF)
+  - mid   - Gemma 4 12B-it QAT UD-Q4_K_XL (unsloth/gemma-4-12B-it-qat-GGUF)
+
+The Gemma models are made available by Google under the Apache License 2.0 together with the Gemma Terms of
+Use and the Gemma Prohibited Use Policy, which the user accepts with Google on download:
+  https://ai.google.dev/gemma/terms      https://ai.google.dev/gemma/prohibited_use_policy
+  Apache License 2.0: https://www.apache.org/licenses/LICENSE-2.0
+The GGUF conversions are published by the Unsloth project. Model files live in the user profile
+(%APPDATA%\WhatsApp Calendar Agent\models) and are never bundled or re-distributed by this application.
+
+====================================================================================================
+7. Electron
+====================================================================================================
+
+This application is built on Electron (MIT), which embeds Chromium (BSD-3-Clause and the licences listed in
+Chromium's own credits) and Node.js (MIT). The complete Chromium and Electron credits are shipped by the
+Electron runtime itself as  LICENSES.chromium.html  and  LICENSE  in the installation directory.
+
+====================================================================================================
+8. npm production dependencies inside app.asar  (142 packages)
+====================================================================================================
+
+All are pure JavaScript; there is no native addon anywhere in the production tree (no binding.gyp, no *.node).
+Licence summary: MIT (113), BSD-3-Clause (13), Apache-2.0 (7), ISC (7), BSD-2-Clause (1), Unlicense (1).
+Each package ships its own licence text inside app.asar under node_modules/<name>/.
+
+  @anthropic-ai/sdk@0.127.0  -  MIT
+  @babel/runtime@7.29.7  -  MIT
+  @google/genai@2.23.0  -  Apache-2.0
+  @hono/node-server@2.1.1  -  MIT
+  @modelcontextprotocol/sdk@1.30.0  -  MIT
+  @protobufjs/aspromise@1.1.2  -  BSD-3-Clause
+  @protobufjs/base64@1.1.2  -  BSD-3-Clause
+  @protobufjs/codegen@2.0.5  -  BSD-3-Clause
+  @protobufjs/eventemitter@1.1.1  -  BSD-3-Clause
+  @protobufjs/fetch@1.1.1  -  BSD-3-Clause
+  @protobufjs/float@1.0.2  -  BSD-3-Clause
+  @protobufjs/path@1.1.2  -  BSD-3-Clause
+  @protobufjs/pool@1.1.0  -  BSD-3-Clause
+  @protobufjs/utf8@1.1.2  -  BSD-3-Clause
+  @stablelib/base64@1.0.1  -  MIT
+  @types/node@24.13.6  -  MIT
+  @types/retry@0.12.0  -  MIT
+  accepts@2.0.0  -  MIT
+  agent-base@7.1.4  -  MIT
+  ajv@8.20.0  -  MIT
+  ajv-formats@3.0.1  -  MIT
+  base64-js@1.5.1  -  MIT
+  bignumber.js@9.3.1  -  MIT
+  body-parser@2.3.0  -  MIT
+  buffer-equal-constant-time@1.0.1  -  BSD-3-Clause
+  bytes@3.1.2  -  MIT
+  call-bind-apply-helpers@1.0.2  -  MIT
+  call-bound@1.0.4  -  MIT
+  content-disposition@1.1.0  -  MIT
+  content-type@2.1.0  -  MIT
+  content-type@1.0.5  -  MIT
+  content-type@2.1.0  -  MIT
+  content-type@2.1.0  -  MIT
+  cookie@0.7.2  -  MIT
+  cookie-signature@1.2.2  -  MIT
+  cors@2.8.6  -  MIT
+  cross-spawn@7.0.6  -  MIT
+  data-uri-to-buffer@4.0.1  -  MIT
+  debug@4.4.3  -  MIT
+  depd@2.0.0  -  MIT
+  dunder-proto@1.0.1  -  MIT
+  ecdsa-sig-formatter@1.0.11  -  Apache-2.0
+  ee-first@1.1.1  -  MIT
+  electron-log@5.4.4  -  MIT
+  encodeurl@2.0.0  -  MIT
+  es-define-property@1.0.1  -  MIT
+  es-errors@1.3.0  -  MIT
+  es-object-atoms@1.1.2  -  MIT
+  escape-html@1.0.3  -  MIT
+  etag@1.8.1  -  MIT
+  eventsource@3.0.7  -  MIT
+  eventsource-parser@3.1.1  -  MIT
+  express@5.2.1  -  MIT
+  express-rate-limit@8.7.0  -  MIT
+  extend@3.0.2  -  MIT
+  fast-deep-equal@3.1.3  -  MIT
+  fast-sha256@1.3.0  -  Unlicense
+  fast-uri@3.1.8  -  BSD-3-Clause
+  fetch-blob@3.2.0  -  MIT
+  finalhandler@2.1.1  -  MIT
+  formdata-polyfill@4.0.10  -  MIT
+  forwarded@0.2.0  -  MIT
+  fresh@2.0.0  -  MIT
+  function-bind@1.1.2  -  MIT
+  gaxios@7.3.1  -  Apache-2.0
+  gcp-metadata@8.1.2  -  Apache-2.0
+  get-intrinsic@1.3.0  -  MIT
+  get-proto@1.0.1  -  MIT
+  google-auth-library@10.9.1  -  Apache-2.0
+  google-logging-utils@1.1.3  -  Apache-2.0
+  gopd@1.2.0  -  MIT
+  has-symbols@1.1.0  -  MIT
+  hasown@2.0.4  -  MIT
+  hono@4.13.8  -  MIT
+  http-errors@2.0.1  -  MIT
+  https-proxy-agent@7.0.6  -  MIT
+  i18next@26.4.2  -  MIT
+  iconv-lite@0.7.3  -  MIT
+  inherits@2.0.4  -  ISC
+  ip-address@10.7.2  -  MIT
+  ipaddr.js@1.9.1  -  MIT
+  is-promise@4.0.0  -  MIT
+  isexe@2.0.0  -  ISC
+  jose@6.2.12  -  MIT
+  json-bigint@1.0.0  -  MIT
+  json-schema-to-ts@3.1.1  -  MIT
+  json-schema-traverse@1.0.0  -  MIT
+  json-schema-typed@8.0.2  -  BSD-2-Clause
+  jwa@2.0.1  -  MIT
+  jws@4.0.1  -  MIT
+  long@5.3.2  -  Apache-2.0
+  math-intrinsics@1.1.0  -  MIT
+  media-typer@1.1.1  -  MIT
+  merge-descriptors@2.0.0  -  MIT
+  mime-db@1.54.0  -  MIT
+  mime-types@3.0.2  -  MIT
+  ms@2.1.3  -  MIT
+  negotiator@1.1.0  -  MIT
+  node-domexception@1.0.0  -  MIT
+  node-fetch@3.3.2  -  MIT
+  object-assign@4.1.1  -  MIT
+  object-inspect@1.13.4  -  MIT
+  on-finished@2.4.1  -  MIT
+  once@1.4.0  -  ISC
+  p-retry@4.6.2  -  MIT
+  parseurl@1.3.3  -  MIT
+  path-key@3.1.1  -  MIT
+  path-to-regexp@8.4.2  -  MIT
+  pkce-challenge@5.0.1  -  MIT
+  protobufjs@7.6.6  -  BSD-3-Clause
+  proxy-addr@2.0.8  -  MIT
+  qs@6.16.0  -  BSD-3-Clause
+  range-parser@1.3.0  -  MIT
+  raw-body@3.0.2  -  MIT
+  require-from-string@2.0.2  -  MIT
+  retry@0.13.1  -  MIT
+  router@2.2.0  -  MIT
+  safe-buffer@5.2.1  -  MIT
+  safer-buffer@2.1.2  -  MIT
+  send@1.2.1  -  MIT
+  serve-static@2.2.1  -  MIT
+  setprototypeof@1.2.0  -  ISC
+  shebang-command@2.0.0  -  MIT
+  shebang-regex@3.0.0  -  MIT
+  side-channel@1.1.1  -  MIT
+  side-channel-list@1.0.1  -  MIT
+  side-channel-map@1.0.1  -  MIT
+  side-channel-weakmap@1.0.2  -  MIT
+  standardwebhooks@1.1.1  -  MIT
+  statuses@2.0.2  -  MIT
+  toidentifier@1.0.1  -  MIT
+  ts-algebra@2.0.0  -  MIT
+  type-is@2.1.0  -  MIT
+  undici-types@7.18.2  -  MIT
+  unpipe@1.0.0  -  MIT
+  vary@1.1.2  -  MIT
+  web-streams-polyfill@3.3.3  -  MIT
+  which@2.0.2  -  ISC
+  wrappy@1.0.2  -  ISC
+  ws@8.21.3  -  MIT
+  zod@4.6.5  -  MIT
+  zod-to-json-schema@3.25.2  -  ISC
+
+====================================================================================================
+END OF THIRD PARTY NOTICES
+====================================================================================================

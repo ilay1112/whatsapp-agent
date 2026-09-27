@@ -1,0 +1,40 @@
+
+> whatsapp-calendar-agent@0.1.0 build:e2e
+> electron-vite build --mode e2e && node scripts/mark-e2e-build.mjs
+
+[36mvite v7.3.6 [32mbuilding ssr environment for e2e...[36m[39m
+transforming...
+[32m✓[39m 113 modules transformed.
+rendering chunks...
+[2mout/main/[22m[36mtypes-BN7M8LP5.js              [39m[1m[2m  0.43 kB[22m[1m[22m[2m │ map:     4.10 kB[22m
+[2mout/main/[22m[36mtestSeams-WWeO8Euq.js          [39m[1m[2m  2.60 kB[22m[1m[22m[2m │ map:     7.95 kB[22m
+[2mout/main/[22m[36mscripted.fixtures-BZhCCNWf.js  [39m[1m[2m  6.83 kB[22m[1m[22m[2m │ map:    16.95 kB[22m
+[2mout/main/[22m[36mindex.js                       [39m[1m[33m522.50 kB[39m[22m[2m │ map: 1,149.35 kB[22m
+[32m✓ built in 472ms[39m
+[36mvite v7.3.6 [32mbuilding ssr environment for e2e...[36m[39m
+transforming...
+[32m✓[39m 1 modules transformed.
+rendering chunks...
+[2mout/preload/[22m[36mindex.cjs  [39m[1m[2m2.26 kB[22m[1m[22m
+[32m✓ built in 7ms[39m
+[36mvite v7.3.6 [32mbuilding client environment for e2e...[36m[39m
+transforming...
+[33mnode_modules/zod/v4/core/regexes.js (74:0): A comment
+
+"/** Anchors a pattern source. The interpolation lives here rather than at the call site because
+ * esbuild will not drop a `@__PURE__` call whose own argument interpolates a variable, but it
+ * will drop `anchor(dateSource)`. Keeping it inline pinned `date` into every bundle. */"
+
+in "node_modules/zod/v4/core/regexes.js" contains an annotation that Rollup cannot interpret due to the position of the comment. The comment will be removed to avoid issues.[39m
+[33mnode_modules/zod/v4/core/util.js (400:0): A comment
+
+"// Wrapped in a `@__PURE__` IIFE: esbuild never tree-shakes a top-level initializer that contains a member access on `Number`, so the bare object literal survived into every bundle."
+
+in "node_modules/zod/v4/core/util.js" contains an annotation that Rollup cannot interpret due to the position of the comment. The comment will be removed to avoid issues.[39m
+[32m✓[39m 196 modules transformed.
+rendering chunks...
+[2m../../out/renderer/[22m[32mindex.html                 [39m[1m[2m    1.12 kB[22m[1m[22m
+[2m../../out/renderer/[22m[35massets/index-DXThaU5a.css  [39m[1m[2m   34.32 kB[22m[1m[22m
+[2m../../out/renderer/[22m[36massets/index-BJg4lHy5.js   [39m[1m[33m1,245.16 kB[39m[22m
+[32m✓ built in 836ms[39m
+BUILD_E2E_EXIT=0

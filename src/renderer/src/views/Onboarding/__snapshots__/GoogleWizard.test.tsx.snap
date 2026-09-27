@@ -1,0 +1,144 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`GoogleWizard - sign-in > RTL snapshot 1`] = `
+<section
+  class="flex min-h-full flex-col"
+  data-testid="onboarding-google"
+>
+  <ol
+    aria-label="שלבי ההתקנה"
+    class="m-0 flex list-none items-center gap-2 border-b border-line bg-surface px-4 py-2"
+    data-testid="onboarding-rail"
+  >
+    <li
+      class="flex min-w-0 grow items-center gap-2"
+    >
+      <span
+        class="chip tnum whitespace-nowrap bg-ok-soft text-ok"
+        data-state="done"
+        data-testid="onboarding-rail-1"
+      >
+        1
+         
+        בינה
+      </span>
+      <span
+        aria-hidden="true"
+        class="rail-connector"
+        data-done="1"
+      />
+    </li>
+    <li
+      class="flex min-w-0 grow items-center gap-2"
+    >
+      <span
+        class="chip tnum whitespace-nowrap bg-ok-soft text-ok"
+        data-state="done"
+        data-testid="onboarding-rail-2"
+      >
+        2
+         
+        וואטסאפ
+      </span>
+      <span
+        aria-hidden="true"
+        class="rail-connector"
+        data-done="1"
+      />
+    </li>
+    <li
+      aria-current="step"
+      class="flex min-w-0 grow items-center gap-2"
+    >
+      <span
+        class="chip tnum whitespace-nowrap bg-accent-soft text-accent"
+        data-state="current"
+        data-testid="onboarding-rail-3"
+      >
+        3
+         
+        יומן
+      </span>
+      <span
+        aria-hidden="true"
+        class="rail-connector"
+        data-done="0"
+      />
+    </li>
+    <li
+      class="flex min-w-0 grow items-center gap-2"
+    >
+      <span
+        class="chip tnum whitespace-nowrap "
+        data-state="upcoming"
+        data-testid="onboarding-rail-4"
+      >
+        4
+         
+        סיום
+      </span>
+    </li>
+  </ol>
+  <div
+    class="mx-auto flex w-full max-w-[35rem] grow flex-col gap-4 px-4 py-5"
+    data-testid="onboarding-step-3"
+  >
+    <h1
+      class="m-0 text-xl"
+    >
+      שלב 5 מתוך 5 - התחברות
+    </h1>
+    <p
+      class="tnum m-0 text-sm text-text-muted"
+      data-testid="google-substep"
+    >
+      שלב 5 מתוך 5
+    </p>
+    <p
+      class="m-0"
+      data-testid="google-unverified"
+    >
+      Google תציג הודעה שהאפליקציה לא אומתה. זה צפוי: האפליקציה שלכם ואתם המשתמש היחיד שלה. בחרו Advanced ואז Go to (שם האפליקציה שלכם).
+    </p>
+    <p
+      class="m-0"
+      data-testid="google-firewall"
+    >
+      ייתכן ש-Windows ישאל אם לאפשר לאפליקציה להשתמש ברשת - גם Cancel וגם Allow מתאימים.
+    </p>
+    <button
+      class="btn btn-quiet self-start"
+      data-testid="google-unverified-help"
+      type="button"
+    >
+      עוד על ההודעה שהאפליקציה לא אומתה
+    </button>
+    <p
+      class="m-0 text-sm text-text-muted"
+    >
+      הדפים של Google עשויים להיפתח באנגלית.
+    </p>
+    <div
+      class="mt-auto flex flex-wrap items-center gap-2 pt-4"
+    >
+      <button
+        class="btn btn-quiet"
+        data-testid="onboarding-back"
+        type="button"
+      >
+        חזרה
+      </button>
+      <span
+        class="grow"
+      />
+      <button
+        class="btn btn-primary"
+        data-testid="google-signin"
+        type="button"
+      >
+        להתחבר עם Google
+      </button>
+    </div>
+  </div>
+</section>
+`;

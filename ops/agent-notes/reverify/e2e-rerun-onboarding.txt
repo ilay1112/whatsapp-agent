@@ -1,0 +1,39 @@
+
+Running 1 test using 1 worker
+
+  x  1 tests\e2e\onboarding.spec.ts:139:1 › accepting the disclosure starts the bridge, and the QR can be scanned, expired and re-issued (2.8s)
+  x  2 tests\e2e\onboarding.spec.ts:139:1 › accepting the disclosure starts the bridge, and the QR can be scanned, expired and re-issued (retry #1) (3.3s)
+
+
+  1) tests\e2e\onboarding.spec.ts:139:1 › accepting the disclosure starts the bridge, and the QR can be scanned, expired and re-issued 
+
+    TypeError: fetch failed
+    [cause]: Error: read ECONNRESET
+
+    Error Context: test-results\onboarding-accepting-the-d-06e14-anned-expired-and-re-issued\error-context.md
+
+    attachment #2: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results\onboarding-accepting-the-d-06e14-anned-expired-and-re-issued\trace.zip
+    Usage:
+
+        npx playwright show-trace test-results\onboarding-accepting-the-d-06e14-anned-expired-and-re-issued\trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Retry #1 ───────────────────────────────────────────────────────────────────────────────────────
+
+    TypeError: fetch failed
+    [cause]: Error: read ECONNRESET
+
+    Error Context: test-results\onboarding-accepting-the-d-06e14-anned-expired-and-re-issued-retry1\error-context.md
+
+    attachment #2: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results\onboarding-accepting-the-d-06e14-anned-expired-and-re-issued-retry1\trace.zip
+    Usage:
+
+        npx playwright show-trace test-results\onboarding-accepting-the-d-06e14-anned-expired-and-re-issued-retry1\trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  1 failed
+    tests\e2e\onboarding.spec.ts:139:1 › accepting the disclosure starts the bridge, and the QR can be scanned, expired and re-issued 

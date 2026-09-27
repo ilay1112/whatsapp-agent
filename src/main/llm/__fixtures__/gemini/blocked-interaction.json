@@ -1,0 +1,8 @@
+{
+  "_unverified": true,
+  "_note": "HTTP 200 with a generation block - treated as a refusal, never as a transport error",
+  "id": "int_TESTONLY_0003",
+  "status": "completed",
+  "steps": [{ "type": "model_output", "content": [], "error": { "code": "safety", "message": "blocked" } }],
+  "usage": { "total_input_tokens": 600, "total_output_tokens": 0 }
+}

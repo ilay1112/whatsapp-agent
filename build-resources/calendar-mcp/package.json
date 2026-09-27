@@ -1,0 +1,10 @@
+{
+  "name": "wca-calendar-mcp",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Isolated dependency tree for the bundled Google Calendar MCP server (ARCH 16). Never imported by app code; staged into the package by scripts/stage-calendar-mcp.mjs and copied to <resources>/calendar-mcp by electron-builder.",
+  "license": "UNLICENSED",
+  "dependencies": {
+    "@cocal/google-calendar-mcp": "2.6.3"
+  }
+}

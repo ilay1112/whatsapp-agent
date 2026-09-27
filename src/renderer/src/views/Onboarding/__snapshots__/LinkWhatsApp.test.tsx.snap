@@ -1,0 +1,162 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`LinkWhatsApp > RTL snapshot 1`] = `
+<section
+  class="flex min-h-full flex-col"
+  data-testid="onboarding-link-whatsapp"
+>
+  <ol
+    aria-label="שלבי ההתקנה"
+    class="m-0 flex list-none items-center gap-2 border-b border-line bg-surface px-4 py-2"
+    data-testid="onboarding-rail"
+  >
+    <li
+      class="flex min-w-0 grow items-center gap-2"
+    >
+      <span
+        class="chip tnum whitespace-nowrap bg-ok-soft text-ok"
+        data-state="done"
+        data-testid="onboarding-rail-1"
+      >
+        1
+         
+        בינה
+      </span>
+      <span
+        aria-hidden="true"
+        class="rail-connector"
+        data-done="1"
+      />
+    </li>
+    <li
+      aria-current="step"
+      class="flex min-w-0 grow items-center gap-2"
+    >
+      <span
+        class="chip tnum whitespace-nowrap bg-accent-soft text-accent"
+        data-state="current"
+        data-testid="onboarding-rail-2"
+      >
+        2
+         
+        וואטסאפ
+      </span>
+      <span
+        aria-hidden="true"
+        class="rail-connector"
+        data-done="0"
+      />
+    </li>
+    <li
+      class="flex min-w-0 grow items-center gap-2"
+    >
+      <span
+        class="chip tnum whitespace-nowrap "
+        data-state="upcoming"
+        data-testid="onboarding-rail-3"
+      >
+        3
+         
+        יומן
+      </span>
+      <span
+        aria-hidden="true"
+        class="rail-connector"
+        data-done="0"
+      />
+    </li>
+    <li
+      class="flex min-w-0 grow items-center gap-2"
+    >
+      <span
+        class="chip tnum whitespace-nowrap "
+        data-state="upcoming"
+        data-testid="onboarding-rail-4"
+      >
+        4
+         
+        סיום
+      </span>
+    </li>
+  </ol>
+  <div
+    class="mx-auto flex w-full max-w-[35rem] grow flex-col gap-4 px-4 py-5"
+    data-testid="onboarding-step-2"
+  >
+    <h1
+      class="m-0 text-xl"
+    >
+      קישור הוואטסאפ
+    </h1>
+    <div
+      class="flex flex-wrap items-start gap-5"
+    >
+      <div
+        class="flex flex-col items-center gap-2"
+        data-status="qr"
+        data-testid="qr-pairing"
+      >
+        <div
+          class="qr-plate"
+        >
+          <img
+            alt="קוד קישור"
+            class="qr-image"
+            data-testid="qr-image"
+            src="data:image/png;base64,iVBORw0KGgo="
+          />
+        </div>
+        <p
+          class="tnum m-0 text-sm text-text-muted"
+          data-testid="qr-countdown"
+        >
+          הקוד יפוג בעוד 0:00
+        </p>
+        <div
+          aria-hidden="true"
+          class="h-1 w-60 overflow-hidden rounded-xs bg-line"
+        >
+          <div
+            class="h-full bg-accent"
+            style="inline-size: 0%;"
+          />
+        </div>
+      </div>
+      <ol
+        aria-label="איך לקשר מהטלפון"
+        class="m-0 flex min-w-60 grow list-decimal flex-col gap-3 ps-5"
+      >
+        <li>
+          בטלפון פתחו את וואטסאפ ואז הגדרות.
+        </li>
+        <li>
+          הקישו על מכשירים מקושרים ואז על קישור מכשיר.
+        </li>
+        <li>
+          כוונו את הטלפון אל הקוד שבמסך הזה.
+        </li>
+      </ol>
+    </div>
+    <div
+      class="mt-auto flex flex-wrap items-center gap-2 pt-4"
+    >
+      <button
+        class="btn btn-quiet"
+        data-testid="onboarding-back"
+        type="button"
+      >
+        חזרה
+      </button>
+      <span
+        class="grow"
+      />
+      <span
+        class="text-text-muted"
+        data-testid="pairing-waiting"
+      >
+        ממתינים לטלפון...
+      </span>
+    </div>
+  </div>
+</section>
+`;

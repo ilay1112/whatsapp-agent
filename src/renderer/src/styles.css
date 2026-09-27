@@ -1,0 +1,349 @@
+/*
+ * src/renderer/src/styles.css - design tokens + shared class recipes (owner W1-14).
+ * Normative source: docs/specs/ux.md section 2 (2.1 colour, 2.2 type, 2.3 spacing/radius/elevation, 2.4 motion,
+ * 2.5 icons, 2.6 Tailwind shape) and 13.6 (Windows contrast themes).
+ *
+ * HARD RULES (asserted by styles.test.ts):
+ *   - logical properties only: no physical inset/margin/padding/border/text-align declarations anywhere;
+ *   - semantic tokens only in components (bg-surface, text-muted, border-line ...), never raw hex;
+ *   - the only decorative object in the app is the date tab; nothing else gets ornament.
+ * W1-15 / W1-16 consume the recipes below and may add ONE owned css file next to their own view.
+ */
+
+@import "tailwindcss";
+
+@theme {
+  --font-ui: "Segoe UI", system-ui, sans-serif;
+
+  /* ---- colour (light column of UX 2.1) ---- */
+  --color-canvas: #eef0f5;
+  --color-surface: #ffffff;
+  --color-quote: #e3e7f0;
+  --color-line: #cbd1de;
+  --color-line-strong: #7c869c;
+  --color-text: #161b2b;
+  --color-text-muted: #4f5870;
+  --color-accent: #3346b8;
+  --color-accent-hover: #28389a;
+  --color-on-accent: #ffffff;
+  --color-accent-soft: #e4e8fa;
+  --color-ok: #0b6e5f;
+  --color-ok-soft: #ddf2ee;
+  --color-warn: #7a4700;
+  --color-warn-soft: #fcebc8;
+  --color-danger: #a8261d;
+  --color-danger-soft: #fbe3e0;
+  --color-on-danger: #ffffff;
+  --color-scrim: rgb(22 27 43 / 0.4);
+
+  /* ---- type scale (en; :root:lang(he) adds 1 px per step) ---- */
+  --text-xs: 0.75rem;
+  --text-sm: 0.8125rem;
+  --text-base: 0.875rem;
+  --text-md: 1rem;
+  --text-lg: 1.25rem;
+  --text-xl: 1.75rem;
+
+  /* ---- radius hierarchy ---- */
+  --radius-xs: 4px;
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+
+  /* ---- elevation (exactly two levels) ---- */
+  --shadow-pop: 0 8px 24px rgb(22 27 43 / 0.16);
+  --shadow-sheet: 0 0 48px rgb(22 27 43 / 0.24);
+
+  /* ---- motion ---- */
+  --dur-fast: 120ms;
+  --dur-base: 180ms;
+  --ease: cubic-bezier(0.2, 0, 0, 1);
+
+  /* ---- breakpoints ---- */
+  --breakpoint-cols: 56.25rem;
+  --breakpoint-roomy: 40rem;
+}
+
+:root {
+  --dir: 1;
+  color-scheme: light dark;
+}
+
+:root:dir(rtl) {
+  --dir: -1;
+}
+
+/* Hebrew x-height is visually smaller: +1 px per step. Spacing tokens never change, so both layouts are identical. */
+:root:lang(he) {
+  --text-xs: 0.8125rem;
+  --text-sm: 0.875rem;
+  --text-base: 0.9375rem;
+  --text-md: 1.0625rem;
+  --text-lg: 1.3125rem;
+  --text-xl: 1.8125rem;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --color-canvas: #12151e;
+    --color-surface: #1b2030;
+    --color-quote: #262c40;
+    --color-line: #2f3750;
+    --color-line-strong: #6c7794;
+    --color-text: #e8ebf4;
+    --color-text-muted: #a3abc2;
+    --color-accent: #93a3ff;
+    --color-accent-hover: #aab7ff;
+    --color-on-accent: #0e1224;
+    --color-accent-soft: #232b55;
+    --color-ok: #5fd0bc;
+    --color-ok-soft: #12332e;
+    --color-warn: #f2bc5c;
+    --color-warn-soft: #3a2c10;
+    --color-danger: #ff9a8f;
+    --color-danger-soft: #40201d;
+    --color-on-danger: #2a0b08;
+    --color-scrim: rgb(0 0 0 / 0.55);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --dur-fast: 0ms;
+    --dur-base: 0ms;
+  }
+}
+
+html,
+body,
+#root {
+  block-size: 100%;
+}
+
+body {
+  margin: 0;
+  font-family: var(--font-ui);
+  font-size: var(--text-base);
+  background: var(--color-canvas);
+  color: var(--color-text);
+  text-align: start;
+}
+
+/*
+ * Untrusted text: never inherits the UI direction. Used by QuotedBubble, DraftBox and the event title/location nodes.
+ * `unicode-bidi: plaintext` is the CSS equivalent of dir="auto" (i18n-rtl.md 6.1).
+ */
+.msg-text {
+  unicode-bidi: plaintext;
+  text-align: start;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* Directional glyphs only (send, back/forward chevron, external). Never check, clock, calendar, QR or progress. */
+.icon-dir:dir(rtl) {
+  transform: scaleX(-1);
+}
+
+/* A card that arrived or changed while the window was visible: a 3 px edge that fades, no movement (UX 2.4). */
+@keyframes wca-arrival {
+  to {
+    border-inline-start-color: transparent;
+  }
+}
+
+@utility card-arrival {
+  border-inline-start: 3px solid var(--color-accent);
+  animation: wca-arrival 1.6s var(--ease) forwards;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .card-arrival {
+    animation: none;
+  }
+}
+
+/* ---------------------------------------------------------------------------------------------------------------
+ * Shared class recipes (UX 2.6; the 2.6 names are normative). No component primitive files exist by design.
+ * ------------------------------------------------------------------------------------------------------------- */
+
+@utility focus-ring {
+  &:focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 2px;
+  }
+}
+
+@utility btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-block-size: 32px;
+  padding-inline: 12px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  font: inherit;
+  font-weight: 600;
+  line-height: 1.2;
+  text-align: center;
+  cursor: pointer;
+  background: transparent;
+  color: var(--color-text);
+  transition: background-color var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
+
+  &:focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 2px;
+  }
+  &:disabled {
+    opacity: 0.55;
+    cursor: default;
+  }
+}
+
+/* The single accent-filled button of a card or of a wizard step. Never two in one card. */
+@utility btn-primary {
+  background: var(--color-accent);
+  color: var(--color-on-accent);
+  border-color: var(--color-accent);
+
+  &:hover:not(:disabled) {
+    background: var(--color-accent-hover);
+    border-color: var(--color-accent-hover);
+  }
+}
+
+@utility btn-outline {
+  background: var(--color-surface);
+  color: var(--color-text);
+  border-color: var(--color-line-strong);
+
+  &:hover:not(:disabled) {
+    background: var(--color-quote);
+  }
+}
+
+@utility btn-quiet {
+  background: transparent;
+  color: var(--color-text-muted);
+
+  &:hover:not(:disabled) {
+    background: var(--color-quote);
+    color: var(--color-text);
+  }
+}
+
+/* Reserved for "Unlink and wipe", "Delete model", "Delete all data". */
+@utility btn-danger {
+  background: var(--color-danger);
+  color: var(--color-on-danger);
+  border-color: var(--color-danger);
+}
+
+@utility icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  inline-size: 32px;
+  block-size: 32px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--color-text);
+  cursor: pointer;
+
+  &:hover {
+    background: var(--color-quote);
+  }
+  &:focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 2px;
+  }
+}
+
+@utility field {
+  inline-size: 100%;
+  min-block-size: 32px;
+  padding-inline: 8px;
+  padding-block: 4px;
+  border: 1px solid var(--color-line-strong);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font: inherit;
+  text-align: start;
+
+  &:focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 2px;
+  }
+  &[aria-invalid="true"] {
+    border-color: var(--color-danger);
+  }
+}
+
+@utility chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding-inline: 6px;
+  padding-block: 2px;
+  border-radius: var(--radius-xs);
+  background: var(--color-quote);
+  color: var(--color-text-muted);
+  font-size: var(--text-xs);
+  line-height: 1.35;
+  white-space: nowrap;
+}
+
+@utility pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-block-size: 24px;
+  padding-inline: 10px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: var(--color-quote);
+  color: var(--color-text);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+
+  &:focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 2px;
+  }
+}
+
+/* Numbers in times, counts, progress and versions. */
+@utility tnum {
+  font-variant-numeric: tabular-nums;
+}
+
+/*
+ * Windows contrast themes (UX 13.6): soft fills drop to Canvas, every voice keeps a distinguishable BORDER STYLE
+ * (bubble = solid, draft = dashed, chrome = none), and the primary button uses the system Highlight pair.
+ */
+@media (forced-colors: active) {
+  .pill,
+  .chip {
+    background: Canvas;
+    color: CanvasText;
+    border: 1px solid CanvasText;
+    forced-color-adjust: none;
+  }
+  .btn-primary {
+    background: Highlight;
+    color: HighlightText;
+    border: 1px solid HighlightText;
+    forced-color-adjust: none;
+  }
+  .btn-outline,
+  .field {
+    border: 1px solid CanvasText;
+  }
+}

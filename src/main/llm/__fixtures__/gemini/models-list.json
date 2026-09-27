@@ -1,0 +1,9 @@
+{
+  "_unverified": true,
+  "_note": "models.list() page. `-latest` aliases are filtered out by listGeminiModels and never offered in the dropdown.",
+  "models": [
+    { "name": "models/gemini-3.8-flash", "displayName": "Gemini 3.8 Flash" },
+    { "name": "models/gemini-3.5-flash-lite", "displayName": "Gemini 3.5 Flash Lite" },
+    { "name": "models/gemini-flash-latest", "displayName": "Gemini Flash Latest" }
+  ]
+}

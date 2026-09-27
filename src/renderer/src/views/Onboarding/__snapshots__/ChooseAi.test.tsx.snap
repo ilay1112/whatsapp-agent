@@ -1,0 +1,319 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`ChooseAi - embedded in Settings > RTL snapshot 1`] = `
+<section
+  class="flex min-h-full flex-col"
+  data-testid="onboarding-choose-ai"
+>
+  <ol
+    aria-label="שלבי ההתקנה"
+    class="m-0 flex list-none items-center gap-2 border-b border-line bg-surface px-4 py-2"
+    data-testid="onboarding-rail"
+  >
+    <li
+      aria-current="step"
+      class="flex min-w-0 grow items-center gap-2"
+    >
+      <span
+        class="chip tnum whitespace-nowrap bg-accent-soft text-accent"
+        data-state="current"
+        data-testid="onboarding-rail-1"
+      >
+        1
+         
+        בינה
+      </span>
+      <span
+        aria-hidden="true"
+        class="rail-connector"
+        data-done="0"
+      />
+    </li>
+    <li
+      class="flex min-w-0 grow items-center gap-2"
+    >
+      <span
+        class="chip tnum whitespace-nowrap "
+        data-state="upcoming"
+        data-testid="onboarding-rail-2"
+      >
+        2
+         
+        וואטסאפ
+      </span>
+      <span
+        aria-hidden="true"
+        class="rail-connector"
+        data-done="0"
+      />
+    </li>
+    <li
+      class="flex min-w-0 grow items-center gap-2"
+    >
+      <span
+        class="chip tnum whitespace-nowrap "
+        data-state="upcoming"
+        data-testid="onboarding-rail-3"
+      >
+        3
+         
+        יומן
+      </span>
+      <span
+        aria-hidden="true"
+        class="rail-connector"
+        data-done="0"
+      />
+    </li>
+    <li
+      class="flex min-w-0 grow items-center gap-2"
+    >
+      <span
+        class="chip tnum whitespace-nowrap "
+        data-state="upcoming"
+        data-testid="onboarding-rail-4"
+      >
+        4
+         
+        סיום
+      </span>
+    </li>
+  </ol>
+  <div
+    class="mx-auto flex w-full max-w-[35rem] grow flex-col gap-4 px-4 py-5"
+    data-testid="onboarding-step-1"
+  >
+    <h1
+      class="m-0 text-xl"
+    >
+      בחירת מנוע הבינה
+    </h1>
+    <div
+      aria-label="מנוע הבינה"
+      class="flex flex-col gap-3"
+      role="radiogroup"
+    >
+      <div
+        class="flex flex-col gap-2 rounded-md p-3 border-2 border-accent bg-accent-soft"
+        data-selected="1"
+        data-testid="ai-card-local"
+      >
+        <label
+          class="flex items-start gap-2"
+        >
+          <input
+            checked=""
+            data-testid="choose-ai-local"
+            name="ai-provider"
+            type="radio"
+            value="local"
+          />
+          <span
+            class="grow font-semibold"
+          >
+            במחשב הזה
+          </span>
+          <span
+            class="chip"
+          >
+            מומלץ
+          </span>
+        </label>
+        <p
+          class="m-0 text-text-muted"
+        >
+          פועל על המחשב הזה ושום דבר לא יוצא ממנו. נדרשת הורדה חד-פעמית של כ-4.6 ג׳יגה-בייט.
+        </p>
+        <p
+          class="m-0 flex items-start gap-2 text-sm text-text-muted"
+        >
+          <svg
+            aria-hidden="true"
+            class="shrink-0"
+            fill="none"
+            height="16"
+            stroke="currentColor"
+            stroke-width="1.5"
+            viewBox="0 0 16 16"
+            width="16"
+          >
+            <path
+              d="M8 1.8 3.2 3.6v4.1c0 3 2 5.1 4.8 6.5 2.8-1.4 4.8-3.5 4.8-6.5V3.6L8 1.8Z"
+              stroke-linejoin="round"
+            />
+            <path
+              d="m5.9 7.9 1.5 1.6 2.9-3.1"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            />
+          </svg>
+          <span>
+            ההודעות שלך לא יוצאות מהמחשב.
+          </span>
+        </p>
+        <div
+          class="flex flex-col gap-2 border-t border-line pt-2"
+          data-testid="ai-local-body"
+        >
+          <p
+            class="m-0"
+          >
+            במחשב הזה יש 16 ג׳יגה-בייט זיכרון, בלי כרטיס מסך ייעודי, ו-100 ג׳יגה-בייט פנויים.
+          </p>
+          <p
+            class="m-0"
+          >
+            ההתאמה הטובה ביותר: רגיל.
+          </p>
+          <div
+            class="flex flex-wrap items-center gap-3"
+          >
+            <p
+              class="m-0 text-ok"
+              data-testid="ai-local-ready"
+            >
+              המודל מוכן על המחשב הזה.
+            </p>
+            <button
+              aria-expanded="false"
+              class="btn btn-quiet"
+              data-testid="ai-size-toggle"
+              type="button"
+            >
+              לבחור גודל אחר
+            </button>
+          </div>
+        </div>
+      </div>
+      <div
+        class="flex flex-col gap-2 rounded-md p-3 border border-line bg-surface"
+        data-selected="0"
+        data-testid="ai-card-claude"
+      >
+        <label
+          class="flex items-start gap-2"
+        >
+          <input
+            data-testid="choose-ai-claude"
+            name="ai-provider"
+            type="radio"
+            value="claude"
+          />
+          <span
+            class="grow font-semibold"
+          >
+            Claude (בענן)
+          </span>
+        </label>
+        <p
+          class="m-0 text-text-muted"
+        >
+          מהיר וחזק. השיחה שמנותחת נשלחת אל Anthropic.
+        </p>
+        <p
+          class="m-0 flex items-start gap-2 text-sm text-text-muted"
+        >
+          <svg
+            aria-hidden="true"
+            class="shrink-0"
+            fill="none"
+            height="16"
+            stroke="currentColor"
+            stroke-width="1.5"
+            viewBox="0 0 16 16"
+            width="16"
+          >
+            <path
+              d="M8 1.8 3.2 3.6v4.1c0 3 2 5.1 4.8 6.5 2.8-1.4 4.8-3.5 4.8-6.5V3.6L8 1.8Z"
+              stroke-linejoin="round"
+            />
+            <path
+              d="m5.9 7.9 1.5 1.6 2.9-3.1"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            />
+          </svg>
+          <span>
+            השיחה שמנותחת נשלחת אל חברת Anthropic - בלי שמות ובלי מספרי טלפון.
+          </span>
+        </p>
+      </div>
+      <div
+        class="flex flex-col gap-2 rounded-md p-3 border border-line bg-surface"
+        data-selected="0"
+        data-testid="ai-card-gemini"
+      >
+        <label
+          class="flex items-start gap-2"
+        >
+          <input
+            data-testid="choose-ai-gemini"
+            name="ai-provider"
+            type="radio"
+            value="gemini"
+          />
+          <span
+            class="grow font-semibold"
+          >
+            Gemini (בענן)
+          </span>
+        </label>
+        <p
+          class="m-0 text-text-muted"
+        >
+          מהיר, ויש מסלול חינמי. השיחה שמנותחת נשלחת אל Google.
+        </p>
+        <p
+          class="m-0 flex items-start gap-2 text-sm text-text-muted"
+        >
+          <svg
+            aria-hidden="true"
+            class="shrink-0"
+            fill="none"
+            height="16"
+            stroke="currentColor"
+            stroke-width="1.5"
+            viewBox="0 0 16 16"
+            width="16"
+          >
+            <path
+              d="M8 1.8 3.2 3.6v4.1c0 3 2 5.1 4.8 6.5 2.8-1.4 4.8-3.5 4.8-6.5V3.6L8 1.8Z"
+              stroke-linejoin="round"
+            />
+            <path
+              d="m5.9 7.9 1.5 1.6 2.9-3.1"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            />
+          </svg>
+          <span>
+            השיחה שמנותחת נשלחת אל חברת Google - בלי שמות ובלי מספרי טלפון.
+             במסלול החינמי ייתכן ש-Google תשתמש בטקסט שלכם כדי לשפר את המודלים שלה.
+          </span>
+        </p>
+      </div>
+    </div>
+    <div
+      class="mt-auto flex flex-wrap items-center gap-2 pt-4"
+    >
+      <button
+        class="btn btn-quiet"
+        data-testid="onboarding-back"
+        type="button"
+      >
+        חזרה
+      </button>
+      <span
+        class="grow"
+      />
+      <button
+        class="btn btn-primary"
+        data-testid="ai-continue"
+        type="button"
+      >
+        להמשיך
+      </button>
+    </div>
+  </div>
+</section>
+`;
