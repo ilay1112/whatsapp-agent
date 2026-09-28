@@ -60,3 +60,7 @@ Follow-up instruction (2026-09-21): keep all context, notes, progress, tickets a
 | Subscription cloud LLMs | **Vendor CLI as a completion backend** — the app keeps its verified pipeline + ToolGate + executor; the CLI is called headlessly; the app's read-only tools reach the CLI as a small MCP server |
 | Voice + pictures | **Local audio always** (whisper.cpp); **pictures may use the active cloud provider's vision** when one is selected |
 | WhatsApp MCP | **Read-only WhatsApp MCP** (search/read chats + messages, never send), same gating pattern as calendar |
+
+## Remote repository (user, 2026-09-28)
+
+"I created a remote repo for this project, upload and work remotely with this repo: https://github.com/ilay1112/whatsapp-agent.git — it's empty right now, needs a git ignore and a readme with all the app's info, features and instructions." The repo is public (GitHub API answers unauthenticated).

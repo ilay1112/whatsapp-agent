@@ -135,7 +135,7 @@ npm run build:e2e first, then Playwright _electron with fakes only (fake-claude-
 ])
 const w204 = await build('V2-W2-04-packaging', 'Wave 2', `
 
-Network steps allowed here only: the calendar server npm ci + the seven-insertion patch (sha256-pinned before and after), the pinned whisper.cpp zip (sha256-verified, never executed), model metadata pins. Building the NSIS installer and starting the packaged GUI are the user's manual steps - do not perform them. Update README.md with the v2 features and the new manual checks (M-CLI-1, M-AGY-1, M-CAL-1, M-VOICE-1, M-GOLDEN-1).`)
+Network steps allowed here only: the calendar server npm ci + the seven-insertion patch (sha256-pinned before and after), the pinned whisper.cpp zip (sha256-verified, never executed), model metadata pins. Building the NSIS installer and starting the packaged GUI are the user's manual steps - do not perform them. README.md was rewritten by the orchestrator for the public GitHub repo (2026-09-28): keep its structure and update it IN PLACE - move the shipped v2 features from the Roadmap section into Features, keep the manual-checks section pointing at docs/ACCEPTANCE.md, and never add a phone number, token, real message text or personal e-mail.`)
 
 phase('Prove')
 const PROVE_SCHEMA = {

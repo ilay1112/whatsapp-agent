@@ -1,23 +1,52 @@
+# ── dependencies & build output ─────────────────────────────────────
 node_modules/
 out/
 dist/
 release/
+*.tsbuildinfo
+
+# ── test & coverage output ──────────────────────────────────────────
 coverage/
 test-results/
 playwright-report/
+blob-report/
+
+# ── logs & temp ─────────────────────────────────────────────────────
 *.log
+npm-debug.log*
+*.tmp
+*.part
+
+# ── secrets & local config (never commit) ───────────────────────────
 .env
 .env.*
 !.env.example
+*.pem
+*.key
+gcp-oauth.keys.json
+tokens.json
 
-# never commit runtime data: WhatsApp session, messages, tokens, models
+# ── runtime data: WhatsApp session, messages, tokens, models, caches ─
 store/
 *.db
 *.db-wal
 *.db-shm
+*.db-journal
 .bridge-token
 *.gguf
+*.pid.json
+media-cache/
+agy-workspace/
+agy-home/
 
-# build-time downloads and staged third-party trees (W0)
+# ── build-time downloads & staged third-party trees ─────────────────
 vendor/llama/
+vendor/whisper/
 build-resources/calendar-mcp/node_modules/
+
+# ── OS & editor noise ───────────────────────────────────────────────
+Thumbs.db
+desktop.ini
+.DS_Store
+.idea/
+*.swp

@@ -23,6 +23,13 @@ Rules for agents:
 - **Orchestrator (main session):** after every phase, update PROGRESS, BOARD, tickets, DECISIONS and NOTES before moving on.
 - Never put secrets, tokens, phone numbers or real message content in any of these files.
 
+## Remote repository (user instruction, 2026-09-28)
+
+- Remote: `origin` = https://github.com/ilay1112/whatsapp-agent.git, branch `main`. **The repository is PUBLIC.** Work is committed locally and pushed to it.
+- Before every push: scan what is being published for phone numbers, WhatsApp chat/group ids, tokens, keys and real message text. Synthetic test JIDs `9725500000NN@s.whatsapp.net` are fine; anything that looks real is not. (On 2026-09-28 one real WhatsApp group id was found in the vendored Go test fixture `vendor/whatsapp-bridge-src/media_serve_test.go` and scrubbed from history before the first push.)
+- Commits are authored as `ilay1 <ilay1112@users.noreply.github.com>` (no personal e-mail in a public history).
+- Subagents never commit or push; the orchestrator does, only from a green or explicitly-noted state, staging explicit paths (never `git add -A` while a workflow is editing the tree).
+
 ## Hard rules
 
 1. NEVER read, list, copy or modify `C:\Users\ilay1\Documents\minime\whatsapp-mcp\whatsapp-bridge\store` — it is the user's live private WhatsApp session and messages. Reading the Go source there is fine.
