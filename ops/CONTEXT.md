@@ -42,3 +42,21 @@ Follow-up instruction (2026-09-21): keep all context, notes, progress, tickets a
 - Two SQLite DBs: `whatsapp.db` (whatsmeow, opaque) and `messages.db` (bridge-owned).
 - The reference `store/` dir contains the user's LIVE session and real messages → off-limits (see CLAUDE.md hard rules). The new app runs the exe with its own fresh store.
 - Full contract: `docs/research/bridge-contract.md` (produced by workflow ①).
+
+## v2 request (user, 2026-09-27)
+
+1. U8 confirmed — **but the app must also EDIT events as conversations evolve**: "I scheduled a meeting at 3pm on Wednesday and later in the conversation I rescheduled to 5pm — the LLM should tell the app there is a change and edit the calendar event."
+2. **Automatic mode in settings**: if the user doesn't want to approve every event, the app adds and edits events on Google Calendar automatically with no approval.
+3. Commit approved → baseline commit made.
+4. **Cloud LLMs must work on an existing subscription, not an API key.** For Gemini the user suggests the needed CLI may be Antigravity ("discontinued for the pro members" — to be verified by research). "Make sure the MCP for WhatsApp is well written as well for the calendar."
+5. **Built-in Whisper** to transcribe voice messages, and the ability to **read events from pictures**.
+6. All of the above researched, evaluated, planned and built with the multi-agent system as before.
+
+### v2 option dialog (2026-09-27)
+
+| Topic | Choice |
+|---|---|
+| Automatic mode scope | **Calendar add + edit only**; replies always stay drafts; cancellation marks the event cancelled, never deletes |
+| Subscription cloud LLMs | **Vendor CLI as a completion backend** — the app keeps its verified pipeline + ToolGate + executor; the CLI is called headlessly; the app's read-only tools reach the CLI as a small MCP server |
+| Voice + pictures | **Local audio always** (whisper.cpp); **pictures may use the active cloud provider's vision** when one is selected |
+| WhatsApp MCP | **Read-only WhatsApp MCP** (search/read chats + messages, never send), same gating pattern as calendar |

@@ -49,6 +49,10 @@
 | U9 | Confirm the v1 cuts (D-025) — each becomes a post-v1 ticket if wanted | in force |
 | U10 | VC++ runtime DLLs: if you can point `VC_REDIST_CRT_DIR` at a `Microsoft.VC143.CRT` folder on this PC they ship inside the app; otherwise the app detects the missing runtime and links to Microsoft's installer | detect + link |
 
+| U11 | Event cancellation: the shipped calendar MCP server's update-event has no status field. Vendored 2-line patch guarded by a fail-closed startup schema check (+ upstream PR), or soft-cancel (title prefix)? | vendored patch + upstream PR |
+| U12 | Gemini on subscription = Antigravity CLI (`agy`) only, and it is a policy gray zone (Terms §6). Ship it as opt-in "experimental", OFF by default, tool-less, with an in-app disclosure — or not at all? API-key Gemini stays the supported path either way | opt-in experimental with disclosure |
+| U13 | Claude subscription default model for S1/S3: sonnet (recommended: cheaper on the 5-hour window) vs the plan default | sonnet |
+
 Manual items added by the finalizer for the user's checklist: **M15** llama-server json_schema wire check on the real binary; **M16** `@lid` send test as a release gate; **V13** Windows Defender firewall prompt may appear during Google sign-in (wizard copy covers it).
 
 Rejected finding (1): the suggested upstream contribution of `--host 127.0.0.1` for the calendar MCP OAuth callback is not planned.

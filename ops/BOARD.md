@@ -69,7 +69,7 @@ Status: `todo` · `doing` · `review` · `done` · `blocked`. Details in `ops/ti
 
 | ID | Title | Kind | Status |
 |---|---|---|---|
-| T-401 | Edited create-event retry can leave two events (no update/delete in v1) | product decision | todo |
+| T-401 | Edited create-event retry can leave two events (no update/delete in v1) | product decision | closed inside v2 by B24/D-055 |
 | T-402 | Latched llama breaker has no user-reachable retry | post-v1 | todo |
 | T-403 | Settings → Reconnect cannot revive a dead calendar host | post-v1 | todo |
 | T-404 | BRIDGE_SPAWN_REFUSED shows "Preparing a code…" forever | post-v1 UX bug | todo |
@@ -80,3 +80,35 @@ Status: `todo` · `doing` · `review` · `done` · `blocked`. Details in `ops/ti
 | T-409 | WCA_TIMERS.scanMs doc clarity (which scan) | orchestrator | todo |
 | T-410 | Dirty state survives a successful approval of an edited draft | product decision | todo |
 | T-411 | fake-bridge control.listen() has no error handler | post-v1 test hygiene | todo |
+
+## Phase 5 — v2 research + design (workflow ⑤)
+
+| ID | Title | Owner | Status |
+|---|---|---|---|
+| T-500 | Research ×8 (CLI backends, event editing, auto-mode safety, whisper, image events, WhatsApp MCP, CLI↔MCP bridge) | 8 agents | done |
+| T-501 | Proposals ×3 + synthesis → `docs/ARCHITECTURE-v2.md` | 4 agents | done |
+| T-502 | Delta specs: contracts, UX, pipeline, tests | 4 agents | done |
+| T-503 | Build plan v2 | 1 agent | done |
+| T-504 | Critics ×3 + finalizer | 4 agents | done |
+
+## Phase 6 — v2 build (workflow ⑥) — tickets in `ops/tickets/T-6xx-*`
+
+| ID | Package | Wave | Status |
+|---|---|---|---|
+| T-600 | V2-W0-scaffold | 0 | todo |
+| T-601 | V2-W1-01-db | 1 | todo |
+| T-602 | V2-W1-02-calendar-mcp | 1 | todo |
+| T-603 | V2-W1-03-edit-pipeline | 1 | todo |
+| T-604 | V2-W1-04-exec-auto | 1 | todo |
+| T-605 | V2-W1-05-wa-toolserver | 1 | todo |
+| T-606 | V2-W1-06-claude-cli | 1 | todo |
+| T-607 | V2-W1-07-media-voice | 1 | todo |
+| T-608 | V2-W1-08-vision | 1 | todo |
+| T-609 | V2-W1-09-antigravity | 1 | todo |
+| T-610 | V2-W1-10-main-platform | 1 | todo |
+| T-611 | V2-W1-11-renderer-dashboard | 1 | todo |
+| T-612 | V2-W1-12-renderer-settings | 1 | todo |
+| T-613 | V2-W2-01-compose | 2 | todo |
+| T-614 | V2-W2-02-security | 2 | todo |
+| T-615 | V2-W2-03-e2e | 2 | todo |
+| T-616 | V2-W2-04-packaging | 2 | todo |

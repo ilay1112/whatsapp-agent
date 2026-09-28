@@ -167,3 +167,18 @@ read the local databases and call DPAPI; `runAsNode` is enabled; nothing is code
 an opaque binary nobody here can rebuild and will eventually hit "Client outdated"; whatsmeow use violates WhatsApp's
 terms regardless of volume; capability separation is module-level, not process-level; and a human who approves without
 reading defeats every control above.
+
+
+---
+
+## v2 additions to the manual checklist (orchestrator, 2026-09-28 — from ARCHITECTURE-v2 §16/§18)
+
+These close the v2 UNVERIFIED register; all need the user's own accounts or hardware, so no agent may run them.
+
+| # | Check | Closes |
+|---|---|---|
+| M-CLI-1 | With your logged-in Claude Code: run the app's provider-start smoke (one tiny schema call). Confirms the headless flag set on your CLI version, whether the MCP token expands inside an inline `--mcp-config`, image input over stream-json, and the `auth status --json` fields | U-C6, U-C7, U-C8, image path on Claude CLI |
+| M-AGY-1 | Only if you opt in to Antigravity: install `agy`, sign in, run the app's smoke. Records the observed tool set (must be empty), whether sign-in survives the isolated app profile, and the error field names. Its result gates the Antigravity release | U4, U-A2, U-A6, U-A7 |
+| M-CAL-1 | Approve one change and one cancel on a real test event; confirm the patched calendar server honours `status` and `If-Match` (a 412 on a concurrent edit), and that undo restores the event | U-E1, B4 patch |
+| M-VOICE-1 | Record one real Hebrew and one English voice note; confirm transcription and pick the default voice tier | U-v2-2, T2 concern 10 |
+| M-GOLDEN-1 | `npm run test:golden:live --feature v1|edits|images|voice` on your machine per provider you use. **This is the gate for automatic edits and for voice/picture events in automatic mode (D-068)**: until it records passing values, automatic edits stay manual and every voice/picture event asks for approval | D-056, D-068 |
