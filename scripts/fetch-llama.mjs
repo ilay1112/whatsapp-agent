@@ -18,6 +18,9 @@
 //     must not reach the installer. `node scripts/fetch-llama.mjs --pin-crt` records the hashes of the folder the
 //     staging machine actually owns, and is the only way those nulls are ever filled.
 //   - writes the resulting file list to `vendor/llama/MANIFEST.txt`.
+//   - [signing-fix] checks every staged file against the COMMITTED per-file pins `files.fileSha256` of
+//     `vendor/llama.pin.json` before writing anything; `node scripts/fetch-llama.mjs --pin-files` (downloads the pinned
+//     zip) is the only way that map is filled. scripts/sign-windows.mjs signs a llama file only when it matches it.
 // The downloaded binaries are NEVER executed - not by this script, not by the tests.
 // `fetch` is injectable so the unit tests run with no network. No new npm dependency: the zip is read with node:zlib.
 import { createHash } from 'node:crypto';
@@ -209,6 +212,104 @@ export async function pinCrt(io = {}) {
 }
 
 // ---------------------------------------------------------------------------------------------------------------------
+// [signing-fix, signing-review MAJOR 3] COMMITTED per-file pins: `files.fileSha256` in the pin file maps every
+// allow-listed name of the PINNED zip to its sha256. vendor/ is gitignored, so without these the only reference for a
+// staged file was the staged file itself; scripts/sign-windows.mjs signs a llama / whisper file only when it matches.
+// `--pin-files` is the only way the map is ever filled: it downloads the pinned zip, verifies it, hashes in memory.
+// ---------------------------------------------------------------------------------------------------------------------
+const sha256Hex = (bytes) => createHash('sha256').update(bytes).digest('hex');
+const sortedObject = (o) =>
+  Object.fromEntries(
+    Object.keys(o)
+      .sort()
+      .map((k) => [k, o[k]]),
+  );
+
+/** The allow-listed entries of a (verified) zip as [{ name, bytes }]; `nameOf` maps an entry name (null = skip). */
+export function allowedZipFiles(zip, pin, nameOf = (n) => n.split('/').pop() ?? n) {
+  const out = [];
+  for (const entry of readZipEntries(zip)) {
+    if (entry.isDirectory) continue;
+    const name = nameOf(entry.name);
+    if (name === null || !isAllowedFile(name, { exact: pin.files.exact, prefix: pin.files.prefix })) continue;
+    out.push({ name, bytes: entry.read() });
+  }
+  return out;
+}
+
+/** name -> sha256 of every allow-listed entry of the zip, sorted by name. Pure, in memory. */
+export function zipFileDigests(zip, pin, nameOf) {
+  return sortedObject(Object.fromEntries(allowedZipFiles(zip, pin, nameOf).map((f) => [f.name, sha256Hex(f.bytes)])));
+}
+
+/**
+ * Checks the files about to be staged against `pin.files.fileSha256`. null / absent => UNPINNED: warns (the fetch
+ * still works; signed builds refuse) and returns false. A map => every staged file must be pinned and match, and every
+ * pinned name must be staged; anything else throws BEFORE a single file is written.
+ */
+export function checkFilePins(digests, pin, { pinPath, script, log }) {
+  const map = pin.files.fileSha256;
+  if (map === null || map === undefined) {
+    log(
+      `fetch: WARNING ${pinPath} files.fileSha256 is UNPINNED - the staged files are only as trustworthy as vendor/; ` +
+        `signed builds refuse them. Run \`node ${script} --pin-files\`, review and commit the hashes.`,
+    );
+    return false;
+  }
+  if (typeof map !== 'object') throw new Error(`fetch: ${pinPath} files.fileSha256 is malformed`);
+  for (const [name, digest] of Object.entries(digests)) {
+    const want = map[name];
+    if (typeof want !== 'string' || !/^[0-9a-f]{64}$/.test(want)) {
+      throw new Error(`fetch: ${name} has no per-file pin in ${pinPath} files.fileSha256 - refusing to stage it`);
+    }
+    if (want !== digest) throw new Error(`fetch: ${name} does not match its per-file pin in ${pinPath}`);
+  }
+  for (const name of Object.keys(map)) {
+    if (!name.startsWith('_') && !Object.hasOwn(digests, name)) {
+      throw new Error(`fetch: ${name} is pinned in ${pinPath} files.fileSha256 but is not in the asset`);
+    }
+  }
+  return true;
+}
+
+/**
+ * Writes `files.fileSha256` into the pin file TEXT: replaces the `"fileSha256": null | {...}` slot in place, so the
+ * comments and the rest of the formatting survive (the slot sits at 4 spaces inside "files").
+ */
+export function applyFilePins(source, digests) {
+  const re = /("fileSha256"\s*:\s*)(null|\{[^{}]*\})/;
+  if (!re.test(source)) throw new Error('fetch: the pin file has no files.fileSha256 slot');
+  const body = JSON.stringify(sortedObject(digests), null, 2).replace(/\n/g, '\n    ');
+  return source.replace(re, (_m, key) => `${key}${body}`);
+}
+
+/**
+ * `--pin-files`: downloads the PINNED zip (refused unless size + sha256 match the pin), hashes the allow-listed
+ * entries in memory and records them in the pin file. Nothing is unpacked, nothing is executed.
+ * @param {object} io  `{ fetch, fs, log, root }`
+ * @param {{ pinPath: string, asset: string, nameOf?: (n: string) => string | null, label: string }} [what]
+ */
+export async function pinFiles(io = {}, what = { pinPath: PIN_PATH, asset: 'llama', label: 'fetch-llama' }) {
+  const fetchFn = io.fetch ?? globalThis.fetch;
+  const fs = io.fs ?? fsp;
+  const log = io.log ?? ((m) => process.stdout.write(`${m}\n`));
+  const root = io.root ?? path.resolve(fileURLToPath(new URL('..', import.meta.url)));
+  const pinPath = path.join(root, what.pinPath);
+  const source = (await fs.readFile(pinPath, 'utf8')).toString();
+  const pin = JSON.parse(source);
+  const a = pin[what.asset];
+  const zip = await fetchVerified({ fetch: fetchFn, url: a.url, sha256: a.sha256, size: a.size });
+  const digests = zipFileDigests(zip, pin, what.nameOf);
+  await fs.writeFile(pinPath, applyFilePins(source, digests), 'utf8');
+  for (const [name, digest] of Object.entries(digests)) log(`pinned ${name} = ${digest}`);
+  log(
+    `${what.label}: recorded ${String(Object.keys(digests).length)} per-file pins in ${what.pinPath} - ` +
+      'commit this change deliberately.',
+  );
+  return digests;
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
 // main
 // ---------------------------------------------------------------------------------------------------------------------
 export async function main(io = {}) {
@@ -228,12 +329,17 @@ export async function main(io = {}) {
     sha256: pin.llama.sha256,
     size: pin.llama.size,
   });
+  // [signing-fix] every file is checked against the committed per-file pins BEFORE anything is written
+  const files = allowedZipFiles(zip, pin);
+  checkFilePins(Object.fromEntries(files.map((f) => [f.name, sha256Hex(f.bytes)])), pin, {
+    pinPath: PIN_PATH,
+    script: 'scripts/fetch-llama.mjs',
+    log,
+  });
   const written = [];
-  for (const entry of readZipEntries(zip)) {
-    if (entry.isDirectory || !isAllowedFile(entry.name, { exact: pin.files.exact, prefix: pin.files.prefix })) continue;
-    const base = entry.name.split('/').pop();
-    await fs.writeFile(path.join(targetDir, base), entry.read());
-    written.push(base);
+  for (const { name, bytes } of files) {
+    await fs.writeFile(path.join(targetDir, name), bytes);
+    written.push(name);
   }
   if (!written.includes('llama-server.exe'))
     throw new Error('fetch-llama: llama-server.exe is not in the pinned asset');
@@ -256,7 +362,11 @@ export async function main(io = {}) {
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1])) {
-  const run = process.argv.includes('--pin-crt') ? pinCrt : main;
+  const run = process.argv.includes('--pin-crt')
+    ? pinCrt
+    : process.argv.includes('--pin-files')
+      ? () => pinFiles()
+      : main;
   run().catch((err) => {
     process.stderr.write(`fetch-llama: ${err instanceof Error ? err.message : String(err)}\n`);
     process.exit(1);

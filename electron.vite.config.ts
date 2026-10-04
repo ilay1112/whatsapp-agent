@@ -23,10 +23,29 @@ function modelManifestSidecar(): Plugin {
   };
 }
 
+/** [signing-fix, D-078, signing-review MAJOR 1] Signed-build flag, compiled in from WCA_SIGN_MODE at build time - the
+ *  SAME "off" rule as scripts/sign-windows.mjs readSigningConfig (unset / empty / "off" in any case = unsigned). Only a
+ *  signed build's launcher reads the bridge pin inside app.asar; the unsigned default reads no pin file at all. */
+const SIGN_MODE = String(process.env.WCA_SIGN_MODE ?? '').trim();
+const SIGNED_BUILD = SIGN_MODE !== '' && SIGN_MODE.toLowerCase() !== 'off';
+
+/** [signing-fix] out/main/build-flags.json: sign-windows.mjs beforePack refuses to package when WCA_SIGN_MODE at
+ *  packaging time disagrees with the flag this bundle was compiled with (either direction). */
+function buildFlagsSidecar(): Plugin {
+  return {
+    name: 'wca-build-flags-sidecar',
+    generateBundle() {
+      const source = `${JSON.stringify({ schema: 1, signedBuild: SIGNED_BUILD })}\n`;
+      this.emitFile({ type: 'asset', fileName: 'build-flags.json', source });
+    },
+  };
+}
+
 export default defineConfig({
   main: {
     resolve: { alias: shared },
-    plugins: [modelManifestSidecar()], // [V2]
+    define: { __AUTHENTICODE_SIGNED_BUILD__: JSON.stringify(SIGNED_BUILD) }, // [signing-fix] src/main/buildFlags.ts
+    plugins: [modelManifestSidecar(), buildFlagsSidecar()], // [V2] + [signing-fix]
     // Dependencies listed in package.json#dependencies are externalised by electron-vite by default and ship in app.asar.
     build: { target: 'node24', sourcemap: true, rollupOptions: { output: { format: 'es' } } },
   },

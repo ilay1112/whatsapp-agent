@@ -186,6 +186,10 @@ export interface Harness {
   readonly fetched: string[];
   /** Every NON-loopback URL the app tried to fetch - refused by the harness (it never reaches the network). */
   readonly blockedFetches: string[];
+  // ---- [v2-closeout] ------------------------------------------------------------------------------------------------------
+  /** Runs the REAL quit sequence (runtime.shutdown()) under the pumped clock and keeps userData on disk for inspection; dispose() later
+   *  still stops the fakes and removes the temp dir (its own shutdown() is then a no-op). */
+  quit(): Promise<void>;
 }
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -609,7 +613,7 @@ export async function createHarness(opts: HarnessOptions = {}): Promise<Harness>
   for (const m of opts.media ?? []) {
     bridge.setMedia(m.chatJid, m.msgId, 'bytes' in m ? m.bytes : { scenario: m.scenario });
   }
-  if (opts.waWorld === true) seedWaWorld(bridge.db, app.repos, { nowMs: clock.now() });
+  if (opts.waWorld === true) bridge.db.batch(() => seedWaWorld(bridge.db, app.repos, { nowMs: clock.now() })); // [v2-closeout] one commit
 
   // ---- push events --------------------------------------------------------------------------------------------------
   const pushes: Array<{ event: string; payload: unknown }> = [];
@@ -821,6 +825,7 @@ export async function createHarness(opts: HarnessOptions = {}): Promise<Harness>
       return toolServers.map((l) => ({ name: l.name, listening: l.listening }));
     },
     jobs: () => app.jobPids(),
+    quit: () => pumpUntil(app.shutdown()),
     fetched,
     blockedFetches,
     advance,

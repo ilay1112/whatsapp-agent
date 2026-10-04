@@ -398,6 +398,8 @@ export interface Repos {
       s:
         | { state: 'on' }
         | { state: 'paused'; reason: T.AutoPausedReason }
+        /** [v2-closeout auto-mode-8] paused -> the state it paused (shadow|on); RowNotFoundError when the row is not paused. */
+        | { state: 'resume' }
         | { state: 'disabled'; reason: T.AutoDisabledReason; at: T.EpochMs }
         | { state: 'expired' },
     ): T.AutoPolicyRecord;

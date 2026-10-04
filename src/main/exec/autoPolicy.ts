@@ -169,15 +169,6 @@ export function createAutoPolicyService(deps: AutoPolicyServiceDeps): AutoPolicy
     deps.audit('auto_policy_paused', live.id, { reason });
   };
 
-  /** A trial that never ended by the user's own click (auto:endShadow) - resuming it must not turn it into `on` silently. */
-  const trialNotEnded = (p: AutoPolicyRecord): boolean => {
-    if (p.shadowUntil <= p.enabledAt) return false; // "Turn on now" (F34): shadow_until = enabled_at
-    const ended = repos.db
-      .prepare<{ n: number }>(`SELECT COUNT(*) AS n FROM audit_log WHERE kind = 'auto_policy_shadow_ended' AND ref = ?`)
-      .get(p.id)!.n;
-    return ended === 0;
-  };
-
   return {
     getState,
 
@@ -267,12 +258,11 @@ export function createAutoPolicyService(deps: AutoPolicyServiceDeps): AutoPolicy
       if (refused !== null) return err(refused);
       // A snapshot change (calendar, account, provider, app version) needs a fresh requestEnable with its dialog.
       if (deps.snapshotSha() !== live.snapshotSha) return err('BAD_REQUEST');
-      // A paused TRIAL resumes to `on` only when the trial could have been ended anyway (>= 3 decisions): never a silent promotion.
-      if (trialNotEnded(live) && repos.autoDecisions.shadowTally(live.id).decisions < LIMITS.autoMinShadowDecisions) {
-        return err('BAD_REQUEST');
-      }
-      repos.autoPolicies.setState(live.id, { state: 'on' });
-      deps.audit('auto_policy_resumed', live.id, {});
+      // [v2-closeout auto-mode-8] Resume returns to the state the user last CONFIRMED: a paused trial resumes as `shadow` (whatever its
+      // tally - "Turn on for real" stays its own explicit click, auto:endShadow), an `on` policy resumes as `on`. The repo moves the
+      // row to its recorded paused_from and the v5 trigger refuses paused(trial) -> on, so no code path can promote it silently.
+      const resumed = repos.autoPolicies.setState(live.id, { state: 'resume' });
+      deps.audit('auto_policy_resumed', live.id, { to: resumed.state });
       return { ok: true, value: changed() };
     },
 

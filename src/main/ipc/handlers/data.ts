@@ -16,6 +16,22 @@ export function purgeDirsOf(
   return [paths.mediaCacheDir, paths.voiceTmpDir, paths.cliRunsDir, winPath.join(paths.agyWorkspaceDir, 'runs')];
 }
 
+/**
+ * [v2-closeout cli-sandbox-5] What agy keeps of every headless run inside the app-owned isolated profile (F3: HOME = USERPROFILE =
+ * <userData>\agy-home): the conversation transcripts (brain\<id>\...transcript.jsonl, conversations\, history.jsonl - they hold the
+ * nonce block with the WhatsApp text and the prefetched chat context) and its logs. Research v2-gemini-cli-backend: "State/config".
+ * The app-written settings.json (the trusted workspace) is not in the list; the sign-in lives in Windows Credential Manager.
+ */
+export const AGY_TRANSCRIPT_ENTRIES: readonly string[] = ['brain', 'conversations', 'history.jsonl', 'log', 'cli.log'];
+/** The directory that holds AGY_TRANSCRIPT_ENTRIES (AGY_HOME_DIR of llm/cli/claudeCli.env.ts, kept literal: ipc never imports llm). */
+const agyStateDirOf = (paths: Pick<AppPaths, 'userData'>): string =>
+  winPath.join(paths.userData, 'agy-home', '.gemini', 'antigravity-cli');
+/** The absolute agy transcript / log entries data:purgeNow removes. */
+export function agyTranscriptEntriesOf(paths: Pick<AppPaths, 'userData'>): string[] {
+  const dir = agyStateDirOf(paths);
+  return AGY_TRANSCRIPT_ENTRIES.map((n) => winPath.join(dir, n));
+}
+
 /** The fs slice the wipe needs (tests: a mkdtemp tree). */
 export interface WipeFs {
   readdirSync(dir: string): string[];
@@ -37,6 +53,37 @@ export function wipeDirContents(dir: string, fsi: WipeFs): { removed: number; fa
   let removed = 0;
   let failed = 0;
   for (const name of names) {
+    try {
+      fsi.rmSync(winPath.join(dir, name), { recursive: true, force: true });
+      removed += 1;
+    } catch {
+      failed += 1;
+    }
+  }
+  return { removed, failed };
+}
+
+/**
+ * [v2-closeout cli-sandbox-5] Removes the AGY_TRANSCRIPT_ENTRIES that exist in the isolated profile's state dir (only names that are
+ * present are touched; nothing else of the profile). A busy entry (an agy job writing it right now) is skipped and counted, like
+ * wipeDirContents. Names are never logged.
+ */
+export function wipeAgyTranscripts(
+  paths: Pick<AppPaths, 'userData'>,
+  fsi: WipeFs,
+): { removed: number; failed: number } {
+  const dir = agyStateDirOf(paths);
+  let names: string[];
+  try {
+    names = fsi.readdirSync(dir);
+  } catch {
+    return { removed: 0, failed: 0 }; // no isolated profile: agy never ran here
+  }
+  const wanted = new Set(AGY_TRANSCRIPT_ENTRIES.map((n) => n.toLowerCase()));
+  let removed = 0;
+  let failed = 0;
+  for (const name of names) {
+    if (!wanted.has(name.toLowerCase())) continue;
     try {
       fsi.rmSync(winPath.join(dir, name), { recursive: true, force: true });
       removed += 1;
@@ -80,7 +127,8 @@ export function createDataHandlers(
      * purged text does not survive in the daily copies". The job writes its own `purge` audit row (with the mode and the
      * effective retentionDays), so this handler appends none.
      * [V2] First a live automatic policy is disabled ('purge'); afterwards the contents of media-cache\, voice\tmp\, cli-runs\
-     * and agy-workspace\runs\ are wiped (transcripts, pictures and CLI run files must not outlive the purged rows).
+     * and agy-workspace\runs\ are wiped (transcripts, pictures and CLI run files must not outlive the purged rows), and
+     * [v2-closeout cli-sandbox-5] so are agy's conversation transcripts / logs in the isolated profile (AGY_TRANSCRIPT_ENTRIES).
      */
     'data:purgeNow': () => {
       disableLivePolicy();
@@ -93,6 +141,7 @@ export function createDataHandlers(
       });
       let failed = 0;
       for (const dir of purgeDirsOf(deps.paths)) failed += wipeDirContents(dir, fsi).failed;
+      failed += wipeAgyTranscripts(deps.paths, fsi).failed; // [v2-closeout cli-sandbox-5]
       if (failed > 0) deps.log.warn('purge_dir_entries_kept', { count: failed });
       return ok({ itemsPurged: result.itemsDeleted });
     },

@@ -9,7 +9,14 @@ import os from 'node:os';
 import path from 'node:path';
 import type { ChildProcess } from 'node:child_process';
 import { LIMITS } from '../../shared/types';
-import { CLAUDE_ENV_KEYS, createJobRunner, type JobSpec } from './jobRunner';
+import {
+  CLAUDE_ENV_KEYS,
+  JobAbortedError,
+  JobRunnerClosedError,
+  WHISPER_ENV_KEYS,
+  createJobRunner,
+  type JobSpec,
+} from './jobRunner';
 
 interface HangingChild extends EventEmitter {
   pid: number;
@@ -102,5 +109,88 @@ describe('killAll() on the quit path', () => {
     await runner.killAll();
     expect(pidFiles()).toEqual([]);
     expect(runner.jobPids()).toEqual({ cli: [], voice: [] });
+  });
+});
+
+// [v2-closeout] e2e cli-connect (7b)/(7c)/(9): a NEW CLI job was spawned during the quit sequence (after killJobs) and left
+// run\job-cli-<id>.pid.json behind, because run() kept accepting jobs after killAll(). The runner now latches on killAll(): every later
+// run() - a fresh call, a call made while killAll() is still awaiting the exits, or one already queued behind the per-kind mutex - is
+// refused with JobRunnerClosedError and NOTHING is spawned or written.
+describe('the shutdown latch', () => {
+  function rig(realTimers = false): {
+    runner: ReturnType<typeof createJobRunner>;
+    spawned: number[];
+    child: HangingChild;
+  } {
+    const child = hangingChild(7101);
+    const spawned: number[] = [];
+    // never-firing timers mimic app.exit() (the close wait stays pending); real timers let a killed job finish its run and release the mutex
+    const timers = realTimers ? undefined : { setTimeout: vi.fn(() => ({})), clearTimeout: vi.fn() };
+    const runner = createJobRunner({
+      runDir,
+      now: () => 1_800_000_000_000,
+      log: () => undefined,
+      proc: {
+        spawn: (() => {
+          spawned.push(child.pid);
+          return child as unknown as ChildProcess;
+        }) as never,
+        killPid: async () => child.exit(),
+        setPriority: () => undefined,
+      },
+      ...(timers === undefined ? {} : { timers: timers as never }),
+    });
+    return { runner, spawned, child };
+  }
+  const drain = async (j: { lines(): AsyncIterable<string> }): Promise<string> => {
+    for await (const _l of j.lines()) {
+      /* hangs after init */
+    }
+    return 'done';
+  };
+
+  it('run() after killAll() is refused before any spawn, with no pid file', async () => {
+    const { runner, spawned } = rig();
+    await runner.killAll();
+    await expect(runner.run(spec(), drain, new AbortController().signal)).rejects.toBeInstanceOf(JobRunnerClosedError);
+    await expect(
+      runner.run(
+        { ...spec(), kind: 'voice', env: envFor(WHISPER_ENV_KEYS), stdout: 'ignore', stdin: null },
+        drain,
+        new AbortController().signal,
+      ),
+    ).rejects.toBeInstanceOf(JobRunnerClosedError);
+    expect(spawned).toEqual([]);
+    expect(pidFiles()).toEqual([]);
+    expect(runner.breaker('cli')).toMatchObject({ open: false, failures: 0 }); // a refusal is not a CLI failure
+  });
+
+  it('a run requested WHILE killAll() awaits the exits, and one queued behind the mutex, never spawn', async () => {
+    const { runner, spawned } = rig(true);
+    let started!: () => void;
+    const running = new Promise<void>((r) => (started = r));
+    const first = runner.run(
+      spec(),
+      async (j) => {
+        started();
+        return drain(j);
+      },
+      new AbortController().signal,
+    );
+    void first.catch(() => undefined);
+    await running;
+    const queued = runner.run(spec(), drain, new AbortController().signal); // waits for the cli mutex
+    const quitting = runner.killAll();
+    const during = runner.run(spec(), drain, new AbortController().signal); // the mid-quit request
+    await quitting;
+    await expect(during).rejects.toBeInstanceOf(JobRunnerClosedError);
+    await expect(queued).rejects.toBeInstanceOf(JobRunnerClosedError);
+    expect(spawned).toEqual([7101]); // only the job that ran before the quit
+    expect(pidFiles()).toEqual([]);
+    expect(runner.jobPids()).toEqual({ cli: [], voice: [] });
+  });
+
+  it('JobRunnerClosedError is an abort (callers already treat JobAbortedError as "not run")', () => {
+    expect(new JobRunnerClosedError()).toBeInstanceOf(JobAbortedError);
   });
 });

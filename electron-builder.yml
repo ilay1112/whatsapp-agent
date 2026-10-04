@@ -70,7 +70,28 @@ electronFuses:
   enableEmbeddedAsarIntegrityValidation: false # [LR] UNVERIFIED on Windows with 26.15.3
   enableCookieEncryption: true
   grantFileProtocolExtraPrivileges: false
-win: { target: [{ target: nsis, arch: [x64] }], icon: build/icon.ico, requestedExecutionLevel: asInvoker }
+# [signing-pipeline, D-078] Authenticode signing, INACTIVE until WCA_SIGN_MODE is set (README "Code signing"). Every hook
+# below is a no-op without it: nothing is signed, written or started, and the output is byte-identical to an unsigned
+# build. With it, scripts/sign-windows.mjs signs EVERY PE file (sha256 digest + RFC 3161 time stamp), checks each vendored
+# binary against its COMMITTED pin BEFORE signing, refuses a half-configured mode in beforePack, refuses a partially
+# signed tree in afterSign / artifactBuildCompleted. [signing-fix] beforePack also refuses a WCA_SIGN_MODE / build-flag
+# mismatch (out/main/build-flags.json), pre-signs the bridge and writes its pin into out/main (=> INSIDE app.asar; the
+# packaged resources/bridge/SHA256SUMS is never a pin), and turns enableEmbeddedAsarIntegrityValidation ON for signed
+# builds only - the `false` below stays the unsigned default.
+# No certificate, thumbprint, account or password is ever written here - signing parameters come ONLY from WCA_SIGN_*.
+# Do not add certificateFile / certificateSha1 / certificateSubjectName / azureSignOptions: azureSignOptions would make
+# electron-builder Install-Module TrustedSigning on the build machine and bypass the provenance + re-pin steps.
+beforePack: ./scripts/sign-windows.mjs
+afterSign: ./scripts/sign-windows.mjs
+artifactBuildCompleted: ./scripts/sign-windows.mjs
+win:
+  target: [{ target: nsis, arch: [x64] }]
+  icon: build/icon.ico
+  requestedExecutionLevel: asInvoker
+  signExts: ['.dll'] # .exe is always signed; .dll adds the llama/whisper/Electron runtime DLLs (afterSign checks by PE header)
+  signtoolOptions:
+    sign: ./scripts/sign-windows.mjs # named export `sign`
+    signingHashAlgorithms: [sha256] # one SHA-256 signature per file; sign-windows.mjs refuses any other digest
 nsis: {
     oneClick: true,
     perMachine: false,

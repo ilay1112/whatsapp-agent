@@ -552,3 +552,34 @@ describe('createCliStatus - cached status (<= 1 probe per cacheMs)', () => {
     expect((await agy.get('antigravity_cli')).workspaceTrusted).toBe(true);
   });
 });
+
+// [v2-closeout] e2e cli-connect (9): after cli:test invalidated the cache, the Connect card's follow-up cli:getStatus ran the locator
+// probes (`--version`, `auth status`) as NEW CLI jobs while the app was quitting. Once `closed()` is true the service never probes:
+// it answers the last known status (stale is fine on a closing window) or 'unknown', and the locator is not called at all.
+describe('createCliStatus - closed (the quit sequence began)', () => {
+  const runner: CliRunner = { run: vi.fn(), breakerOpen: () => false };
+  const READY: CliLocation = { provider: 'claude_cli', exePath: 'C:/x/claude.exe', version: '2.1.258' };
+  it('never probes once closed: last known status (even after invalidate) or unknown', async () => {
+    let closed = false;
+    const loc: CliLocator = { find: vi.fn(async () => READY), version: vi.fn(), signedIn: vi.fn(async () => true) };
+    const svc = createCliStatus({
+      locator: loc,
+      runner,
+      clock: { now: () => 0 },
+      cacheMs: 60_000,
+      closed: () => closed,
+    });
+    expect((await svc.get('claude_cli')).state).toBe('ready');
+    expect(loc.find).toHaveBeenCalledTimes(1);
+    closed = true;
+    svc.invalidate(); // cli:test / providerFactory.invalidate() on the quit path
+    expect((await svc.get('claude_cli')).state).toBe('ready');
+    expect(await svc.get('antigravity_cli')).toMatchObject({
+      provider: 'antigravity_cli',
+      state: 'unknown',
+      version: null,
+    });
+    expect(loc.find).toHaveBeenCalledTimes(1);
+    expect(loc.signedIn).toHaveBeenCalledTimes(1);
+  });
+});

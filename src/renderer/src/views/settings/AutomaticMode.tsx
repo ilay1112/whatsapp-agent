@@ -95,6 +95,10 @@ export function AutomaticMode({ state, onOpenActivity }: AutomaticModeProps) {
   const precondition = firstPrecondition(state, rateLimited);
   const tally = state.shadowTally;
   const shadowReady = (tally?.decisions ?? 0) >= LIMITS.autoMinShadowDecisions;
+  const expiringSoon = policy?.state === 'on' && daysLeft(policy.expiresAt, now) <= RENEW_WINDOW_DAYS;
+  // ux-i18n-v2-3 (b): Renew is offered only when the fresh dialog main would show can be granted (a precondition that
+  // refuses it would leave automatic mode stopped for nothing). The provider check is not in firstPrecondition.
+  const renewable = expiringSoon && precondition === null && state.preconditions.providerAllowsAuto;
 
   /** Every state-changing answer is the new AutoState: the store (and so the strip, the tray line) follows at once. */
   const apply = (r: Awaited<ReturnType<typeof api.getAutoState>>): void => {
@@ -107,12 +111,12 @@ export function AutomaticMode({ state, onOpenActivity }: AutomaticModeProps) {
     }
   };
 
-  const enable = async (e: MouseEvent, trial: boolean) => {
-    if (guarded(e) || waiting) return;
+  /** The one `auto:requestEnable` call site: main shows its native dialog and decides (never this page). */
+  const askEnable = async (requested: AutoScope, trial: boolean) => {
     setError(null);
     setRefused(null);
     setWaiting(true);
-    const r = await api.requestAutoEnable({ scope, trial });
+    const r = await api.requestAutoEnable({ scope: requested, trial });
     setWaiting(false);
     if (!r.ok && r.error.code === 'BAD_REQUEST') {
       // The enable buttons stay clickable with a provider that cannot run automatic mode (UX2 4.5) and main refuses it
@@ -124,6 +128,34 @@ export function AutomaticMode({ state, onOpenActivity }: AutomaticModeProps) {
       return;
     }
     apply(r);
+  };
+
+  const enable = async (e: MouseEvent, trial: boolean) => {
+    if (guarded(e) || waiting) return;
+    await askEnable(scope, trial);
+  };
+
+  /**
+   * ux-i18n-v2-3 (b): Renew of an `on` policy in its last 7 days (UX2 4.5, SetupStrip row 7). Main refuses
+   * auto:requestEnable while any policy is live (autoPolicy precondition), so the current period is ended first
+   * (`auto:disable`, the fail-safe direction) and main is then asked for a fresh native dialog with the SAME scope the
+   * user granted. The page says so before the click (`auto-renew-note`): cancelling the dialog leaves automatic mode
+   * off. A refused stop asks for nothing.
+   */
+  const renew = async (e: MouseEvent) => {
+    if (guarded(e) || waiting || busy || !policy) return;
+    const grantedScope = policy.scope;
+    setError(null);
+    setRefused(null);
+    setBusy(true);
+    const stopped = await api.disableAuto();
+    setBusy(false);
+    if (!stopped.ok) {
+      setError(stopped.error.code);
+      return;
+    }
+    useAutoStore.getState().setState(stopped.value);
+    await askEnable(grantedScope, false);
   };
 
   /** `restartOnRefusal`: a BAD_REQUEST from Resume / "Turn on for real" means the policy cannot continue as it is. */
@@ -232,6 +264,18 @@ export function AutomaticMode({ state, onOpenActivity }: AutomaticModeProps) {
       case 'on':
         return (
           <>
+            {renewable ? (
+              <button
+                type="button"
+                className="btn btn-outline"
+                data-testid="auto-renew"
+                aria-describedby="auto-renew-note"
+                disabled={waiting || busy}
+                onClick={(e) => void renew(e)}
+              >
+                {t('auto.renew')}
+              </button>
+            ) : null}
             <button
               type="button"
               className="btn btn-outline"
@@ -287,8 +331,6 @@ export function AutomaticMode({ state, onOpenActivity }: AutomaticModeProps) {
     }
   })();
 
-  const expiringSoon = policy?.state === 'on' && daysLeft(policy.expiresAt, now) <= RENEW_WINDOW_DAYS;
-
   return (
     <section
       id="settings-group-auto"
@@ -314,6 +356,11 @@ export function AutomaticMode({ state, onOpenActivity }: AutomaticModeProps) {
       {policy && expiringSoon ? (
         <p className="m-0 text-sm text-text-muted" data-testid="auto-expiring">
           {t('setup.auto.expiring', { count: daysLeft(policy.expiresAt, now) })}
+        </p>
+      ) : null}
+      {renewable ? (
+        <p id="auto-renew-note" className="m-0 text-sm text-text-muted" data-testid="auto-renew-note">
+          {t('auto.renewNote')}
         </p>
       ) : null}
 

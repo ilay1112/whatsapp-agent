@@ -86,8 +86,9 @@ export function createAutoPoliciesRepo(db: Db, clock: () => T.EpochMs = () => Da
     },
 
     /**
-     * on (from shadow = "Turn on for real", or from paused = resume; clears paused_reason) | paused + reason | disabled + reason + at |
-     * expired. The state trigger refuses leaving a closed row, returning to shadow and a pause/disable without its reason.
+     * on (from shadow = "Turn on for real", or from a paused `on` row; clears paused_reason) | paused + reason (records paused_from) |
+     * resume (paused -> paused_from) | disabled + reason + at | expired. The state trigger (migration v5) refuses leaving a closed row,
+     * any return to shadow except a paused trial's resume, a paused trial going to `on`, and a pause/disable without its reason.
      */
     setState(id, s) {
       let changes: number;
@@ -98,9 +99,24 @@ export function createAutoPoliciesRepo(db: Db, clock: () => T.EpochMs = () => Da
             .run(id).changes;
           break;
         case 'paused':
+          // [v2-closeout auto-mode-8] the pause records the live state it left (`state` on the right-hand side is the OLD value); the
+          // v5 trigger refuses any other paused_from. A repeated pause keeps the first record.
           changes = db
-            .prepare(`UPDATE auto_policies SET state = 'paused', paused_reason = ? WHERE id = ?`)
+            .prepare(
+              `UPDATE auto_policies SET state = 'paused', paused_reason = ?,
+                 paused_from = CASE WHEN state = 'paused' THEN paused_from ELSE state END WHERE id = ?`,
+            )
             .run(s.reason, id).changes;
+          break;
+        case 'resume':
+          // [v2-closeout auto-mode-8] paused -> the state the user last confirmed (shadow for a trial, on otherwise). A paused trial
+          // never becomes `on` here: only auto:endShadow ("Turn on for real") and the native enable dialog produce `on`.
+          changes = db
+            .prepare(
+              `UPDATE auto_policies SET state = paused_from, paused_reason = NULL
+                 WHERE id = ? AND state = 'paused' AND paused_from IN ('shadow','on')`,
+            )
+            .run(id).changes;
           break;
         case 'disabled':
           changes = db

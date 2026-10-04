@@ -503,6 +503,12 @@ export async function compose(deps: ComposeDeps): Promise<AppRuntimeHandle> {
   const { paths, clock, random, spawn, fetch, electron, seams, isPackaged, version, execPath } = deps;
   const log = deps.logger;
   const now = (): EpochMs => clock.now();
+  /**
+   * [v2-closeout] Set synchronously at the top of shutdown(). Everything that would START a vendor-CLI job reads it and starts none once
+   * the quit began (the Connect card's status probes, a provider build / provider-start smoke); the JobRunner's own latch (killAll)
+   * refuses whatever still asks. A job spawned after killJobs outlived app.exit() with run/job-cli-<id>.pid.json (e2e cli-connect 7b/7c/9).
+   */
+  const lifecycle = { closing: false };
   const e2e = seams !== null;
   const seamTimers = seams?.timers;
   /** TESTS 4.2 `WCA_FOCUS_CHECK`: honoured by `windowState()` below; always false in production (`seams` is null). */
@@ -1178,6 +1184,7 @@ export async function compose(deps: ComposeDeps): Promise<AppRuntimeHandle> {
     runner: cliRunner,
     clock,
     cacheMs: seamTimers?.cliStatusCacheMs ?? LIMITS.cliStatusCacheMs,
+    closed: () => lifecycle.closing, // [v2-closeout] no probe job once the quit began
   });
   // [v2-repair REQUEST 9] F3 isolated profile: the app-owned <userData>/agy-home already trusts the app's own workspace, so no
   // workspace-trust step exists (cli:previewWorkspaceChange answers isolated_profile). Recorded as satisfied ("not needed"), or the
@@ -1255,6 +1262,7 @@ export async function compose(deps: ComposeDeps): Promise<AppRuntimeHandle> {
     now,
     cliRunnerHealth: () => cliRunnerCore.health(), // [v2-repair REQUEST 7]
     onReadiness: () => refreshLlmHealth(), // [v2-repair REQUEST 7]
+    closed: () => lifecycle.closing, // [v2-closeout] no provider build / provider-start smoke once the quit began
   });
 
   /** ARCH section 8: the `usable()` ErrorCode decides WHICH non-ready `LlmStatus` the health pill shows. */
@@ -1982,6 +1990,7 @@ export async function compose(deps: ComposeDeps): Promise<AppRuntimeHandle> {
   };
   /** `llm:listModels {provider:'antigravity_cli'}`: `agy models` under the isolated profile; an empty list keeps the current setting. */
   const listAgyModelsNow = async (): Promise<string[]> => {
+    if (lifecycle.closing) return []; // [v2-closeout] `agy models` is a CLI job: none once the quit began
     const loc = await cliLocator.find('antigravity_cli').catch(() => null);
     if (loc === null) return [];
     recordCliExePath('antigravity_cli', loc.exePath);
@@ -2296,6 +2305,7 @@ export async function compose(deps: ComposeDeps): Promise<AppRuntimeHandle> {
   const shutdown = async (): Promise<void> => {
     if (quitting) return;
     quitting = true;
+    lifecycle.closing = true; // [v2-closeout] before the first await: no new CLI job is even attempted from here on
     for (const handle of timers) clock.clearTimeout(handle);
     timers.clear();
     if (dashboardTimer !== null) clock.clearTimeout(dashboardTimer);
@@ -2304,7 +2314,13 @@ export async function compose(deps: ComposeDeps): Promise<AppRuntimeHandle> {
       setQuitting: () => undefined, // index.ts flips its own flag before calling shutdown()
       stopQueue: async () => {
         theQueue.abortInFlight();
-        await theQueue.stop();
+        // [v2-closeout] stop() stops the queue synchronously and then AWAITS the in-flight run. A run waiting on a job that its abort
+        // signal does not reach (a provider-start smoke hanging after init: the smoke has its own wall clock) blocked this step until
+        // the whole quit timed out, and app.exit() then left that job and its pid file behind - killJobs never ran. So the jobs die
+        // while the run is awaited (the JobRunner latches first; the killJobs step below is then a no-op that re-asserts it).
+        const stopping = theQueue.stop();
+        await jobs.killAll();
+        await stopping;
       },
       killJobs: () => jobs.killAll(), // [V2] B2: every whisper / CLI job dies BEFORE the supervised children
       drainExecutor: (ms) => executor.drain(ms),

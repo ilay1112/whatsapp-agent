@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // scripts/smoke-packaged.mjs - L6 packaging smoke (TESTS section 11, ARCH 15.4). Owner: W2-04-packaging.
 //
-//   node scripts/smoke-packaged.mjs "dist/win-unpacked" [--allow-missing-bridge]
+//   node scripts/smoke-packaged.mjs "dist/win-unpacked" [--allow-missing-bridge] [--defender]
 //
 // Runs the six checks of TESTS section 11 against an `electron-builder --dir` tree, plus check 4a (below):
 //   4a. the packaged calendar MCP server: `<resources>\calendar-mcp\node_modules` must carry the whole staged tree.
@@ -40,6 +40,8 @@
 //  12. notices: THIRD_PARTY_NOTICES.txt carries the v2 anchors of `smoke-packaged.notices.mjs` and the whisper.cpp
 //      MIT text verbatim.
 //
+// [defender-gate] `--defender` adds optional check 13: the Microsoft Defender gate of scripts/defender-scan.mjs on the tree.
+//
 // Exit codes: 0 = pass, 1 = fail, 3 = SMOKE INCOMPLETE (`--allow-missing-bridge`; never a release result).
 //
 // No binary from `resources\bridge`, `resources\llama` or `resources\whisper` is ever EXECUTED: the bridge exe and
@@ -65,6 +67,7 @@ import { fileURLToPath } from 'node:url';
 import { getCurrentFuseWire, FuseV1Options, FuseState } from '@electron/fuses';
 import { LATEST_PROTOCOL_VERSION } from '@modelcontextprotocol/sdk/types.js';
 
+import { EXIT_PASS as DEFENDER_EXIT_PASS, runDefenderGate } from './defender-scan.mjs';
 import { BRIDGE_EXE_SHA256, BRIDGE_EXE_SIZE } from './import-bridge.mjs';
 import { hashFile, parseSums } from './hash-bridge.mjs';
 import { NOTICE_ANCHORS_V2 } from './smoke-packaged.notices.mjs';
@@ -1586,6 +1589,27 @@ function check12Notices({ resourcesDir, log, problems }) {
   }
 }
 
+/**
+ * [defender-gate] Optional check 13 (`--defender`): the Microsoft Defender gate of `scripts/defender-scan.mjs` on the
+ * unpacked tree (report-only custom scan + Authenticode, D-078). It starts MpCmdRun and PowerShell only - never the
+ * packaged exe - so check 6's spawn audit is unaffected. Threats, an unsigned file under WCA_SIGN_MODE, or a scan that
+ * could not run are all problems: an incomplete scan is never reported as clean.
+ */
+async function check13Defender({ unpacked, log, problems }) {
+  const r = await runDefenderGate({ targets: [unpacked], log: (l) => log(`  ${l}`) });
+  if (r.exitCode === DEFENDER_EXIT_PASS) {
+    ok(log, 'check 13 - Microsoft Defender custom scan (report-only) found no threats in the unpacked tree');
+    return;
+  }
+  for (const s of r.scans) {
+    if (s.verdict === 'threats') bad(problems, log, `check 13 - Defender threats: ${s.threats.join(', ')}`);
+    if (s.verdict === 'error') bad(problems, log, `check 13 - Defender scan could not complete: ${s.detail}`);
+  }
+  for (const f of r.signatureFailures) bad(problems, log, `check 13 - ${f}`);
+  // [signing-fix] an incomplete payload (empty / truncated tree) is never a pass either
+  for (const p of r.payloadProblems ?? []) bad(problems, log, `check 13 - incomplete payload: ${p}`);
+}
+
 // =====================================================================================================================
 // main
 // =====================================================================================================================
@@ -1622,6 +1646,7 @@ export async function main(argv = process.argv.slice(2), io = { out: process.std
   check10NoVendorBinaries({ unpacked, resourcesDir, state, log, problems });
   check11Decoder({ unpacked, resourcesDir, state, log, problems });
   check12Notices({ resourcesDir, log, problems });
+  if (argv.includes('--defender')) await check13Defender({ unpacked, log, problems }); // [defender-gate] optional
   check6NoGui({ log, problems }); // last: it audits every spawn the checks above made
 
   if (problems.length > 0) {

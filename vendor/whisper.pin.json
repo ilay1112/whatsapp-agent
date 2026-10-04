@@ -14,7 +14,9 @@
     "_comment": "EXPLICIT allow-list (B18) - never a *.dll glob; `prefix` covers the CPUID-dispatched ggml-cpu-*.dll set. `required` must be present.",
     "exact": ["whisper-cli.exe", "whisper.dll", "ggml.dll", "ggml-base.dll"],
     "prefix": ["ggml-cpu-"],
-    "required": ["whisper-cli.exe", "whisper.dll", "ggml.dll", "ggml-base.dll"]
+    "required": ["whisper-cli.exe", "whisper.dll", "ggml.dll", "ggml-base.dll"],
+    "_fileSha256": "[signing-fix] per-file sha256 (Release/ stripped) of every allow-listed file of the PINNED zip, filled ONLY by `node scripts/fetch-whisper.mjs --pin-files`; review and commit. null = UNPINNED: scripts/sign-windows.mjs refuses to sign any whisper file. vendor/whisper/SHA256SUMS is gitignored and written by the same fetch, so it is never the signing reference.",
+    "fileSha256": null
   },
   "vcRedistCrt": {
     "_comment": "Same rule as vendor/llama.pin.json: its own CRT copy in resources/whisper/ (ARCH-v2 12). A null sha256 = UNPINNED and is REFUSED; pin with the same machine-specific procedure (node scripts/fetch-llama.mjs --pin-crt records llama's; copy the reviewed values here).",

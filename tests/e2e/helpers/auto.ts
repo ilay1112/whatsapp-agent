@@ -225,6 +225,8 @@ export async function launchAutoWorld(
   e2e: E2eContext,
   label: string,
   dialogAnswers: Parameters<typeof dialogScript>[0],
+  /** [V2] `calendarControl: true` = the fake calendar child gets its control channel (`w.mcp.control()`, e.g. userEditsInGoogle). */
+  opts: { calendarControl?: boolean } = {},
 ): Promise<AutoWorld> {
   const userDataDir = e2e.newProfileDir(label);
   const clock = new AppClock();
@@ -245,7 +247,7 @@ export async function launchAutoWorld(
   // A connected calendar (ARCH 6.5: no "Add to calendar" without one); the "calendar" is WCA_MCP_CMD = the fake.
   seedGoogleCredentials(userDataDir);
   const bridge = await attachBridge(e2e, userDataDir);
-  const mcp = mcpChild(e2e, label, undefined, userDataDir);
+  const mcp = mcpChild(e2e, label, undefined, userDataDir, { control: opts.calendarControl === true });
   const scriptFile = e2e.writeTempFile(`${label}-stub.json`, JSON.stringify({ rules: autoStubRules(CHATS) }));
   clock.markLaunch();
   const launched = await e2e.launch({

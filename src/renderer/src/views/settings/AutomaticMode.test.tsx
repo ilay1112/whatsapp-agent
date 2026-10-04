@@ -268,6 +268,73 @@ describe('AutomaticMode - live states', () => {
     expect(screen.getByTestId('auto-expiring')).toHaveTextContent('2');
   });
 
+  // ux-i18n-v2-3 (b): UX2 4.5 "Renew (only in the last 7 days)" and SetupStrip row 7 ("Renew") lead here. Main refuses
+  // auto:requestEnable while a policy is live, so Renew ends the current period first (auto:disable, the fail-safe
+  // direction) and then asks main for a fresh native dialog with the SAME scope - and says so before the click.
+  it('on, ending within 7 days: Renew is offered with what it does, and is focus-steal guarded', async () => {
+    const p = policy('on', { expiresAt: NOW + 2 * DAY });
+    render(<AutomaticMode state={withPolicy(p)} />);
+    const renew = screen.getByTestId('auto-renew');
+    expect(renew).toHaveTextContent('Renew');
+    expect(screen.getByTestId('auto-renew-note')).toHaveTextContent(
+      'Renewing ends the current period and asks you again in a Windows dialog. If you cancel there, automatic mode stays off.',
+    );
+    expect(renew).toHaveAttribute('aria-describedby', 'auto-renew-note');
+    useFocusGuardStore.setState({ activationBlockedUntil: Date.now() + 60_000 });
+    await userEvent.click(renew);
+    expect(invokeMocks['auto:disable']).not.toHaveBeenCalled();
+    expect(invokeMocks['auto:requestEnable']).not.toHaveBeenCalled();
+  });
+
+  it('Renew = auto:disable, then ONE auto:requestEnable with the live scope and no trial; a double click sends one', async () => {
+    const order: string[] = [];
+    mockInvoke('auto:disable', () => {
+      order.push('disable');
+      return { ok: true, value: withPolicy(policy('disabled')) };
+    });
+    mockInvoke('auto:requestEnable', () => {
+      order.push('enable');
+      return { ok: true, value: withPolicy(policy('on', { expiresAt: NOW + 30 * DAY })) };
+    });
+    const p = policy('on', { expiresAt: NOW + 2 * DAY });
+    render(<AutomaticMode state={withPolicy(p)} />);
+    await userEvent.dblClick(screen.getByTestId('auto-renew'));
+    await waitFor(() => expect(invokeMocks['auto:requestEnable']).toHaveBeenCalledOnce());
+    expect(order).toEqual(['disable', 'enable']);
+    expect(invokeMocks['auto:disable']).toHaveBeenCalledExactlyOnceWith({ reason: 'user' });
+    expect(invokeMocks['auto:requestEnable']).toHaveBeenCalledWith({ scope: p.scope, trial: false });
+  });
+
+  it('Renew: a refused stop asks for nothing; the error is shown', async () => {
+    mockInvoke('auto:disable', () => ({ ok: false, error: { code: 'INTERNAL' } }));
+    render(<AutomaticMode state={withPolicy(policy('on', { expiresAt: NOW + 2 * DAY }))} />);
+    await userEvent.click(screen.getByTestId('auto-renew'));
+    await waitFor(() => expect(screen.getByTestId('auto-error')).toHaveAttribute('data-code', 'INTERNAL'));
+    expect(invokeMocks['auto:requestEnable']).not.toHaveBeenCalled();
+  });
+
+  it('no Renew before the last 7 days, or when a precondition would refuse the fresh dialog', () => {
+    const { rerender } = render(<AutomaticMode state={withPolicy(policy('on', { expiresAt: NOW + 20 * DAY }))} />);
+    expect(screen.queryByTestId('auto-renew')).toBeNull();
+    for (const pre of [
+      { providerAllowsAuto: false },
+      { calendarConnected: false },
+      { approvedCreates: 1 },
+      { updatesAvailable: false },
+    ]) {
+      rerender(
+        <AutomaticMode
+          state={withPolicy(policy('on', { expiresAt: NOW + 2 * DAY }), {
+            preconditions: { ...base.preconditions, ...pre },
+          })}
+        />,
+      );
+      expect(screen.queryByTestId('auto-renew')).toBeNull();
+      // the "ends in" line still says when it ends
+      expect(screen.getByTestId('auto-expiring')).toBeInTheDocument();
+    }
+  });
+
   it('paused: the reason in words; Resume is guarded and sends auto:resume {confirm:true}', async () => {
     render(<AutomaticMode state={withPolicy(policy('paused', { pausedReason: 'circuit_breaker_undo' }))} />);
     expect(screen.getByTestId('auto-state-card')).toHaveTextContent('Paused - you undid two changes today');

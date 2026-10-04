@@ -12,6 +12,60 @@ export const BRIDGE_EXE = {
   size: 43_540_541,
   sha256: 'ac23221e8bcf3937a4ca346b3bd80a8da09df94cbecd949af2916c4bc8d22ff5',
 } as const; // compared lowercase
+
+// ---------------------------------------------------------------------------------------------------------------------
+// [signing-pipeline, D-078; signing-fix, signing-review MAJOR 1] post-signing re-pin. Authenticode signing changes the
+// exe's bytes, so a SIGNED build cannot verify against BRIDGE_EXE.sha256. scripts/sign-windows.mjs beforePack (signing
+// ON only, BEFORE app.asar is packed) checks the import-bridge copy against BRIDGE_EXE.sha256, signs a staged copy and
+// writes out/main/bridge-signed-pin.txt - so it ships INSIDE app.asar (asar integrity on in signed builds):
+//     <SIGNED SHA-256>  whatsapp-bridge.exe
+//     # wca-signed-from <ORIGINAL SHA-256>  whatsapp-bridge.exe
+// Only a build compiled with __AUTHENTICODE_SIGNED_BUILD__ (src/main/buildFlags.ts) reads it; the unsigned default reads no pin
+// file at all. The writable <resources>\bridge\SHA256SUMS is never a pin. The answer is ALWAYS one exact hash - never
+// "any signed file".
+// ---------------------------------------------------------------------------------------------------------------------
+/** File name of the signed pin: <resources>\app.asar\out\main\bridge-signed-pin.txt (= sign-windows.mjs constant). */
+export const BRIDGE_SIGNED_PIN_FILE = 'bridge-signed-pin.txt';
+/** Larger than any legitimate pin file; anything bigger is ignored (=> the original pin). */
+export const BRIDGE_PIN_FILE_MAX_BYTES = 4096;
+export type BridgePinSource = 'original' | 'signed' | 'signed_entry_rejected';
+const PIN_LINE_RE = /^([0-9a-fA-F]{64})\s+\*?whatsapp-bridge\.exe$/;
+const SIGNED_FROM_RE = /^#\s*wca-signed-from\s+([0-9a-fA-F]{64})\s+\*?whatsapp-bridge\.exe$/;
+
+/**
+ * The SHA-256 the launcher must see before it spawns the bridge. Pure.
+ *  - no pin file / no `wca-signed-from` line            => the compiled-in original pin (the file's own hash line is
+ *                                                          never trusted on its own; an unsigned build never calls this)
+ *  - exactly one signed-from line naming `originalPin`,
+ *    exactly one hash line, different from the original  => that post-signing hash (signed build)
+ *  - anything else (signed-from for another pin, two
+ *    hash lines, a "signed" hash equal to the original)  => the original pin again: fail closed, a signed exe is then
+ *                                                          BRIDGE_BINARY_BLOCKED instead of half-trusted
+ */
+export function selectBridgePin(
+  pinFileText: string | null,
+  originalPin: string = BRIDGE_EXE.sha256,
+): { sha256: string; source: BridgePinSource } {
+  const original = originalPin.toLowerCase();
+  if (pinFileText === null || pinFileText.length > BRIDGE_PIN_FILE_MAX_BYTES)
+    return { sha256: original, source: 'original' };
+  const hashes: string[] = [];
+  const signedFrom: string[] = [];
+  for (const raw of pinFileText.split(/\r?\n/)) {
+    const line = raw.trim();
+    const from = SIGNED_FROM_RE.exec(line);
+    if (from !== null) signedFrom.push((from[1] as string).toLowerCase());
+    const pin = PIN_LINE_RE.exec(line);
+    if (pin !== null) hashes.push((pin[1] as string).toLowerCase());
+  }
+  if (signedFrom.length === 0) return { sha256: original, source: 'original' };
+  const signed = hashes[0];
+  if (signedFrom.length !== 1 || signedFrom[0] !== original || hashes.length !== 1 || signed === original) {
+    return { sha256: original, source: 'signed_entry_rejected' };
+  }
+  return { sha256: signed as string, source: 'signed' };
+}
+
 export const BRIDGE_ENV_KEYS = [
   'WHATSAPP_BRIDGE_PORT',
   'WHATSAPP_BRIDGE_TOKEN',

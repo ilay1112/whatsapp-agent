@@ -484,6 +484,40 @@ UPDATE settings SET value_json = json_insert(value_json,
     AND CASE WHEN json_valid(value_json) THEN json_type(value_json) = 'object' ELSE 0 END;
 `,
   },
+  {
+    version: 5,
+    name: 'auto_policy_paused_from',
+    // [v2-closeout auto-mode-8] "Resume" on a trial the app paused itself (unattended, calendar disconnect, snapshot change, a breaker)
+    // used to set the row straight to 'on': real automatic writes without the user's explicit "Turn on for real" (auto:endShadow).
+    // Resume must return to the state the user last confirmed, and that rule is enforced HERE, not only in exec/autoPolicy.ts:
+    //  - a pause records the live state it left in `paused_from` (shadow|on) - the trigger checks it equals OLD.state;
+    //  - while paused, `paused_from` is immutable;
+    //  - paused -> on only when paused_from = 'on'; paused -> shadow only when paused_from = 'shadow' (the one way back to shadow);
+    //  - on -> shadow stays impossible, and nothing else changed (closed rows final, reasons required).
+    // Rows paused before this migration: paused_from = 'shadow' unless the row is a "Turn on now" grant (shadow_until = enabled_at) or
+    // its trial was ended by the user (an auto_policy_shadow_ended audit row) - the fail-safe reading of the history.
+    sql: String.raw`
+ALTER TABLE auto_policies ADD COLUMN paused_from TEXT CHECK(paused_from IS NULL OR paused_from IN ('shadow','on'));
+UPDATE auto_policies SET paused_from =
+    CASE WHEN shadow_until <= enabled_at
+              OR EXISTS (SELECT 1 FROM audit_log a WHERE a.kind = 'auto_policy_shadow_ended' AND a.ref = auto_policies.id)
+         THEN 'on' ELSE 'shadow' END
+  WHERE state = 'paused';
+DROP TRIGGER trg_auto_policies_state;
+CREATE TRIGGER trg_auto_policies_state BEFORE UPDATE OF state ON auto_policies WHEN NEW.state <> OLD.state BEGIN
+  SELECT CASE
+    WHEN OLD.state IN ('disabled','expired') THEN RAISE(ABORT,'policy closed')
+    WHEN NEW.state = 'shadow'   AND NOT (OLD.state = 'paused' AND OLD.paused_from = 'shadow') THEN RAISE(ABORT,'cannot return to shadow')
+    WHEN NEW.state = 'on'       AND OLD.state = 'paused' AND OLD.paused_from IS NOT 'on' THEN RAISE(ABORT,'paused trial resumes as shadow')
+    WHEN NEW.state = 'paused'   AND NEW.paused_reason IS NULL THEN RAISE(ABORT,'pause needs a reason')
+    WHEN NEW.state = 'paused'   AND NEW.paused_from IS NOT OLD.state THEN RAISE(ABORT,'pause records the state it paused')
+    WHEN NEW.state = 'disabled' AND (NEW.disabled_at IS NULL OR NEW.disabled_reason IS NULL) THEN RAISE(ABORT,'disable needs time and reason')
+  END; END;
+CREATE TRIGGER trg_auto_policies_paused_from BEFORE UPDATE OF paused_from ON auto_policies
+  WHEN OLD.state = 'paused' AND NEW.paused_from IS NOT OLD.paused_from
+  BEGIN SELECT RAISE(ABORT,'paused_from is immutable while paused'); END;
+`,
+  },
 ] as const;
 
 export const SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1]!.version;

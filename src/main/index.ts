@@ -19,8 +19,9 @@ import {
 } from './app/window';
 import { createTray, type TrayController } from './app/tray';
 import { configureElectronLog, createLogger, type ElectronLogLike } from './logger';
+import { reportStartupFailure } from './app/startupFailure';
 import { createPaths } from './paths';
-import { createWindowsProcessQuery } from './proc/reaper';
+import { createWindowsProcessQuery, inAppClockBase } from './proc/reaper';
 import { compose, type AppRuntimeEvent, type AppRuntimeHandle } from './compose';
 import { registerIpc } from './ipc/register';
 import { createIpcSender } from './ipc/sender';
@@ -28,6 +29,7 @@ import { trayIconFor } from './app/tray';
 import type {
   Clock,
   ClockTimer,
+  Logger,
   ElectronFacade,
   ImageFacade,
   ImageHandle,
@@ -132,6 +134,8 @@ if (!gotLock) {
   let tray: TrayController | null = null;
   let quitting = false;
   let trayHintPending = false;
+  /** [v2-closeout] the app log once it exists, for reportStartupFailure. */
+  let startupLog: Logger | null = null;
   /** The notifier the facade forwards toast clicks to; set once the runtime exists. */
   let onToastClick: (() => void) | null = null;
 
@@ -150,294 +154,318 @@ if (!gotLock) {
     }
   });
 
-  app.whenReady().then(async () => {
-    electronLog.initialize();
+  app
+    .whenReady()
+    .then(async () => {
+      electronLog.initialize();
 
-    const paths = createPaths({
-      userData: app.getPath('userData'),
-      resourcesPath: process.resourcesPath,
-      appRoot: app.getAppPath(),
-      isPackaged: app.isPackaged,
-    });
-    nodeFs.mkdirSync(paths.logsDir, { recursive: true });
-    const sink = configureElectronLog(electronLog as unknown as ElectronLogLike, {
-      logsDir: paths.logsDir,
-      fs: nodeFs,
-    });
-    const log = createLogger({ logsDir: paths.logsDir, sink });
+      const paths = createPaths({
+        userData: app.getPath('userData'),
+        resourcesPath: process.resourcesPath,
+        appRoot: app.getAppPath(),
+        isPackaged: app.isPackaged,
+      });
+      nodeFs.mkdirSync(paths.logsDir, { recursive: true });
+      const sink = configureElectronLog(electronLog as unknown as ElectronLogLike, {
+        logsDir: paths.logsDir,
+        fs: nodeFs,
+      });
+      const log = createLogger({ logsDir: paths.logsDir, sink });
+      startupLog = log;
 
-    // TESTS 4.2, last row: in e2e mode `shell.openExternal` and `Notification` are REPLACED by recorders, so no browser
-    // window and no Windows toast can appear during a test run (a spec may click "Sign in with Google" safely). The
-    // whole branch is constant-folded away in a production build.
-    const recordSideEffects = import.meta.env.MODE === 'e2e' && seams !== null;
-    const openedExternal: string[] = [];
-    const notifications: Array<{ title: string; body: string; actions?: string[] }> = [];
+      // TESTS 4.2, last row: in e2e mode `shell.openExternal` and `Notification` are REPLACED by recorders, so no browser
+      // window and no Windows toast can appear during a test run (a spec may click "Sign in with Google" safely). The
+      // whole branch is constant-folded away in a production build.
+      const recordSideEffects = import.meta.env.MODE === 'e2e' && seams !== null;
+      const openedExternal: string[] = [];
+      const notifications: Array<{ title: string; body: string; actions?: string[] }> = [];
 
-    const electronFacade: ElectronFacade = {
-      safeStorage: {
-        isEncryptionAvailable: () => safeStorage.isEncryptionAvailable(),
-        // Async encrypt (W1-12: createSecretStore awaits it); synchronous decrypt so `has().last4` is exact from the first read.
-        encryptString: ((plain: string) => safeStorage.encryptStringAsync(plain)) as unknown as (
-          plain: string,
-        ) => Buffer,
-        decryptString: (cipher: Buffer) => safeStorage.decryptString(cipher),
-      },
-      openExternal: async (url) => {
+      const electronFacade: ElectronFacade = {
+        safeStorage: {
+          isEncryptionAvailable: () => safeStorage.isEncryptionAvailable(),
+          // Async encrypt (W1-12: createSecretStore awaits it); synchronous decrypt so `has().last4` is exact from the first read.
+          encryptString: ((plain: string) => safeStorage.encryptStringAsync(plain)) as unknown as (
+            plain: string,
+          ) => Buffer,
+          decryptString: (cipher: Buffer) => safeStorage.decryptString(cipher),
+        },
+        openExternal: async (url) => {
+          if (recordSideEffects) {
+            openedExternal.push(url);
+            return;
+          }
+          await shell.openExternal(url);
+        },
+        clipboardWrite: (text) => clipboard.writeText(text),
+        showOpenDialog: async (opts) => {
+          const res = await dialog.showOpenDialog({
+            title: opts.title,
+            filters: [...opts.filters],
+            properties: ['openFile'],
+          });
+          const file = res.canceled ? undefined : res.filePaths[0];
+          if (file === undefined) return null;
+          const stat = await nodeFs.promises.stat(file);
+          if (stat.size > opts.maxBytes) return null;
+          return nodeFs.promises.readFile(file, 'utf8');
+        },
+        showSaveDialog: async (opts) => {
+          const res = await dialog.showSaveDialog({ title: opts.title, defaultPath: opts.defaultFileName });
+          return res.canceled || !res.filePath ? null : res.filePath;
+        },
+        notify: (title, body) => {
+          if (recordSideEffects) {
+            notifications.push({ title, body });
+            return;
+          }
+          if (!Notification.isSupported()) return;
+          const toast = new Notification({ title, body });
+          // W1-12: ElectronFacade.notify has no click callback, so the facade forwards the click to the notifier.
+          toast.on('click', () => onToastClick?.());
+          toast.show();
+        },
+        setLoginItem: (opts) => app.setLoginItemSettings({ openAtLogin: opts.openAtLogin, args: [...opts.args] }),
+        preferredLanguages: () => app.getPreferredSystemLanguages(),
+      };
+
+      // [V2] S-DIALOG: the main-owned native message box, parented to the focused main window (autoDialog checks focus first).
+      const showMessageBox: ShowMessageBoxFn = async (parent, options) => {
+        const owner = parent as BrowserWindow | null;
+        const res =
+          owner !== null && typeof owner === 'object' && !owner.isDestroyed()
+            ? await dialog.showMessageBox(owner, { ...options, buttons: [...options.buttons] })
+            : await dialog.showMessageBox({ ...options, buttons: [...options.buttons] });
+        return { response: res.response, checkboxChecked: res.checkboxChecked };
+      };
+      // [V2] automatic-mode toasts with action buttons (Undo / Show); e2e records them (never a real toast during a test run).
+      const notifyWithActions = (
+        toast: { title: string; body: string; actions: string[] },
+        onAction: (index: number) => void,
+        onClick: () => void,
+      ): void => {
         if (recordSideEffects) {
-          openedExternal.push(url);
+          notifications.push({ title: toast.title, body: toast.body, actions: [...toast.actions] });
           return;
         }
-        await shell.openExternal(url);
-      },
-      clipboardWrite: (text) => clipboard.writeText(text),
-      showOpenDialog: async (opts) => {
+        if (!Notification.isSupported()) return;
+        const n = new Notification({
+          title: toast.title,
+          body: toast.body,
+          actions: toast.actions.map((text) => ({ type: 'button' as const, text })),
+        });
+        n.on('action', (_e, index) => onAction(index));
+        n.on('click', () => onClick());
+        n.show();
+      };
+      // [V2] cli:pickExe: the main-owned OPEN dialog returning the chosen PATH (never file text, never a renderer value)
+      const pickExePath = async (opts: {
+        title: string;
+        filters: Array<{ name: string; extensions: string[] }>;
+      }): Promise<string | null> => {
         const res = await dialog.showOpenDialog({
           title: opts.title,
           filters: [...opts.filters],
           properties: ['openFile'],
         });
-        const file = res.canceled ? undefined : res.filePaths[0];
-        if (file === undefined) return null;
-        const stat = await nodeFs.promises.stat(file);
-        if (stat.size > opts.maxBytes) return null;
-        return nodeFs.promises.readFile(file, 'utf8');
-      },
-      showSaveDialog: async (opts) => {
-        const res = await dialog.showSaveDialog({ title: opts.title, defaultPath: opts.defaultFileName });
-        return res.canceled || !res.filePath ? null : res.filePath;
-      },
-      notify: (title, body) => {
-        if (recordSideEffects) {
-          notifications.push({ title, body });
-          return;
-        }
-        if (!Notification.isSupported()) return;
-        const toast = new Notification({ title, body });
-        // W1-12: ElectronFacade.notify has no click callback, so the facade forwards the click to the notifier.
-        toast.on('click', () => onToastClick?.());
-        toast.show();
-      },
-      setLoginItem: (opts) => app.setLoginItemSettings({ openAtLogin: opts.openAtLogin, args: [...opts.args] }),
-      preferredLanguages: () => app.getPreferredSystemLanguages(),
-    };
-
-    // [V2] S-DIALOG: the main-owned native message box, parented to the focused main window (autoDialog checks focus first).
-    const showMessageBox: ShowMessageBoxFn = async (parent, options) => {
-      const owner = parent as BrowserWindow | null;
-      const res =
-        owner !== null && typeof owner === 'object' && !owner.isDestroyed()
-          ? await dialog.showMessageBox(owner, { ...options, buttons: [...options.buttons] })
-          : await dialog.showMessageBox({ ...options, buttons: [...options.buttons] });
-      return { response: res.response, checkboxChecked: res.checkboxChecked };
-    };
-    // [V2] automatic-mode toasts with action buttons (Undo / Show); e2e records them (never a real toast during a test run).
-    const notifyWithActions = (
-      toast: { title: string; body: string; actions: string[] },
-      onAction: (index: number) => void,
-      onClick: () => void,
-    ): void => {
-      if (recordSideEffects) {
-        notifications.push({ title: toast.title, body: toast.body, actions: [...toast.actions] });
-        return;
-      }
-      if (!Notification.isSupported()) return;
-      const n = new Notification({
-        title: toast.title,
-        body: toast.body,
-        actions: toast.actions.map((text) => ({ type: 'button' as const, text })),
-      });
-      n.on('action', (_e, index) => onAction(index));
-      n.on('click', () => onClick());
-      n.show();
-    };
-    // [V2] cli:pickExe: the main-owned OPEN dialog returning the chosen PATH (never file text, never a renderer value)
-    const pickExePath = async (opts: {
-      title: string;
-      filters: Array<{ name: string; extensions: string[] }>;
-    }): Promise<string | null> => {
-      const res = await dialog.showOpenDialog({
-        title: opts.title,
-        filters: [...opts.filters],
-        properties: ['openFile'],
-      });
-      return res.canceled ? null : (res.filePaths[0] ?? null);
-    };
-
-    runtime = await compose({
-      paths,
-      clock: realClock,
-      random: realRandom,
-      logger: log,
-      spawn: nodeSpawn,
-      fetch: globalThis.fetch,
-      processQuery: createWindowsProcessQuery({ spawn: nodeSpawn }),
-      electron: electronFacade,
-      seams,
-      ...(providerOverride === undefined ? {} : { providerOverride }),
-      isPackaged: app.isPackaged,
-      version: app.getVersion(),
-      execPath: process.execPath,
-      preferredLanguages: () => app.getPreferredSystemLanguages(),
-      image: nativeImageFacade,
-      dialog: showMessageBox,
-      notifyWithActions,
-      pickExePath,
-    });
-    const rt = runtime;
-
-    registerAppProtocol({ rendererDir: join(here, '../renderer') });
-
-    // ---- IPC -------------------------------------------------------------------------------------------------------
-    registerIpc(ipcMain, rt.handlers, {
-      isTrusted: (event) => rt.isTrusted(event),
-      windowState: () => rt.windowState(),
-      audit: (kind, ref, detail, at) => rt.repos.audit.append(kind, ref, detail, at),
-      now: () => realClock.now(),
-      log,
-    });
-
-    // ---- window ----------------------------------------------------------------------------------------------------
-    const sender = createIpcSender(() => (win === null || win.isDestroyed() ? null : win));
-    const push = <E extends IpcEvent>(event: E, payload: IpcEventMap[E]): void => sender.send(event, payload);
-
-    const buildWindow = (startHidden: boolean): BrowserWindow => {
-      const created = createMainWindow({
-        preloadPath: join(here, '../preload/index.cjs'),
-        isPackaged: app.isPackaged,
-        initial: rt.uiLanguage(),
-        startHidden,
-        log,
-        // [REPAIR] The crashed window used to be left behind: a ghost that `installCloseToTray` could only hide, that
-        // `attachWindow` no longer trusted, and that a crash-during-load rebuilt without limit - even mid-quit.
-        // `createRendererRecovery` destroys it, honours `quitting` and caps the rebuilds.
-        onRenderProcessGone: (reason) => {
-          log.warn('render_process_gone', {});
-          win = recovery.recover(created, reason);
-          if (win === null) rt.attachWindow(null); // nothing to push to and nothing to trust any more
-        },
-      });
-      installCloseToTray(created, {
-        onFirstHide: () => {
-          trayHintPending = true;
-          rt.repos.meta.set('tray_hint_seen', '1');
-        },
-        trayHintSeen: () => rt.repos.meta.get('tray_hint_seen') === '1',
-        isQuitting: () => quitting,
-      });
-      installTrayHintCoachMark(created, {
-        pending: () => trayHintPending,
-        onShow: () => {
-          trayHintPending = false;
-          push('ui:navigate', { view: 'tray_hint' });
-        },
-      });
-      rt.attachWindow(created);
-      created.on('focus', () => rt.noteFocus()); // [V2] B7 unattended pause
-      return created;
-    };
-
-    // Owns the `render-process-gone` policy (ARCHITECTURE 14 "recreate window", main state intact). When the budget is
-    // spent it logs `renderer.rebuild_limit` and stops: the app stays in the tray and Quit still works. The error table
-    // gives this row no user-visible UI, so nothing is shown beyond the log / diagnostics export.
-    const recovery = createRendererRecovery({
-      build: buildWindow,
-      isQuitting: () => quitting,
-      now: () => realClock.now(),
-      log,
-      startHidden: isHiddenStart(process.argv),
-    });
-    win = recovery.start();
-
-    // ---- push events -----------------------------------------------------------------------------------------------
-    for (const key of Object.keys(EVENT_CHANNEL) as AppRuntimeEvent[]) {
-      rt.on(key, (payload) => {
-        sender.send(EVENT_CHANNEL[key], payload as IpcEventMap[IpcEvent]);
-        // [REPAIR] 'language' too: compose() rebuilds its i18next instance and emits, but the tray menu, its status
-        // line and its tooltip are built from `rt.t()` - without a rebuild they stayed in the OLD language after a
-        // switch, which is a direct miss of the multilanguage requirement (UX 12.1).
-        if (key === 'health' || key === 'pairing' || key === 'language' || key === 'auto:changed') tray?.rebuild();
-      });
-    }
-
-    // ---- tray ------------------------------------------------------------------------------------------------------
-    tray = createTray({
-      iconsDir: paths.iconsDir,
-      t: () => rt.t(),
-      state: () => rt.trayState(),
-      onOpen: () => {
-        win?.show();
-        win?.focus();
-      },
-      onTogglePause: () => {
-        rt.togglePause();
-        tray?.rebuild();
-      },
-      onSettings: () => {
-        win?.show();
-        win?.focus();
-        push('ui:navigate', { view: 'settings' });
-      },
-      onQuit: () => {
-        app.quit();
-      },
-      log,
-      onAuto: (action) => {
-        rt.trayAuto(action); // [V2] B11
-        tray?.rebuild();
-      },
-    });
-
-    onToastClick = () => {
-      win?.show();
-      win?.focus();
-    };
-
-    await rt.start();
-    tray.rebuild();
-
-    // TESTS 4.2: the FROZEN eight-hook facade of `testSeams.ts` - read-only except `trayClick`, and it carries no
-    // token, no key, no approve function and no repo handle.
-    if (import.meta.env.MODE === 'e2e' && seams !== null && installTestHooks !== null) {
-      /** `<userData>\run\<name>.pid.json` is the Supervisor's own record of every child it started. */
-      const childPids = (): Record<string, number> => {
-        const out: Record<string, number> = {};
-        let names: string[];
-        try {
-          names = nodeFs.readdirSync(paths.runDir);
-        } catch {
-          return out;
-        }
-        for (const name of names) {
-          if (!name.endsWith('.pid.json')) continue;
-          try {
-            const parsed = JSON.parse(nodeFs.readFileSync(join(paths.runDir, name), 'utf8')) as { pid?: unknown };
-            if (typeof parsed.pid === 'number') out[name.slice(0, -'.pid.json'.length)] = parsed.pid;
-          } catch {
-            /* a half-written pid file is not a child */
-          }
-        }
-        return out;
+        return res.canceled ? null : (res.filePaths[0] ?? null);
       };
-      installTestHooks(
-        {
-          trayTemplate: () => tray?.template() ?? [],
-          trayClick: (id) => tray?.click(id),
-          trayState: () => trayIconFor(rt.trayState(), rt.t()),
-          doorbellUrl: () => rt.doorbellUrl() ?? '',
-          health: () => rt.health(),
-          notifications: () => notifications.map((n) => ({ ...n })),
-          openedExternal: () => [...openedExternal],
-          childPids,
+
+      runtime = await compose({
+        paths,
+        clock: realClock,
+        random: realRandom,
+        logger: log,
+        spawn: nodeSpawn,
+        fetch: globalThis.fetch,
+        // [v2-closeout] the production query now really answers; under the e2e WCA_NOW seam its wall-clock creation times are moved
+        // into the app clock base (pid files / the supervisor stamp the app clock). Production: seamNow is undefined => unchanged.
+        processQuery:
+          seamNow === undefined
+            ? createWindowsProcessQuery({ spawn: nodeSpawn })
+            : inAppClockBase(createWindowsProcessQuery({ spawn: nodeSpawn }), () => realClock.now() - Date.now()),
+        electron: electronFacade,
+        seams,
+        ...(providerOverride === undefined ? {} : { providerOverride }),
+        isPackaged: app.isPackaged,
+        version: app.getVersion(),
+        execPath: process.execPath,
+        preferredLanguages: () => app.getPreferredSystemLanguages(),
+        image: nativeImageFacade,
+        dialog: showMessageBox,
+        notifyWithActions,
+        pickExePath,
+      });
+      const rt = runtime;
+
+      registerAppProtocol({ rendererDir: join(here, '../renderer') });
+
+      // ---- IPC -------------------------------------------------------------------------------------------------------
+      registerIpc(ipcMain, rt.handlers, {
+        isTrusted: (event) => rt.isTrusted(event),
+        windowState: () => rt.windowState(),
+        audit: (kind, ref, detail, at) => rt.repos.audit.append(kind, ref, detail, at),
+        now: () => realClock.now(),
+        log,
+      });
+
+      // ---- window ----------------------------------------------------------------------------------------------------
+      const sender = createIpcSender(() => (win === null || win.isDestroyed() ? null : win));
+      const push = <E extends IpcEvent>(event: E, payload: IpcEventMap[E]): void => sender.send(event, payload);
+
+      const buildWindow = (startHidden: boolean): BrowserWindow => {
+        const created = createMainWindow({
+          preloadPath: join(here, '../preload/index.cjs'),
+          isPackaged: app.isPackaged,
+          initial: rt.uiLanguage(),
+          startHidden,
+          log,
+          // [REPAIR] The crashed window used to be left behind: a ghost that `installCloseToTray` could only hide, that
+          // `attachWindow` no longer trusted, and that a crash-during-load rebuilt without limit - even mid-quit.
+          // `createRendererRecovery` destroys it, honours `quitting` and caps the rebuilds.
+          onRenderProcessGone: (reason) => {
+            log.warn('render_process_gone', {});
+            win = recovery.recover(created, reason);
+            if (win === null) rt.attachWindow(null); // nothing to push to and nothing to trust any more
+          },
+        });
+        installCloseToTray(created, {
+          onFirstHide: () => {
+            trayHintPending = true;
+            rt.repos.meta.set('tray_hint_seen', '1');
+          },
+          trayHintSeen: () => rt.repos.meta.get('tray_hint_seen') === '1',
+          isQuitting: () => quitting,
+        });
+        installTrayHintCoachMark(created, {
+          pending: () => trayHintPending,
+          onShow: () => {
+            trayHintPending = false;
+            push('ui:navigate', { view: 'tray_hint' });
+          },
+        });
+        rt.attachWindow(created);
+        created.on('focus', () => rt.noteFocus()); // [V2] B7 unattended pause
+        return created;
+      };
+
+      // Owns the `render-process-gone` policy (ARCHITECTURE 14 "recreate window", main state intact). When the budget is
+      // spent it logs `renderer.rebuild_limit` and stops: the app stays in the tray and Quit still works. The error table
+      // gives this row no user-visible UI, so nothing is shown beyond the log / diagnostics export.
+      const recovery = createRendererRecovery({
+        build: buildWindow,
+        isQuitting: () => quitting,
+        now: () => realClock.now(),
+        log,
+        startHidden: isHiddenStart(process.argv),
+      });
+      win = recovery.start();
+
+      // ---- push events -----------------------------------------------------------------------------------------------
+      for (const key of Object.keys(EVENT_CHANNEL) as AppRuntimeEvent[]) {
+        rt.on(key, (payload) => {
+          sender.send(EVENT_CHANNEL[key], payload as IpcEventMap[IpcEvent]);
+          // [REPAIR] 'language' too: compose() rebuilds its i18next instance and emits, but the tray menu, its status
+          // line and its tooltip are built from `rt.t()` - without a rebuild they stayed in the OLD language after a
+          // switch, which is a direct miss of the multilanguage requirement (UX 12.1).
+          if (key === 'health' || key === 'pairing' || key === 'language' || key === 'auto:changed') tray?.rebuild();
+        });
+      }
+
+      // ---- tray ------------------------------------------------------------------------------------------------------
+      tray = createTray({
+        iconsDir: paths.iconsDir,
+        t: () => rt.t(),
+        state: () => rt.trayState(),
+        onOpen: () => {
+          win?.show();
+          win?.focus();
         },
-        {
-          dialogs: () => rt.dialogs(),
-          consoles: () => rt.consoles(),
-          jobPids: () => rt.jobPids(),
-          trayClickAutoPause: () => tray?.click('autoPause'),
+        onTogglePause: () => {
+          rt.togglePause();
+          tray?.rebuild();
         },
-      );
-    }
-  });
+        onSettings: () => {
+          win?.show();
+          win?.focus();
+          push('ui:navigate', { view: 'settings' });
+        },
+        onQuit: () => {
+          app.quit();
+        },
+        log,
+        onAuto: (action) => {
+          rt.trayAuto(action); // [V2] B11
+          tray?.rebuild();
+        },
+      });
+
+      onToastClick = () => {
+        win?.show();
+        win?.focus();
+      };
+
+      await rt.start();
+      tray.rebuild();
+
+      // TESTS 4.2: the FROZEN eight-hook facade of `testSeams.ts` - read-only except `trayClick`, and it carries no
+      // token, no key, no approve function and no repo handle.
+      if (import.meta.env.MODE === 'e2e' && seams !== null && installTestHooks !== null) {
+        /** `<userData>\run\<name>.pid.json` is the Supervisor's own record of every child it started. */
+        const childPids = (): Record<string, number> => {
+          const out: Record<string, number> = {};
+          let names: string[];
+          try {
+            names = nodeFs.readdirSync(paths.runDir);
+          } catch {
+            return out;
+          }
+          for (const name of names) {
+            if (!name.endsWith('.pid.json')) continue;
+            try {
+              const parsed = JSON.parse(nodeFs.readFileSync(join(paths.runDir, name), 'utf8')) as { pid?: unknown };
+              if (typeof parsed.pid === 'number') out[name.slice(0, -'.pid.json'.length)] = parsed.pid;
+            } catch {
+              /* a half-written pid file is not a child */
+            }
+          }
+          return out;
+        };
+        installTestHooks(
+          {
+            trayTemplate: () => tray?.template() ?? [],
+            trayClick: (id) => tray?.click(id),
+            trayState: () => trayIconFor(rt.trayState(), rt.t()),
+            doorbellUrl: () => rt.doorbellUrl() ?? '',
+            health: () => rt.health(),
+            notifications: () => notifications.map((n) => ({ ...n })),
+            openedExternal: () => [...openedExternal],
+            childPids,
+          },
+          {
+            dialogs: () => rt.dialogs(),
+            consoles: () => rt.consoles(),
+            jobPids: () => rt.jobPids(),
+            trayClickAutoPause: () => tray?.click('autoPause'),
+          },
+        );
+      }
+    })
+    .catch((err: unknown) =>
+      reportStartupFailure(err, {
+        // [v2-closeout] a MigrationError / corrupt database (thrown by compose() before any window) or any other start-up throw:
+        // the existing DB_RECOVERY / INTERNAL copy in a main-owned error box, never a silent, window-less process.
+        showErrorBox: (title, body) => dialog.showErrorBox(title, body),
+        preferredLanguages: () => app.getPreferredSystemLanguages(),
+        log: (event, meta) => startupLog?.error(event, meta),
+        killAll: killAllSync,
+        exit: (code) => {
+          quitting = true;
+          tray?.destroy();
+          app.exit(code);
+        },
+        windowShown: () => win !== null,
+      }),
+    );
 
   // ---- quit --------------------------------------------------------------------------------------------------------
   app.on('window-all-closed', () => {

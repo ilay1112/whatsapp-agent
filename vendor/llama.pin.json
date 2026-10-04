@@ -24,7 +24,9 @@
       "libomp.dll",
       "LICENSE-LLVM-OpenMP"
     ],
-    "prefix": ["ggml-cpu-"]
+    "prefix": ["ggml-cpu-"],
+    "_fileSha256": "[signing-fix] per-file sha256 of every allow-listed file of the PINNED zip, filled ONLY by `node scripts/fetch-llama.mjs --pin-files` (downloads + verifies the pinned zip, hashes in memory); review and commit. null = UNPINNED: the fetch still stages (with a warning) but scripts/sign-windows.mjs refuses to sign any llama file. vendor/ is gitignored and is never its own reference.",
+    "fileSha256": null
   },
   "vcRedistCrt": {
     "_comment": "[R2] MSVC CRT copied app-locally from $env:VC_REDIST_CRT_DIR (a Microsoft.VC143.CRT folder). Microsoft permits redistributing these three files. A null sha256 means UNPINNED and fetch-llama.mjs REFUSES to stage that file - an unverified DLL must never reach the installer. The hashes are machine-specific to the redist version being shipped, so they cannot be pre-filled from a spec: on the staging machine set VC_REDIST_CRT_DIR and run `node scripts/fetch-llama.mjs --pin-crt` once, review the printed hashes, commit them, then run the normal fetch. Leaving VC_REDIST_CRT_DIR unset is still allowed and only warns (no CRT is staged at all).",

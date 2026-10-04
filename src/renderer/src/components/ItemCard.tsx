@@ -132,15 +132,40 @@ export function pendingAction(item: ItemVM, kind: ActionKind): ActionView | null
   return item.actions.find((a) => a.kind === kind && a.state === 'pending') ?? null;
 }
 
+/** The update kinds a B24 correction can carry (exec REQUEST: reschedule / move, never a cancel or an undo). */
+const CORRECTION_KINDS: ReadonlyArray<NonNullable<ItemVM['change']>['kind']> = ['reschedule', 'move'];
+
 /**
- * The event the card draws. A delta item draws the NEW slot (`change.to`, UX2 3.3); a declined (rejected) change draws
- * nothing - the card is a plain reply card again (F32 / C15).
+ * [V2] B24 / F38 (editing-undo-5): the in-calendar correction offer. A create that ended `unknown_outcome` was found in
+ * Google with content that differs from what the user approved; reconcile keeps ONE pending `update_event` on the
+ * in-calendar item itself (`from` = Google's found copy, `to` = the approved content) and main's view model carries it
+ * as `change` on that card, whose eventState stays `created` / `updated`. It is drawn exactly like a Change card
+ * (ChangeLine, "Approve change" / "Keep ..."): a correction exists only while that update_event is pending.
+ */
+export function correctionOf(item: ItemVM): NonNullable<ItemVM['change']> | null {
+  const change = item.change;
+  if (change === null || item.status !== 'in_calendar') return null;
+  if (item.eventState !== 'created' && item.eventState !== 'updated') return null;
+  if (!CORRECTION_KINDS.includes(change.kind)) return null;
+  return pendingAction(item, 'update_event') !== null ? change : null;
+}
+
+/** The change a card offers for approval: a delta item's proposed change (UX2 3.3) or B24's correction. */
+export function offeredChangeOf(item: ItemVM): NonNullable<ItemVM['change']> | null {
+  return item.eventState === 'change_proposed' ? item.change : correctionOf(item);
+}
+
+/**
+ * The event the card draws. A delta item draws the NEW slot (`change.to`, UX2 3.3), and so does a B24 correction (as
+ * proposed: the ChangeLine above it says what Google has now); a declined (rejected) change draws nothing - the card is
+ * a plain reply card again (F32 / C15).
  */
 export function eventVmOf(item: ItemVM): EventVM | null {
   if (item.eventState === 'none' || item.eventState === 'declined') return null;
   const revision = item.calendar?.revision;
-  if (item.change && item.eventState === 'change_proposed') {
-    const to = item.change.to;
+  const offered = offeredChangeOf(item);
+  if (offered) {
+    const to = offered.to;
     return {
       title: to.title,
       startLocal: to.startLocal,
@@ -149,7 +174,7 @@ export function eventVmOf(item: ItemVM): EventVM | null {
       location: to.location,
       assumptions: item.event?.assumptions ?? [],
       dateHint: '',
-      state: item.eventState,
+      state: 'change_proposed',
       hasCalendarLink: item.calendar !== null,
       ...(revision !== undefined ? { revision } : {}),
     };
@@ -1113,7 +1138,9 @@ export function ItemCard(props: ItemCardProps) {
 
   // [V2] the Change card (UX2 3.3): a delta item whose change is still proposed. A rejected change ("Keep 15:00",
   // `declined`) or a `change_unclear` run draws no ChangeLine and no change buttons (F32 / C15, UX2 3.3.2).
-  const change = item.eventState === 'change_proposed' ? item.change : null;
+  // B24 (editing-undo-5): an in-calendar card with a pending correction is drawn the same way (+ the correction note).
+  const change = offeredChangeOf(item);
+  const isCorrection = change !== null && item.eventState !== 'change_proposed';
   const changeUnclear = item.badges.includes('change_unclear');
   const showChange = change !== null && !changeUnclear;
   const changeButtons = showChange && updateAction !== null ? updateAction : null;
@@ -1192,10 +1219,17 @@ export function ItemCard(props: ItemCardProps) {
     (item.voice?.transcript ?? '') !== '' ||
     (item.image?.readText ?? '') !== '';
 
-  const autoWrittenAt =
-    item.auto?.autoWriteId != null
-      ? (autoRows.find((r) => r.autoWriteId === item.auto?.autoWriteId)?.writtenAt ?? null)
-      : null;
+  const autoRow =
+    item.auto?.autoWriteId != null ? autoRows.find((r) => r.autoWriteId === item.auto?.autoWriteId) : null;
+  const autoWrittenAt = autoRow?.writtenAt ?? null;
+  // ux-i18n-v2-8: the block names the write it dates (added / moved / cancelled), like the chip next to it. The write
+  // row's own kind wins; the card's event state is the fallback.
+  const autoWriteKind = autoRow?.kind ?? writeKindOf(item);
+  const AUTO_BLOCK_KEY = {
+    create: 'card.autoBlock.addedOn',
+    update: 'card.autoBlock.movedOn',
+    cancel: 'card.autoBlock.cancelledOn',
+  } as const;
 
   const editorMode: 'edit' | 'fill' | 'readonly' | 'change' =
     change !== null
@@ -1252,7 +1286,7 @@ export function ItemCard(props: ItemCardProps) {
           <p className="m-0 flex items-center gap-2 text-sm">
             <span className="icon icon-auto text-accent" aria-hidden="true" />
             {autoWrittenAt !== null
-              ? renderBdiTemplate(t('card.autoBlock.addedOn', { when: SENTINEL(0) }), [
+              ? renderBdiTemplate(t(AUTO_BLOCK_KEY[autoWriteKind], { when: SENTINEL(0) }), [
                   formatWhenWithDay(autoWrittenAt, lang, timeZone),
                 ])
               : t(`badge.automatic.long.${writeKindOf(item)}`)}
@@ -1318,6 +1352,12 @@ export function ItemCard(props: ItemCardProps) {
         <div data-testid={`change-line-${item.itemId}`} data-kind={change.kind === 'undo' ? 'reschedule' : change.kind}>
           <ChangeLine change={change} lang={lang} />
         </div>
+      ) : null}
+      {/* B24: why an "In calendar" card asks for a change - Google's copy is not what the user approved. App text. */}
+      {showChange && isCorrection ? (
+        <p className="note-amber m-0 text-sm" data-testid={`correction-note-${item.itemId}`}>
+          {t('change.correctionNote')}
+        </p>
       ) : null}
 
       <Badges

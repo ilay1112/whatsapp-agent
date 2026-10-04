@@ -7,8 +7,8 @@
 // `analysis IN ('held','failed')` => `card: 'raw'` (CONTRACTS) => RawCard; everything else is a full ItemCard.
 // Queued / running items are never rendered as cards (ARCH 6.1) - they only feed the "Analysing N chats..." line.
 //
-// [V2] (owner V2-W1-11): the "In calendar" list is keyed by the opaque per-event key (`calendar.eventKey`, B20 / C2 1.5):
-// one event is never drawn twice, whatever number of items point at it. While a whisper job runs, the Needs-reply queue
+// [V2] (owner V2-W1-11): the "In calendar" list is de-duplicated by the opaque per-event key (`calendar.eventKey`, B20 /
+// C2 1.5): one event is never drawn twice, whatever number of items point at it. React keys stay per ITEM (keyOf). While a whisper job runs, the Needs-reply queue
 // line reads "Transcribing a voice note (0:42)..." (UX2 2.5) - numbers only, never a chat name.
 import type { JSX, ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -75,9 +75,15 @@ export function dedupeByEvent(items: readonly ItemVM[]): ItemVM[] {
   });
 }
 
-/** React key of a card: the event key in "In calendar" (B20), the item id elsewhere. */
-function keyOf(list: ListKey, item: ItemVM): string {
-  return list === 'in_calendar' && item.calendar ? `event-${item.calendar.eventKey}` : `item-${item.itemId}`;
+/**
+ * React key of a card: ALWAYS the item id, in every list. `dedupeByEvent` already draws one card per event in
+ * "In calendar" (B20). The key must not be the event key: an event moves between items (a change lands on the delta
+ * item, the source closes) and React would hand the old item's ItemCard - its local draft, edit and result state - to
+ * the new item. That card went dirty with no user edit, `refresh()` pinned it, and after an Undo it kept the pre-undo
+ * time behind "This card changed - review again" (v2-acceptance e2e #5, undo.spec:87).
+ */
+function keyOf(item: ItemVM): string {
+  return `item-${item.itemId}`;
 }
 
 export function ItemList(props: ItemListProps) {
@@ -154,7 +160,7 @@ export function ItemList(props: ItemListProps) {
           ) : null}
 
           {items.map((item) => (
-            <div role="listitem" key={keyOf(props.list, item)}>
+            <div role="listitem" key={keyOf(item)}>
               {item.card === 'raw' ? (
                 <RawCard item={item} onOpen={() => props.onOpenItem(item.itemId)} />
               ) : (

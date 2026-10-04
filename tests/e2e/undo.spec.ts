@@ -7,9 +7,11 @@
 //   - a MANUAL reschedule ("Updated · rev 1") is undone from its card: exactly one PATCH back to the pre-write slot, the card shows
 //     the old time again; the same undo invoked from a HIDDEN window is refused and writes nothing;
 //   - the cancel variant ("Cancel event" / "Keep it"): the undo of a cancel that Google refuses to restore offers "Add it back",
-//     and one click there creates exactly one new event.
-// Not covered here (see the notes file): "drift before undo -> blocked_changed" needs `userEditsInGoogle` on the CHILD-mode fake
-// calendar, which has no control channel (REQUEST to the fake's owner).
+//     and one click there creates exactly one new event;
+//   - drift before undo (T2 10 row, B10 pre-check of an AUTOMATIC write): the user edits the automatically created event in
+//     Google (the child-mode fake calendar's control channel, `userEditsInGoogle`) and then clicks Undo => `blocked_changed`
+//     ("You changed this event in Google after it was added ..."), zero update-event calls, no undo action, Google's copy keeps
+//     the user's edit.
 import { expect, test } from './helpers/fixtures.ts';
 import { createCalls, enableAutoViaUi, launchAutoWorld, sendScheduling } from './helpers/auto.ts';
 import {
@@ -82,6 +84,106 @@ test('an automatic create is undone from the AutoStrip: Undoing... -> Undone, on
   await page.waitForTimeout(2_000);
   expect(w.mcp.calls('update-event')).toHaveLength(1);
   expect(w.mcp.calls('delete-event'), 'never delete').toHaveLength(0);
+});
+
+test('a Google-side edit before Undo => blocked_changed, nothing written', async ({ e2e }) => {
+  test.setTimeout(360_000);
+  const w = await launchAutoWorld(e2e, 'undo-drift', [{ match: 'auto_enable', response: 1, checkboxChecked: true }], {
+    calendarControl: true,
+  });
+  const { page, userDataDir } = w;
+  await enableAutoViaUi(w);
+
+  const before = createCalls(w);
+  await sendScheduling(w, [8]);
+  await expect.poll(() => createCalls(w), { timeout: 60_000 }).toBe(before + 1);
+  const eventId = String(w.mcp.calls('create-event').at(-1)!.args.eventId);
+  let writes: Array<{ id: string; item_id: number }> = [];
+  await expect
+    .poll(() => (writes = query(userDataDir, `SELECT id, item_id FROM auto_writes ORDER BY written_at`)).length, {
+      timeout: 30_000,
+    })
+    .toBe(1);
+  const autoWriteId = writes[0]!.id;
+  const itemId = writes[0]!.item_id;
+  await expect(page.getByTestId(`autostrip-state-${autoWriteId}`)).toHaveAttribute('data-state', 'available', {
+    timeout: 30_000,
+  });
+  // the readback recorded the app's own write: that is the baseline the undo pre-check compares Google's copy against (F1)
+  await expect
+    .poll(
+      () =>
+        query<{ n: number }>(
+          userDataDir,
+          'SELECT COUNT(*) AS n FROM event_revisions WHERE calendar_event_id = ? AND (post_etag IS NOT NULL OR post_updated IS NOT NULL)',
+          eventId,
+        )[0]?.n,
+      { timeout: 30_000 },
+    )
+    .toBe(1);
+  expect(w.mcp.calls('update-event'), 'an automatic create writes no PATCH').toHaveLength(0);
+
+  // ---- the user edits the event in Google (not through the app): etag / updated / sequence move ----------------------------
+  const edited = (await w.mcp.controlVerb('userEditsInGoogle', {
+    eventId,
+    patch: { summary: 'Dentist - moved by me' },
+  })) as { etag: string; summary: string; status: string };
+  expect(edited.summary).toBe('Dentist - moved by me');
+
+  // ---- Undo from the AutoStrip: the pre-check sees Google's copy changed => blocked_changed, zero calls --------------------
+  await page.waitForTimeout(600); // the 500 ms focus-steal guard of every approval-class button (UX2 15.1)
+  await page.getByTestId(`autostrip-undo-${autoWriteId}`).click();
+  await expect
+    .poll(
+      () =>
+        query<{ undo_state: string }>(userDataDir, 'SELECT undo_state FROM auto_writes WHERE id = ?', autoWriteId)[0]
+          ?.undo_state,
+      { timeout: 30_000 },
+    )
+    .toBe('blocked_changed');
+  // the strip may collapse once nothing in it can be undone (UX2 3.1); the row is one "Show" away
+  if ((await page.getByTestId('autostrip').getAttribute('data-open')) === 'false')
+    await page.getByTestId('autostrip-toggle').click();
+  await expect(page.getByTestId(`autostrip-state-${autoWriteId}`)).toHaveAttribute('data-state', 'blocked_changed', {
+    timeout: 30_000,
+  });
+  await expect(page.getByTestId(`autostrip-state-${autoWriteId}`)).toContainText(
+    'You changed this in Google after it was added',
+  );
+  // the card's Undo door explains the same verdict in full (UX2 6.4 copy)
+  await expect(page.getByTestId(`undo-state-${itemId}`)).toHaveAttribute('data-state', 'blocked_changed', {
+    timeout: 30_000,
+  });
+  await expect(page.getByTestId(`undo-state-${itemId}`)).toContainText(
+    'You changed this event in Google after it was added - undo would overwrite your change.',
+  );
+  await expect(page.getByTestId(`undo-${itemId}`), 'no Undo button is offered any more').toHaveCount(0);
+  await e2e.screenshot(page, 'undo-blocked-changed-en');
+
+  // ---- nothing written: no PATCH, no delete, no undo action, Google's copy keeps the user's edit ---------------------------
+  await page.waitForTimeout(2_000);
+  expect(w.mcp.calls('update-event'), 'a blocked undo writes nothing').toHaveLength(0);
+  expect(w.mcp.calls('delete-event'), 'never delete').toHaveLength(0);
+  expect(createCalls(w), 'no re-create either').toBe(before + 1);
+  expect(
+    query<{ undo_action_id: string | null }>(
+      userDataDir,
+      'SELECT undo_action_id FROM auto_writes WHERE id = ?',
+      autoWriteId,
+    )[0]?.undo_action_id ?? null,
+    'no undo action was recorded',
+  ).toBeNull();
+  expect(
+    actionsOfItem(userDataDir, itemId).filter((a) => a.kind === 'update_event'),
+    'no update_event action was minted',
+  ).toHaveLength(0);
+  const google = (await w.mcp.controlVerb('state')) as {
+    storedEvents: Array<{ eventId: string; etag: string; summary: string; status: string }>;
+  };
+  const copy = google.storedEvents.find((e) => e.eventId === eventId);
+  expect(copy?.summary, "Google's copy keeps the user's edit").toBe('Dentist - moved by me');
+  expect(copy?.status).toBe('confirmed');
+  expect(copy?.etag, 'the app never wrote the event after the user edit').toBe(edited.etag);
 });
 
 test('a manual reschedule is undone from its card back to the pre-write slot; a hidden window cannot undo', async ({

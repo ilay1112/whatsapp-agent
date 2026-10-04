@@ -2,7 +2,7 @@
 // strip above them that leaves the DOM when idle; automatic mode is never flipped from here; the queue line follows
 // `queue:changed`.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { AutoState, AutoWriteView, ItemCard as ItemVM } from '@shared/types';
 import { DEFAULT_SETTINGS } from '@shared/settings';
@@ -214,6 +214,83 @@ describe('Dashboard v2 - queue line and lists', () => {
     const list = screen.getByTestId('list-in_calendar');
     expect(list.querySelectorAll('[role="list"] > [role="listitem"]')).toHaveLength(1);
     expect(within(list).getByTestId('change-pending-chip-5')).toBeInTheDocument();
+  });
+
+  // v2-acceptance e2e #5 (undo.spec:87): the event moves from the source item (1) to the delta item (2) and back on
+  // Undo. A card keyed by event made React hand item 1's ItemCard - and its local draft - to item 2, so item 2 went
+  // dirty with no user edit, was pinned by refresh() and kept the pre-undo 17:00 behind "This card changed".
+  it('an event moving to another item never inherits the first card: Undo shows the restored time at once', async () => {
+    const user = userEvent.setup();
+    const day = defaultCard.event!.startLocal.slice(0, 10);
+    const ev = (start: string, end: string) => ({
+      ...structuredClone(defaultCard.event!),
+      startLocal: `${day}T${start}:00`,
+      endLocal: `${day}T${end}:00`,
+    });
+    const source = card({
+      itemId: 1,
+      status: 'in_calendar',
+      eventState: 'created',
+      replyState: 'sent',
+      draft: { text: 'Great, see you at 15:00.', lang: 'en', proposalVersion: 1 },
+      event: ev('15:00', '16:00'),
+      badges: [],
+      actions: [],
+      calendar: { eventStartTs: null, eventKey: 'ev1', revision: 1, status: 'confirmed' },
+      updatedAt: 1_000,
+    });
+    const moved = card({
+      ...source,
+      itemId: 2,
+      eventState: 'updated',
+      draft: { text: 'Sure, 17:00 then.', lang: 'en', proposalVersion: 2 },
+      event: ev('17:00', '18:00'),
+      calendar: { eventStartTs: null, eventKey: 'ev1', revision: 2, status: 'confirmed' },
+      undo: { revisionId: 2, until: Date.now() + 86_400_000, state: 'available', automatic: false },
+      updatedAt: 2_000,
+    });
+    const undone = card({
+      ...moved,
+      event: ev('15:00', '16:00'),
+      draft: { text: 'Sure, 17:00 then.', lang: 'en', proposalVersion: 3 },
+      calendar: { eventStartTs: null, eventKey: 'ev1', revision: 3, status: 'confirmed' },
+      undo: null,
+      updatedAt: 3_000,
+    });
+    let served: ItemVM = source;
+    mockInvoke('dashboard:get', () => ({
+      ok: true,
+      value: {
+        needsReply: [],
+        inCalendar: [served],
+        infoMissing: [],
+        counts: { needsReply: 0, inCalendar: 1, infoMissing: 0, ignored: 0 },
+        analysing: 0,
+      },
+    }));
+    mockInvoke('item:undoChange', () => {
+      served = undone;
+      return { ok: true, value: { outcome: 'done', item: { ...undone, messages: [] } } };
+    });
+    useDashboardStore.setState({ sectionOpen: { needs_reply: true, in_calendar: true, info_missing: true } });
+    render(<Dashboard />);
+    await act(() => useDashboardStore.getState().refresh());
+    expect(await screen.findByTestId('card-1')).toBeInTheDocument();
+
+    // the manual reschedule landed: item 1 is superseded, item 2 now holds the event
+    served = moved;
+    await act(() => useDashboardStore.getState().refresh());
+    const card2 = await screen.findByTestId('card-2');
+    expect(within(card2).getByTestId('event-chip-range')).toHaveTextContent('17:00');
+    expect(useDashboardStore.getState().dirtyItemIds.has(2)).toBe(false);
+
+    await user.click(within(card2).getByTestId('undo-2'));
+    await waitFor(() => expect(invokeMocks['item:undoChange']).toHaveBeenCalledTimes(1));
+    await waitFor(() =>
+      expect(within(screen.getByTestId('card-2')).getByTestId('event-chip-range')).toHaveTextContent('15:00'),
+    );
+    expect(screen.queryByTestId('stale-2')).toBeNull();
+    expect(useDashboardStore.getState().staleItemIds.has(2)).toBe(false);
   });
 
   it('unsubscribes from push events on unmount', async () => {

@@ -17,6 +17,15 @@ import { startFakeBridge, type FakeBridge, type FakeBridgeOptions } from '../../
 import { FAKE_CLAUDE_DEFAULT_STATE, type FakeClaudeState } from '../../fakes/fake-claude-cli.types.ts';
 import { FAKE_AGY_DEFAULT_STATE, type FakeAgyState } from '../../fakes/fake-agy.types.ts';
 import type { WhisperFakeMode } from '../../fakes/whisper-cli.types.ts';
+import {
+  calendarControl,
+  calendarControlArgv,
+  newCalendarControlSecret,
+  waitForCalendarControl,
+  type CalendarControlArgs,
+  type CalendarControlEndpoint,
+  type CalendarControlVerb,
+} from '../../fakes/fake-mcp-calendar-control.ts';
 import type { SeamDialogAnswer } from '../../../src/main/testSeams.ts';
 import { wca, type E2eContext } from './fixtures.ts';
 import { FAKE_AGY_MJS, FAKE_CLAUDE_CLI_MJS, FAKE_LLAMA_TS, FAKE_MCP_TS, FAKE_WHISPER_MJS } from './paths.ts';
@@ -163,6 +172,14 @@ export interface McpChild {
   /** Only the `create-event` tool calls, in order. */
   createEvents(): Array<{ at: number; args: Record<string, unknown> }>;
   calls(tool?: string): Array<{ at: number; tool: string; args: Record<string, unknown> }>;
+  /**
+   * [V2] The child's loopback control channel (REQUEST 12, `tests/fakes/fake-mcp-calendar-control.ts`): only when the spec asked
+   * for it (`opts.control`), else it throws. Resolves once the LATEST child the app spawned answers `ping` (a respawn journals a new
+   * port). Drives Google-side behaviour the app cannot see coming - e.g. `userEditsInGoogle` before an undo.
+   */
+  control(timeoutMs?: number): Promise<CalendarControlEndpoint>;
+  /** One control verb on the latest child (`control()` + `calendarControl`); rejects with the fake's reason on any refusal. */
+  controlVerb<V extends CalendarControlVerb>(verb: V, args?: CalendarControlArgs[V]): Promise<unknown>;
 }
 
 interface JournalCall {
@@ -188,8 +205,11 @@ export function mcpChild(
   },
   /** [V2] the profile this calendar belongs to (its calls are checked against that profile's app.db only). */
   userDataDir?: string,
+  /** [V2] `control: true` starts the child's 127.0.0.1 control listener (ephemeral port, fresh random secret per child). */
+  opts: { control?: boolean } = {},
 ): McpChild {
   const journalFile = ctx.writeTempFile(`${label}-mcp-journal.jsonl`, '');
+  const controlSecret = opts.control === true ? newCalendarControlSecret() : null;
   // The child reads `--seed` as its FakeCalendarOptions (seedEvents / calendars / accounts / v2Scenarios).
   const seedFile =
     seed === undefined
@@ -223,6 +243,12 @@ export function mcpChild(
       .map((e) => e.detail as JournalCall)
       .filter((c) => c !== null && typeof c === 'object' && (tool === undefined || c.tool === tool));
 
+  const control = (timeoutMs = 15_000): Promise<CalendarControlEndpoint> => {
+    if (controlSecret === null)
+      return Promise.reject(new Error(`E2E: mcpChild('${label}') was started without { control: true }`));
+    return waitForCalendarControl(journalFile, controlSecret, timeoutMs);
+  };
+
   ctx.onStop(() => {
     for (const c of calls('create-event')) ctx.createEvents.push({ at: c.at, args: c.args, userDataDir });
     // [V2] ledger rules 6-9: every tool call (create-event, update-event and any delete-event attempt), and the fake's own violations
@@ -244,12 +270,15 @@ export function mcpChild(
           journalFile,
           ...(seedFile === null ? [] : ['--seed', seedFile]),
           ...(seed?.scenario === undefined ? [] : ['--scenario', String(seed.scenario)]),
+          ...(controlSecret === null ? [] : calendarControlArgv(controlSecret)),
         ],
       }),
     },
     entries,
     createEvents: () => calls('create-event').map((c) => ({ at: c.at, args: c.args })),
     calls,
+    control,
+    controlVerb: async (verb, args) => calendarControl(await control(), verb, args),
   };
 }
 

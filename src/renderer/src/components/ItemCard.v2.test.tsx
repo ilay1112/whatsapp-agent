@@ -1112,3 +1112,184 @@ describe('badges without their host row', () => {
     expect(screen.getAllByTestId('badge-manipulation')).toHaveLength(1);
   });
 });
+
+// ---------------------------------------------------------------------------------------------------------------------
+// B24 / F38 correction offer (editing-undo-5): a create reconciled after the event was edited in Google. The executor
+// keeps a pending update_event on the in-calendar item ITSELF (from = Google's found copy, to = the approved content);
+// main's view model carries it as `change` on that in_calendar card (eventState stays created / updated).
+// ---------------------------------------------------------------------------------------------------------------------
+/** The in-calendar card of B24: Google has 15:00 (`from`), the user approved 17:00 (`to`). */
+const correction = (patch: Partial<ItemVM> = {}, change: Partial<ChangeView> = {}): ItemVM =>
+  card({
+    status: 'in_calendar',
+    eventState: 'created',
+    replyState: 'sent',
+    draft: null,
+    event: { ...TO, assumptions: [], dateHint: '' },
+    badges: [],
+    calendar: { eventStartTs: Date.now() + 86_400_000, eventKey: 'k1', revision: 1, status: 'confirmed' },
+    change: changeOf(change),
+    actions: [action({})],
+    ...patch,
+  });
+
+describe('B24 correction card (editing-undo-5)', () => {
+  it('draws the ChangeLine (Google -> approved), the note, Approve change (accent) and Keep 15:00', () => {
+    render(<ItemCard item={correction()} mode="compact" />);
+    expect(screen.getByTestId('change-line-1')).toHaveTextContent('Change: Wed 15:00 → 17:00');
+    expect(screen.getByTestId('correction-note-1')).toHaveTextContent(
+      'Google Calendar has a different version of this event than the one you approved.',
+    );
+    expect(screen.getByTestId('approve-change-1')).toHaveTextContent('Approve change');
+    expect(screen.getByTestId('approve-change-1')).toHaveClass('btn-primary');
+    expect(screen.getByTestId('keep-change-1')).toHaveTextContent('Keep 15:00');
+    expect(screen.getByTestId('keep-change-1')).toHaveClass('btn-quiet');
+    expect(screen.getByTestId('card-1')).toHaveAccessibleName(/change proposed$/);
+    // it is still the in-calendar card of a live event
+    expect(screen.getByTestId('open-calendar-1')).toBeInTheDocument();
+  });
+
+  it('Approve change = exactly one action:approve of the update_event with its shownHash; guarded', async () => {
+    const user = userEvent.setup();
+    render(<ItemCard item={correction()} mode="compact" />);
+    useFocusGuardStore.setState({ activationBlockedUntil: Date.now() + 60_000 });
+    await user.click(screen.getByTestId('approve-change-1'));
+    screen.getByTestId('approve-change-1').focus();
+    await user.keyboard('{Enter}');
+    expect(invokeMocks['action:approve']).not.toHaveBeenCalled();
+    useFocusGuardStore.setState({ activationBlockedUntil: 0 });
+    await user.dblClick(screen.getByTestId('approve-change-1'));
+    await waitFor(() => expect(invokeMocks['action:approve']).toHaveBeenCalledTimes(1));
+    expect(approveCalls()[0]).toEqual({ actionId: UPDATE_ID, kind: 'update_event', shownHash: UPDATE_HASH });
+  });
+
+  it('Keep = action:reject of that update_event, never an approval, not guarded', async () => {
+    const user = userEvent.setup();
+    render(<ItemCard item={correction()} mode="compact" />);
+    useFocusGuardStore.setState({ activationBlockedUntil: Date.now() + 60_000 });
+    await user.click(screen.getByTestId('keep-change-1'));
+    await waitFor(() => expect(invokeMocks['action:reject']).toHaveBeenCalledWith({ actionId: UPDATE_ID }));
+    expect(invokeMocks['action:approve']).not.toHaveBeenCalled();
+  });
+
+  it('a place correction keeps the old place; an updated event (rev >= 2) is offered the same way', () => {
+    render(
+      <ItemCard
+        item={correction({ eventState: 'updated' }, { kind: 'move', to: ev({ location: 'Home' }) })}
+        mode="compact"
+      />,
+    );
+    expect(screen.getByTestId('change-line-1')).toHaveAttribute('data-kind', 'move');
+    expect(screen.getByTestId('keep-change-1')).toHaveTextContent('Keep the old place');
+    expect(screen.getByTestId('approve-change-1')).toBeInTheDocument();
+  });
+
+  it('no pending update_event, a cancel / undo kind, or a change_unclear badge: no correction controls', () => {
+    const cases = [
+      correction({ actions: [] }),
+      correction({ actions: [action({ state: 'failed', errorCode: 'ACTION_STALE' })] }),
+      correction({}, { kind: 'cancel', to: ev({ status: 'cancelled' }) }),
+      correction({}, { kind: 'undo' }),
+      correction({ badges: ['change_unclear'] }),
+    ];
+    for (const item of cases) {
+      const { unmount } = render(<ItemCard item={item} mode="compact" />);
+      expect(screen.queryByTestId('approve-change-1')).toBeNull();
+      expect(screen.queryByTestId('cancel-event-1')).toBeNull();
+      expect(screen.queryByTestId('keep-change-1')).toBeNull();
+      expect(screen.queryByTestId('keep-event-1')).toBeNull();
+      expect(screen.queryByTestId('correction-note-1')).toBeNull();
+      unmount();
+    }
+  });
+
+  it('the sheet shows "Now in your calendar" (Google\'s copy) above the editor in change mode', () => {
+    render(<ItemCard item={{ ...correction(), messages: [] }} mode="expanded" />);
+    expect(screen.getByTestId('sheet-now-in-calendar')).toHaveTextContent(/Now in your calendar: Wed \d+ \S+ 15:00/);
+    expect(screen.getByTestId('event-editor')).toHaveAttribute('data-mode', 'change');
+  });
+
+  it('he: the note is Hebrew', async () => {
+    await act(async () => {
+      await i18next.changeLanguage('he');
+    });
+    try {
+      render(<ItemCard item={correction()} mode="compact" />);
+      expect(screen.getByTestId('correction-note-1')).toHaveTextContent('ביומן Google יש גרסה אחרת של האירוע');
+    } finally {
+      await act(async () => {
+        await i18next.changeLanguage('en');
+      });
+    }
+  });
+
+  it('eventVmOf: the slot the correction would write, drawn as proposed', () => {
+    const vm = eventVmOf(correction());
+    expect(vm?.startLocal).toBe(`${DAY}T17:00:00`);
+    expect(vm?.state).toBe('change_proposed');
+    expect(eventVmOf(correction({ actions: [] }))?.state).toBe('created');
+  });
+});
+
+// ux-i18n-v2-8: the sheet's "Automatic" block said "Added automatically on ..." for automatic moves and cancels too,
+// next to the chip "Moved automatically" / "Cancelled automatically" - the two contradicted each other.
+describe('sheet Automatic block names the write it describes (ux-i18n-v2-8)', () => {
+  const id = '00000000-0000-4000-8000-000000000002';
+  const rowOf = (kind: 'create' | 'update' | 'cancel') => ({
+    autoWriteId: id,
+    itemId: 1,
+    kind,
+    event: kind === 'cancel' ? { ...TO, status: 'cancelled' as const } : TO,
+    before: kind === 'create' ? null : ev(),
+    writtenAt: Date.UTC(2026, 8, 23, 9, 0),
+    undoState: 'available' as const,
+    undoUntil: Date.now() + 1e6,
+    revisionId: 12,
+  });
+  it.each([
+    ['update', 'updated', /^Moved automatically on Wed 23 Sep\w* 12:00/],
+    ['cancel', 'cancelled', /^Cancelled automatically on Wed 23 Sep\w* 12:00/],
+    ['create', 'created', /^Added automatically on Wed 23 Sep\w* 12:00/],
+  ] as const)('%s: the block agrees with the chip', (kind, eventState, text) => {
+    useAutoStore.setState({ rows: [rowOf(kind)] });
+    render(
+      <ItemCard
+        item={{
+          ...landed({ eventState, auto: { chip: 'automatic', notAutomaticReason: null, autoWriteId: id } }),
+          messages: [],
+        }}
+        mode="expanded"
+      />,
+    );
+    const block = screen.getByTestId('sheet-auto-block');
+    expect(block.querySelector('p')?.textContent).toMatch(text);
+    if (kind !== 'create') expect(block).not.toHaveTextContent('Added automatically');
+  });
+
+  it('he: an automatic move reads "הוזז אוטומטית"', async () => {
+    await act(async () => {
+      await i18next.changeLanguage('he');
+    });
+    try {
+      useAutoStore.setState({ rows: [rowOf('update')] });
+      render(
+        <ItemCard
+          item={{
+            ...landed({
+              eventState: 'updated',
+              auto: { chip: 'automatic', notAutomaticReason: null, autoWriteId: id },
+            }),
+            messages: [],
+          }}
+          mode="expanded"
+        />,
+      );
+      expect(screen.getByTestId('sheet-auto-block')).toHaveTextContent('הוזז אוטומטית');
+      expect(screen.getByTestId('sheet-auto-block')).not.toHaveTextContent('נוסף אוטומטית');
+    } finally {
+      await act(async () => {
+        await i18next.changeLanguage('en');
+      });
+    }
+  });
+});

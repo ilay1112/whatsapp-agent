@@ -9,6 +9,7 @@ import {
   MANIFEST_PATH,
   main,
   PIN_PATH,
+  pinFiles,
   stripReleasePrefix,
   SUMS_PATH,
   sumsText,
@@ -69,8 +70,10 @@ function memoryFs(seed = {}) {
   };
 }
 const okResponse = (body) => ({ ok: true, status: 200, arrayBuffer: async () => body, text: async () => String(body) });
-const pinFor = (zip) => ({
+// [signing-fix] per-file pins are tested explicitly below; the fixture zip never matches the committed ones
+const pinFor = (zip, fileSha256 = null) => ({
   ...REAL_PIN,
+  files: { ...REAL_PIN.files, fileSha256 },
   whisper: { ...REAL_PIN.whisper, size: zip.length, sha256: createHash('sha256').update(zip).digest('hex') },
 });
 
@@ -207,5 +210,64 @@ describe('main (injected fetch, in-memory fs)', () => {
   it('the script never spawns or executes anything (static)', () => {
     const src = readFileSync(path.join(ROOT, 'scripts', 'fetch-whisper.mjs'), 'utf8');
     expect(src).not.toMatch(/child_process|execFile|spawn\(|\.exec\(/);
+  });
+});
+
+// [signing-fix, signing-review MAJOR 3] committed per-file pins (files.fileSha256), generated from the PINNED zip.
+// vendor/whisper/SHA256SUMS is gitignored and written by the same fetch step, so it can never be the signing reference.
+describe('per-file pins (files.fileSha256)', () => {
+  const sha = (s) => createHash('sha256').update(Buffer.from(s)).digest('hex');
+  const root = 'C:\\repo';
+  const zip = buildZip({
+    'Release/whisper-cli.exe': 'MZ-cli',
+    'Release/whisper.dll': 'w',
+    'Release/ggml.dll': 'g',
+    'Release/ggml-base.dll': 'gb',
+    'Release/main.exe': 'NEVER',
+  });
+  const digests = {
+    'ggml-base.dll': sha('gb'),
+    'ggml.dll': sha('g'),
+    'whisper-cli.exe': sha('MZ-cli'),
+    'whisper.dll': sha('w'),
+  };
+  const run = (pin) => {
+    const fs = memoryFs({ [path.normalize(path.join(root, PIN_PATH))]: JSON.stringify(pin) });
+    const lines = [];
+    const p = main({
+      root,
+      fs,
+      env: {},
+      log: (m) => lines.push(m),
+      fetch: async (url) => (url === pin.whisper.licenseUrl ? okResponse('MIT') : okResponse(zip)),
+    });
+    return { fs, lines, p };
+  };
+  it('the committed pin file has a files.fileSha256 slot (null = UNPINNED, else a 64-hex map)', () => {
+    expect(Object.hasOwn(REAL_PIN.files, 'fileSha256')).toBe(true);
+    if (REAL_PIN.files.fileSha256 !== null) {
+      for (const v of Object.values(REAL_PIN.files.fileSha256)) expect(v).toMatch(/^[0-9a-f]{64}$/);
+      for (const name of REAL_PIN.files.required) expect(REAL_PIN.files.fileSha256[name], name).toBeDefined();
+    }
+  });
+  it('main verifies the Release/-stripped files against the per-file pins and stages nothing on a mismatch', async () => {
+    await expect(run(pinFor(zip, digests)).p).resolves.toBeTruthy();
+    const bad = run(pinFor(zip, { ...digests, 'whisper.dll': sha('x') }));
+    await expect(bad.p).rejects.toThrow(/whisper\.dll does not match its per-file pin/);
+    expect([...bad.fs.files.keys()].some((k) => k.includes('win-x64-cpu'))).toBe(false);
+    const nullPins = run(pinFor(zip, null));
+    await expect(nullPins.p).resolves.toBeTruthy();
+    expect(nullPins.lines.join('\n')).toMatch(/UNPINNED[\s\S]*fetch-whisper\.mjs --pin-files/);
+  });
+  it('pinFiles records the per-file hashes of the verified, pinned zip (Release/ stripped)', async () => {
+    const source = readFileSync(path.join(ROOT, PIN_PATH), 'utf8')
+      .replace(REAL_PIN.whisper.sha256, createHash('sha256').update(zip).digest('hex'))
+      .replace(`"size": ${REAL_PIN.whisper.size}`, `"size": ${zip.length}`);
+    const fs = memoryFs({ [path.normalize(path.join(root, PIN_PATH))]: source });
+    const got = await pinFiles({ root, fs, fetch: async () => okResponse(zip), log: () => undefined });
+    expect(got).toEqual(digests);
+    expect(JSON.parse((await fs.readFile(path.join(root, PIN_PATH), 'utf8')).toString()).files.fileSha256).toEqual(
+      digests,
+    );
   });
 });

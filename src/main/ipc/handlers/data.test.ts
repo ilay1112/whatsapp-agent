@@ -10,7 +10,7 @@ import { backupNow } from '../../db/backup';
 import { cleanup, fileRepos, JID_A, seedChat, seedOpenItem, T0, tempDir } from '../../db/__fixtures__/testDb';
 import { makeFixture, NOW_0 } from '../register.fixtures';
 import type { HandlerDeps } from '../register';
-import { createDataHandlers, purgeDirsOf, wipeDirContents } from './data';
+import { agyTranscriptEntriesOf, createDataHandlers, purgeDirsOf, wipeDirContents } from './data';
 import type { AutoPolicyRecord } from '../../../shared/types';
 
 const CTX = { windowFocused: true, windowVisible: true, shownByNotificationAt: null };
@@ -308,5 +308,55 @@ describe('[V2] data:purgeNow - job / media dirs and the automatic policy', () =>
     await createDataHandlers(f.deps, { autoPolicy: { disable } })['data:purgeNow']({ confirm: true }, CTX);
     expect(disable).not.toHaveBeenCalled();
     expect(setState).not.toHaveBeenCalled();
+  });
+});
+
+// [v2-closeout cli-sandbox-5] In the isolated agy profile (F3) HOME / USERPROFILE = <userData>/agy-home, and agy writes every headless
+// conversation - the nonce block with the WhatsApp text and the prefetched chat context - under .gemini/antigravity-cli/{brain,
+// conversations, history.jsonl} (and its logs). "Delete all data now" left all of it on disk. The purge now removes exactly those
+// entries; the app-written settings.json (the trusted workspace) and anything else of the profile stay.
+describe('[v2-closeout] data:purgeNow - the Antigravity isolated profile (cli-sandbox-5)', () => {
+  const plant = (dir: string, name: string, body = 'SENTINEL_AGY_TRANSCRIPT'): void => {
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, name), body);
+  };
+  it('removes brain/, conversations/, history.jsonl and the agy logs; keeps settings.json and the rest of agy-home', async () => {
+    const { f } = purgeFixture();
+    const agy = path.join(f.deps.paths.userData, 'agy-home', '.gemini', 'antigravity-cli');
+    plant(path.join(agy, 'brain', 'conv-1', 'step'), 'transcript.jsonl');
+    plant(path.join(agy, 'conversations'), 'conv-1.json');
+    plant(agy, 'history.jsonl');
+    plant(path.join(agy, 'log'), 'agy.log');
+    plant(agy, 'cli.log');
+    plant(agy, 'settings.json', '{"trustedWorkspaces":[]}');
+    plant(path.join(f.deps.paths.userData, 'agy-home', 'AppData', 'Roaming'), 'keep.txt', 'k');
+
+    await createDataHandlers(f.deps)['data:purgeNow']({ confirm: true }, CTX);
+
+    expect(fs.readdirSync(agy)).toEqual(['settings.json']);
+    expect(fs.readFileSync(path.join(agy, 'settings.json'), 'utf8')).toBe('{"trustedWorkspaces":[]}');
+    expect(fs.existsSync(path.join(f.deps.paths.userData, 'agy-home', 'AppData', 'Roaming', 'keep.txt'))).toBe(true);
+  });
+  it('no agy profile at all is fine (nothing attempted); a busy transcript is kept and logged by count only', async () => {
+    const { f } = purgeFixture();
+    expect(await createDataHandlers(f.deps)['data:purgeNow']({ confirm: true }, CTX)).toMatchObject({ ok: true });
+    const agy = path.win32.join(f.deps.paths.userData, 'agy-home', '.gemini', 'antigravity-cli');
+    const handlers = createDataHandlers(f.deps, undefined, {
+      readdirSync: (d) =>
+        path.win32.normalize(d) === path.win32.normalize(agy) ? ['brain', 'settings.json', 'history.jsonl'] : [],
+      rmSync: (p) => {
+        if (p.endsWith('brain')) throw new Error('EBUSY SENTINEL_AGY');
+      },
+    });
+    await handlers['data:purgeNow']({ confirm: true }, CTX);
+    expect(f.rec.logs).toContainEqual({ level: 'warn', event: 'purge_dir_entries_kept', meta: { count: 1 } });
+    expect(JSON.stringify(f.rec.logs)).not.toContain('SENTINEL_AGY');
+  });
+  it('agyTranscriptEntriesOf names exactly the agy transcript / log entries under the isolated profile', () => {
+    const { f } = purgeFixture();
+    const base = path.win32.join(f.deps.paths.userData, 'agy-home', '.gemini', 'antigravity-cli');
+    expect(agyTranscriptEntriesOf(f.deps.paths)).toEqual(
+      ['brain', 'conversations', 'history.jsonl', 'log', 'cli.log'].map((n) => path.win32.join(base, n)),
+    );
   });
 });

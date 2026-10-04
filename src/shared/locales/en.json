@@ -127,6 +127,8 @@
     "changeProposedA11y": "change proposed",
     "autoBlock": {
       "addedOn": "Added automatically on <bdi>{{when}}</bdi>",
+      "movedOn": "Moved automatically on <bdi>{{when}}</bdi>",
+      "cancelledOn": "Cancelled automatically on <bdi>{{when}}</bdi>",
       "seeAll": "See all automatic activity"
     }
   },
@@ -1538,7 +1540,8 @@
     "keepGoogle": "Keep Google's",
     "applyAgain": "Apply again",
     "titleNotApplied": "Changes to the event name are not applied - edit it in Google Calendar.",
-    "byYou": "You changed this in the chat"
+    "byYou": "You changed this in the chat",
+    "correctionNote": "Google Calendar has a different version of this event than the one you approved."
   },
   "undo": {
     "button": "Undo",
@@ -1624,6 +1627,7 @@
     "resume": "Resume",
     "stop": "Stop",
     "renew": "Renew",
+    "renewNote": "Renewing ends the current period and asks you again in a Windows dialog. If you cancel there, automatic mode stays off.",
     "waitingDialog": "Waiting for your answer in the Windows dialog...",
     "openActivity": "See automatic activity",
     "state": {
@@ -1766,6 +1770,9 @@
     "exported": "Exported",
     "retention": "Entries are kept for 180 days (decisions for 90 days).",
     "empty": "Nothing happened automatically yet.",
+    "emptyTrial": "Nothing is written to your calendar during the trial.",
+    "trial_one": "Trial so far: {{count}} decision seen - {{wouldAuto}} would have been done automatically.",
+    "trial_other": "Trial so far: {{count}} decisions seen - {{wouldAuto}} would have been done automatically.",
     "older": "Show older",
     "stateOn_one": "On · {{used}} of {{limit}} today · ends in {{count}} day",
     "stateOn_other": "On · {{used}} of {{limit}} today · ends in {{count}} days"

@@ -56,6 +56,14 @@ export interface FakeBridgeDb {
   seedReaction(r: FakeReactionInput): number;
   /** A row whose deleted_at is set (content kept, as the bridge keeps it). */
   seedDeleted(r: Omit<FakeBridgeMessageInput, 'deleted'>): number;
+  /**
+   * [v2-closeout] Runs `fn` (synchronous seeding through any method above) inside ONE transaction on the fake's connection; a nested call
+   * joins the outer transaction. Every bare addMessage is its own autocommit in rollback-journal mode = a journal file created, fsynced
+   * and deleted PER ROW; under the full parallel suite that cost 5-20 ms a row and pushed the 60-300-row worlds of waTools /
+   * waReadClient / ingest / pipeline-gates past their timeouts. One commit is what the real bridge does for a history-sync batch too.
+   * Readers (the app's connection) see the rows once fn returns.
+   */
+  batch<T>(fn: () => T): T;
 }
 export type FakeMediaType = 'audio' | 'image' | 'video' | 'document' | 'sticker';
 export interface FakeMediaRowInput {
@@ -248,6 +256,20 @@ export function createFakeBridgeDb(opts: FakeBridgeDbOptions): FakeBridgeDb {
     return Number(row.rowid);
   };
 
+  /** [v2-closeout] see FakeBridgeDb.batch: one transaction, nested calls join it. */
+  const batch = <T>(fn: () => T): T => {
+    if (db.isTransaction) return fn();
+    db.exec('BEGIN');
+    try {
+      const out = fn();
+      db.exec('COMMIT');
+      return out;
+    } catch (e) {
+      if (db.isTransaction) db.exec('ROLLBACK');
+      throw e;
+    }
+  };
+
   const fake: FakeBridgeDb = {
     path: opts.path,
     addChat,
@@ -310,8 +332,8 @@ export function createFakeBridgeDb(opts: FakeBridgeDbOptions): FakeBridgeDb {
       const prefix = r.idPrefix ?? 'BULK';
       const text = r.text ?? ((i: number) => `bulk row ${i}`);
       if (!db.prepare('SELECT 1 FROM chats WHERE jid = ?').get(r.chatJid)) addChat(r.chatJid, null);
-      db.exec('BEGIN');
-      try {
+      // one transaction (U-D1: 10^6 rows); [v2-closeout] joins the caller's when called inside batch()
+      return batch(() => {
         for (let i = 0; i < r.rows; i += 1) {
           const fromMe = r.fromMeEvery !== undefined && r.fromMeEvery > 0 && i % r.fromMeEvery === 0;
           upsertMsg.run(
@@ -327,12 +349,8 @@ export function createFakeBridgeDb(opts: FakeBridgeDbOptions): FakeBridgeDb {
             null,
           );
         }
-        db.exec('COMMIT');
-      } catch (e) {
-        db.exec('ROLLBACK');
-        throw e;
-      }
-      return Number((maxRowidStmt.get() as { m: number }).m);
+        return Number((maxRowidStmt.get() as { m: number }).m);
+      });
     },
     seedGroupRow: (r) => {
       if (!r.chatJid.endsWith('@g.us')) throw new Error('seedGroupRow: chatJid must be a group JID (...@g.us)');
@@ -355,6 +373,7 @@ export function createFakeBridgeDb(opts: FakeBridgeDbOptions): FakeBridgeDb {
         filename: r.targetId,
       }),
     seedDeleted: (r) => addMessage({ ...r, deleted: true }),
+    batch,
   };
   return fake;
 }

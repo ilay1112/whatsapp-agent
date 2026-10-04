@@ -122,6 +122,49 @@ describe('repos.autoPolicies - setState', () => {
     );
   });
 
+  // [v2-closeout auto-mode-8] the database, not only the service, keeps a paused trial from resuming as `on`
+  it('auto-mode-8: a pause records the state it paused; resume returns to exactly that state', () => {
+    const { repos } = memRepos();
+    repos.autoPolicies.insert(grant()); // a trial: born shadow
+    repos.autoPolicies.setState('p1', { state: 'paused', reason: 'unattended' });
+    expect(repos.autoPolicies.setState('p1', { state: 'resume' })).toMatchObject({
+      state: 'shadow',
+      pausedReason: null,
+    });
+    repos.autoPolicies.setState('p1', { state: 'on' }); // "Turn on for real" (endShadow)
+    repos.autoPolicies.setState('p1', { state: 'paused', reason: 'calendar_disconnected' });
+    expect(repos.autoPolicies.setState('p1', { state: 'resume' })).toMatchObject({ state: 'on', pausedReason: null });
+    expect(() => repos.autoPolicies.setState('p1', { state: 'resume' })).toThrow(RowNotFoundError); // not paused
+  });
+
+  it('auto-mode-8: the trigger refuses paused(trial) -> on and any rewrite of the recorded paused-from state', () => {
+    const { db, repos } = memRepos();
+    repos.autoPolicies.insert(grant());
+    repos.autoPolicies.setState('p1', { state: 'paused', reason: 'snapshot_changed' });
+    expect(() => repos.autoPolicies.setState('p1', { state: 'on' })).toThrow(/paused trial resumes as shadow/);
+    expect(() => db.prepare(`UPDATE auto_policies SET state = 'on' WHERE id = 'p1'`).run()).toThrow(
+      /paused trial resumes as shadow/,
+    );
+    expect(() => db.prepare(`UPDATE auto_policies SET paused_from = 'on' WHERE id = 'p1'`).run()).toThrow(
+      /paused_from is immutable/,
+    );
+    expect(() =>
+      db.prepare(`UPDATE auto_policies SET paused_from = 'on', state = 'on' WHERE id = 'p1'`).run(),
+    ).toThrow();
+    // a pause must record the state it left (never a forged 'on' for a shadow row)
+    repos.autoPolicies.setState('p1', { state: 'resume' });
+    expect(() =>
+      db.prepare(`UPDATE auto_policies SET state = 'paused', paused_reason = 'user', paused_from = 'on'`).run(),
+    ).toThrow(/pause records the state it paused/);
+    // an `on` row never goes (back) to shadow, not even through a pause
+    repos.autoPolicies.setState('p1', { state: 'on' });
+    repos.autoPolicies.setState('p1', { state: 'paused', reason: 'user' });
+    expect(() => db.prepare(`UPDATE auto_policies SET state = 'shadow' WHERE id = 'p1'`).run()).toThrow(
+      /cannot return to shadow/,
+    );
+    expect(repos.autoPolicies.setState('p1', { state: 'resume' }).state).toBe('on');
+  });
+
   it('an unknown id throws RowNotFoundError', () => {
     const { repos } = memRepos();
     expect(() => repos.autoPolicies.setState('nope', { state: 'expired' })).toThrow(RowNotFoundError);

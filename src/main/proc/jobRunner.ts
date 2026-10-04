@@ -170,6 +170,18 @@ export class JobAbortedError extends Error {
   }
 }
 
+/**
+ * [v2-closeout] run() after killAll() began (the quit path): nothing was spawned and nothing ever will be. A subclass of JobAbortedError
+ * so every caller that already treats an abort as "not run" (llm/cli/runner.ts, the locator probes, whisper) needs no new branch, and it
+ * never counts as a breaker failure.
+ */
+export class JobRunnerClosedError extends JobAbortedError {
+  constructor() {
+    super();
+    this.name = 'JobRunnerClosedError';
+  }
+}
+
 /** Env key check per kind (case-insensitive for the forbidden list: Windows env names are case-insensitive). */
 export function envKeysAllowed(
   kind: JobKind,
@@ -514,6 +526,12 @@ export function createJobRunner(deps: JobRunnerDeps): JobRunner {
     return run;
   };
 
+  /**
+   * [v2-closeout] The shutdown latch: set synchronously at the top of killAll() and never cleared. Checked by run() itself, again when a
+   * queued run reaches the head of its mutex, and once more in runOnce() right before spawn (no await in between), so no job can start
+   * after the quit sequence killed the running ones - such a job would outlive app.exit() with its pid file (I7', e2e cli-connect 7b/7c/9).
+   */
+  let closed = false;
   const mutex: Record<JobKind, Promise<void>> = { cli: Promise.resolve(), voice: Promise.resolve() };
   const failures: Record<JobKind, EpochMs[]> = { cli: [], voice: [] };
   const openedAt: Record<JobKind, EpochMs | null> = { cli: null, voice: null };
@@ -555,6 +573,7 @@ export function createJobRunner(deps: JobRunnerDeps): JobRunner {
     if (spec.exePath.includes('\0')) throw new JobSpecError('exe_path');
     if (!path.win32.isAbsolute(spec.cwd) && !path.isAbsolute(spec.cwd)) throw new JobSpecError('cwd');
     if (signal.aborted) throw new JobAbortedError();
+    if (closed) throw new JobRunnerClosedError(); // [v2-closeout] last check before spawn: no await between here and spawnFn
 
     const startedAt = deps.now();
     const sweepSince = Date.now(); // [cli-sandbox-4] taken BEFORE spawn: every descendant's CreationDate is >= this
@@ -713,6 +732,10 @@ export function createJobRunner(deps: JobRunnerDeps): JobRunner {
 
   return {
     run<T>(spec: JobSpec, use: (job: JobHandle) => Promise<T>, signal: AbortSignal): Promise<T> {
+      if (closed) {
+        deps.log('job_refused_closing', { kind: spec.kind });
+        return Promise.reject(new JobRunnerClosedError());
+      }
       if (breakerState(spec.kind).open) return Promise.reject(new JobBreakerOpenError(JOB_BREAKER_CODE[spec.kind]));
       const previous = mutex[spec.kind];
       let release!: () => void;
@@ -721,6 +744,10 @@ export function createJobRunner(deps: JobRunnerDeps): JobRunner {
       });
       return previous
         .then(() => {
+          if (closed) {
+            deps.log('job_refused_closing', { kind: spec.kind });
+            throw new JobRunnerClosedError(); // queued before the quit, reached the head after it
+          }
           if (breakerState(spec.kind).open) throw new JobBreakerOpenError(JOB_BREAKER_CODE[spec.kind]);
           return runOnce(spec, use, signal);
         })
@@ -732,6 +759,7 @@ export function createJobRunner(deps: JobRunnerDeps): JobRunner {
       openedAt[kind] = null;
     },
     async killAll(): Promise<void> {
+      closed = true; // [v2-closeout] the latch FIRST, synchronously: nothing queued or requested from here on is ever spawned
       const jobs = [...running];
       for (const j of jobs) j.kill();
       await Promise.all(jobs.map((j) => j.exited));

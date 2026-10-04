@@ -26,6 +26,7 @@
     "test:e2e": "npm run build:e2e && playwright test",
     "pack:dir": "npm run build && node scripts/hash-bridge.mjs && electron-builder --win --x64 --dir",
     "test:smoke": "npm run pack:dir && node scripts/smoke-packaged.mjs dist/win-unpacked",
+    "test:defender": "node scripts/defender-scan.mjs",
     "audit:prod": "npm audit --omit=dev",
     "fetch:whisper": "node scripts/fetch-whisper.mjs",
     "gen:fixtures": "node scripts/gen-v3-fixture.mjs && node scripts/gen-golden-images.mjs",

@@ -14,6 +14,7 @@ import {
   CREATION_TOLERANCE_MS,
   PS_QUERY_ARGS,
   createWindowsProcessQuery,
+  inAppClockBase,
   parseCreationDate,
   parseProcessJson,
   reapOrphans,
@@ -279,7 +280,11 @@ function recordingSpawn(stdoutFor: (command: string) => string): { fn: SpawnFn; 
 }
 
 describe('createWindowsProcessQuery', () => {
-  it('passes the pid as its own argv element after `--`, never inside the -Command string', async () => {
+  // [v2-closeout] This test used to pin the argv `[...PS_QUERY_ARGS, '--', '<pid>']` with `[int]$args[0]` in the script - the shape that
+  // can never work (PowerShell folds every token after -Command into the script text). The property it guarded is unchanged: the pid
+  // is never interpolated into the command string; it now travels in the query's own minimal environment. The REAL query is proven
+  // against the live process table in reaper.real.test.ts.
+  it('passes the pid in the environment (REAPER_QUERY_PID), never in argv or inside the -Command string', async () => {
     const { fn, calls } = recordingSpawn(() =>
       JSON.stringify({ ProcessId: 4242, ExecutablePath: ownExe, CreationDate: '/Date(1700000000000)/' }),
     );
@@ -292,13 +297,18 @@ describe('createWindowsProcessQuery', () => {
     const call = calls[0] as SpawnRecord;
     expect(call.command).toBe('powershell.exe');
     expect(call.options.shell).toBe(false);
-    expect(call.args).toEqual([...PS_QUERY_ARGS, '--', '4242']);
-    expect(call.args[call.args.length - 1]).toBe('4242');
-    expect(call.args[call.args.length - 2]).toBe('--');
+    expect(call.args).toEqual([...PS_QUERY_ARGS]); // a constant argv: nothing appended
+    expect(call.args).not.toContain('4242');
+    expect(call.args).not.toContain('--');
     expect(call.args[2]).toBe('-Command');
     const command = call.args[3] as string;
     expect(command).not.toContain('4242'); // the pid is never interpolated
-    expect(command).toContain('[int]$args[0]');
+    expect(command).toContain('[int]$env:REAPER_QUERY_PID');
+    expect(call.options.env).toEqual({
+      SystemRoot: expect.any(String) as string,
+      windir: expect.any(String) as string,
+      REAPER_QUERY_PID: '4242',
+    });
   });
 
   it('kills by PID with /T /F and never by image name', async () => {
@@ -594,5 +604,26 @@ describe('reapOrphans v2 - job pid files (B31)', () => {
     });
     expect(result).toEqual({ killed: [], stalePidFiles: 4 });
     expect(spawn).not.toHaveBeenCalled();
+  });
+});
+
+describe('[v2-closeout] inAppClockBase', () => {
+  it('moves the creation time into the app clock base and passes the kill through unchanged', async () => {
+    const kills: Array<[number, boolean]> = [];
+    const exe = 'C:/x.exe';
+    const base: ProcessQuery = {
+      query: (pid) =>
+        Promise.resolve(pid === 1 ? null : { pid, executablePath: exe, creationDate: pid === 2 ? null : 5_000 }),
+      kill: (pid, tree) => {
+        kills.push([pid, tree]);
+        return Promise.resolve();
+      },
+    };
+    const q = inAppClockBase(base, () => -1_000);
+    await expect(q.query(1)).resolves.toBeNull();
+    await expect(q.query(2)).resolves.toEqual({ pid: 2, executablePath: exe, creationDate: null });
+    await expect(q.query(3)).resolves.toEqual({ pid: 3, executablePath: exe, creationDate: 4_000 });
+    await q.kill(3, true);
+    expect(kills).toEqual([[3, true]]);
   });
 });

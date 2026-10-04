@@ -1,7 +1,7 @@
 // src/main/bridge/launcher.ts   (frozen signatures)
 // Interface verbatim from docs/specs/contracts.md section 12 (owner W1-02) + the createBridgeLauncher seam of build-plan section 3.
-import { mkdirSync, readdirSync, rmSync, statSync } from 'node:fs';
-import { basename, join, resolve } from 'node:path';
+import { mkdirSync, readFileSync, readdirSync, rmSync, statSync } from 'node:fs';
+import { basename, dirname, join, resolve } from 'node:path';
 import { StringDecoder } from 'node:string_decoder';
 import type { ChildProcess } from 'node:child_process';
 import type { Clock, ClockTimer, FetchFn, Logger, RandomSource, SpawnFn } from '../deps';
@@ -9,14 +9,18 @@ import type { AppPaths } from '../paths';
 import type { ChildHandle, ChildSpec } from '../proc/supervisor';
 import { freePort } from '../proc/freePort';
 import { matchMarkers, isAnnotationMarker, type BridgeMarker } from './stdoutMarkers';
+import { SIGNED_BUILD } from '../buildFlags';
 import {
   BRIDGE_ENV_KEYS,
   BRIDGE_EXE,
+  BRIDGE_PIN_FILE_MAX_BYTES,
+  BRIDGE_SIGNED_PIN_FILE,
   OS_ENV_PASSTHROUGH,
   SpawnInvariantError,
   assertBridgeSpawnInvariants,
   errorCodeForViolations,
   isPathInside,
+  selectBridgePin,
   sha256OfFile,
   type BridgeSpawnPlan,
 } from './invariants';
@@ -108,18 +112,57 @@ function toHex(bytes: Uint8Array): string {
   return out;
 }
 
-/** Which executable the launcher may spawn. In e2e mode the pinned bridge exe is NEVER a possible answer (TESTS 4.2). */
+export { SIGNED_BUILD };
+
+/**
+ * [signing-fix] Where a SIGNED build finds its bridge pin: inside app.asar, next to the main bundle -
+ * `<resources>\app.asar\out\main\bridge-signed-pin.txt`, derived from `<resources>\bridge\whatsapp-bridge.exe`.
+ * (Electron's fs reads files inside app.asar transparently; the asar is integrity-checked in signed builds.)
+ */
+export function signedPinPathFor(bridgeExe: string): string {
+  return join(dirname(dirname(bridgeExe)), 'app.asar', 'out', 'main', BRIDGE_SIGNED_PIN_FILE);
+}
+
+/**
+ * [signing-pipeline] Text of a pin file, or null when it is missing, unreadable or oversized (null => the compiled-in
+ * original pin). Exported so the S-FS seam can be tested on its own.
+ */
+export function readBridgePinFile(pinPath: string): string | null {
+  try {
+    if (statSync(pinPath).size > BRIDGE_PIN_FILE_MAX_BYTES) return null;
+    return readFileSync(pinPath, 'utf8');
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Which executable the launcher may spawn. In e2e mode the pinned bridge exe is NEVER a possible answer (TESTS 4.2).
+ * [signing-fix, D-078, signing-review MAJOR 1] Production pin:
+ *  - UNSIGNED build (the default; __AUTHENTICODE_SIGNED_BUILD__ false): BRIDGE_EXE.sha256, and NO file is read - exactly the
+ *    behaviour before the signing pipeline (a local writer must patch app.asar, not a text file);
+ *  - SIGNED build: `selectBridgePin(<app.asar>\out\main\bridge-signed-pin.txt)` - the post-signing pin written by
+ *    sign-windows.mjs beforePack; never the writable <resources>\bridge\SHA256SUMS.
+ * Always ONE exact hash that spawnOnce() compares against.
+ */
 export function resolveBridgeExe(input: {
   bridgeExe: string;
   e2e: boolean;
   seamBridgeCmd?: { command: string; args: string[]; sha256?: string };
+  /** Defaults to the compile-time flag; tests pass it explicitly. */
+  signedBuild?: boolean;
+  readPinFile?: (pinPath: string) => string | null;
 }): { exePath: string; exeArgs: readonly string[]; expectedSha256: string } | null {
   if (input.e2e) {
     const seam = input.seamBridgeCmd;
     if (seam === undefined) return null; // e2e without the seam => the bridge is disabled
     return { exePath: seam.command, exeArgs: [...seam.args], expectedSha256: (seam.sha256 ?? '').toLowerCase() };
   }
-  return { exePath: input.bridgeExe, exeArgs: [], expectedSha256: BRIDGE_EXE.sha256 };
+  if (!(input.signedBuild ?? SIGNED_BUILD)) {
+    return { exePath: input.bridgeExe, exeArgs: [], expectedSha256: BRIDGE_EXE.sha256 };
+  }
+  const pin = selectBridgePin((input.readPinFile ?? readBridgePinFile)(signedPinPathFor(input.bridgeExe)));
+  return { exePath: input.bridgeExe, exeArgs: [], expectedSha256: pin.sha256 };
 }
 
 /**

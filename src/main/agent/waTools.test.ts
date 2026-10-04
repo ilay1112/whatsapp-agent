@@ -74,7 +74,8 @@ function world(scope: 'trigger_chat' | 'all_chats' = 'trigger_chat'): World {
   const fake = createFakeBridgeDb({ path: join(dir, 'messages.db'), now: new Date(NOW) });
   const db = openDb(MEMORY_DB);
   const repos = createRepos(db);
-  const w = seedWaWorld(fake, repos, { nowMs: NOW, withVoice: false });
+  // [v2-closeout] one transaction for the whole world: per-row autocommits (journal fsync per row) timed this file out under load
+  const w = fake.batch(() => seedWaWorld(fake, repos, { nowMs: NOW, withVoice: false }));
   const bridge = createBridgeDb(fake.path);
   const t: TranscriptRecord = {
     chatJid: WA_WORLD_JIDS.trigger,

@@ -2,7 +2,7 @@
 // Builds every ItemCard / ItemDetail / ChatView that crosses IPC (JIDs never; phoneDisplay is formatted here).
 // [R2] No calendarHtmlLink in any view model: "Open in calendar" is external:open {itemId, target:'calendarEvent'} and main
 // builds that URL itself from event_start_ts.
-import { EventEditSchema, type EventContentWithStatus } from '../../shared/schemas';
+import { EventEditSchema, UpdateEventPayloadSchema, type EventContentWithStatus } from '../../shared/schemas';
 import { cardKind, deriveStatus, isListed, isOpen } from '../../shared/state';
 import { localToEpochMs } from '../../shared/when';
 import {
@@ -218,8 +218,45 @@ export function createItemService(deps: ItemServiceDeps): ItemService {
     status: c.status,
   });
 
+  /**
+   * [v2-closeout editing-undo-5] The B24 correction offer (reconcile.ts offerCorrection / the "Apply again" landed-create path): a create
+   * that landed in Google although its answer was lost, and that the user then edited THERE, is resolved done and gets ONE pending
+   * update_event on the in-calendar holder itself (payload itemId === targetItemId === this item, change reschedule|move, no revertOf),
+   * from Google's found copy back to the approved content. Its proposal carries no delta, so the change view is built from the ACTION
+   * payload (the validated canonical row, never renderer data): from = Google's copy, to = the approved content. The renderer draws
+   * Approve (action:approve) / Keep (action:reject) from this view and the matching ActionView. A refused undo / cancel (revertOf, or
+   * change 'cancel' / 'undo') is never offered here.
+   */
+  const correctionViewOf = (item: Item): ChangeView | null => {
+    if (item.eventState !== 'created' && item.eventState !== 'updated') return null;
+    const offer = repos.actions
+      .forItem(item.id)
+      .filter((a) => a.kind === 'update_event' && a.state === 'pending' && a.proposalId === item.currentProposalId)
+      .sort((x, y) => y.attempt - x.attempt)[0];
+    if (offer === undefined || offer.canonicalJson === '') return null;
+    let raw: unknown;
+    try {
+      raw = JSON.parse(offer.canonicalJson);
+    } catch {
+      return null;
+    }
+    const parsed = UpdateEventPayloadSchema.safeParse(raw);
+    if (!parsed.success) return null;
+    const p = parsed.data;
+    if (p.itemId !== item.id || p.targetItemId !== item.id || p.revertOf !== undefined) return null;
+    if (p.change !== 'reschedule' && p.change !== 'move') return null;
+    return {
+      kind: p.change,
+      from: contentView(p.from),
+      to: contentView(p.to),
+      confidence: 'high', // computed from Google's copy and the approved content: no model judgement involved
+      baseRevision: p.baseRevision,
+    };
+  };
+
   /** C2 1.5 ChangeView: the pending delta of a change card, from proposals.delta_json (never renderer-supplied). */
   const changeViewOf = (item: Item, proposal: Proposal | null): ChangeView | null => {
+    if (item.eventState === 'created' || item.eventState === 'updated') return correctionViewOf(item);
     if (item.eventState !== 'change_proposed' || proposal === null || proposal.delta === null) return null;
     const d = proposal.delta;
     return {

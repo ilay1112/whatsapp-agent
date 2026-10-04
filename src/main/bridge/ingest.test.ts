@@ -165,16 +165,19 @@ describe('ingest - scanning and the watermark', () => {
     const h = harness();
     h.repos.chats.upsertFromBridge(CHAT_A, null, true, NOW);
     const total = LIMITS.ingestBatch + 37;
-    for (let i = 0; i < total; i++) {
-      h.fake.addMessage({
-        id: `m${i}`,
-        chatJid: CHAT_A,
-        sender: '972550000001',
-        content: `hi ${i}`,
-        fromMe: false,
-        timestamp: goTs(h.fake, NOW - 60_000),
-      });
-    }
+    // [v2-closeout] one transaction: per-row autocommits (a journal fsync each) pushed this test past 5 s under the full suite
+    h.fake.batch(() => {
+      for (let i = 0; i < total; i++) {
+        h.fake.addMessage({
+          id: `m${i}`,
+          chatJid: CHAT_A,
+          sender: '972550000001',
+          content: `hi ${i}`,
+          fromMe: false,
+          timestamp: goTs(h.fake, NOW - 60_000),
+        });
+      }
+    });
     const stats = await h.ingest.scanNow();
     expect(stats.scanned).toBe(total);
     expect(stats.watermark).toBe(h.fake.maxRowid());
@@ -638,17 +641,20 @@ describe('ingest - backlog gate (A14 / [R2])', () => {
     const h = harness();
     h.setSyncing(true);
     h.repos.meta.set('live_from_ts', String(NOW));
-    for (let i = 0; i < 300; i++) {
-      const jid = i % 2 === 0 ? CHAT_A : CHAT_B;
-      h.fake.addMessage({
-        id: `h${i}`,
-        chatJid: jid,
-        sender: jid.slice(0, 12),
-        content: `history ${i}`,
-        fromMe: i % 3 === 0,
-        timestamp: goTs(h.fake, NOW - (i + 1) * 3_600_000),
-      });
-    }
+    // [v2-closeout] one transaction (a real history sync is stored in batches too); see the paging test above
+    h.fake.batch(() => {
+      for (let i = 0; i < 300; i++) {
+        const jid = i % 2 === 0 ? CHAT_A : CHAT_B;
+        h.fake.addMessage({
+          id: `h${i}`,
+          chatJid: jid,
+          sender: jid.slice(0, 12),
+          content: `history ${i}`,
+          fromMe: i % 3 === 0,
+          timestamp: goTs(h.fake, NOW - (i + 1) * 3_600_000),
+        });
+      }
+    });
     const stats = await h.ingest.scanNow();
     expect(stats.scanned).toBe(300);
     expect(h.repos.queue.size()).toBe(0);

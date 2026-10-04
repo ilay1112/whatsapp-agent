@@ -11,6 +11,7 @@ import {
   MANIFEST_NAME,
   PIN_PATH,
   applyCrtPins,
+  applyFilePins,
   crtDigests,
   crtPlan,
   fetchText,
@@ -18,8 +19,10 @@ import {
   isAllowedFile,
   main,
   pinCrt,
+  pinFiles,
   readZipEntries,
   stageCrt,
+  zipFileDigests,
 } from './fetch-llama.mjs';
 
 const ROOT = path.resolve(fileURLToPath(new URL('..', import.meta.url)));
@@ -612,5 +615,100 @@ describe('pinCrt / applyCrtPins', () => {
     });
     // no fetch is injected at all: pinCrt must be a pure local-filesystem operation
     await expect(pinCrt({ root, fs, env: { VC_REDIST_CRT_DIR: dir }, log: () => undefined })).resolves.toBeTruthy();
+  });
+});
+
+// ---------------------------------------------------------------------------------------------------------------------
+// [signing-fix, signing-review MAJOR 3] COMMITTED per-file pins (files.fileSha256), generated from the PINNED zip by
+// `--pin-files`. vendor/ is gitignored: sign-windows.mjs compares every llama file it signs with these, never with the
+// vendor/ copy the packaged file was made from.
+// ---------------------------------------------------------------------------------------------------------------------
+describe('per-file pins (files.fileSha256)', () => {
+  const sha = (s) => createHash('sha256').update(Buffer.from(s)).digest('hex');
+  const root = 'C:\\repo';
+  const zip = buildZip({ 'llama-server.exe': 'MZ-server', 'ggml.dll': 'ggml', 'llama-cli.exe': 'NEVER' });
+  const digests = { 'ggml.dll': sha('ggml'), 'llama-server.exe': sha('MZ-server') };
+  const run = async (pin) => {
+    const fs = memoryFs({ [path.normalize(path.join(root, PIN_PATH))]: JSON.stringify(pin) });
+    const lines = [];
+    const p = main({
+      root,
+      fs,
+      env: {},
+      log: (m) => lines.push(m),
+      fetch: async (url) => (url === pin.llama.licenseUrl ? okResponse('MIT') : okResponse(zip)),
+    });
+    return { fs, lines, p };
+  };
+  const staged = (fs, pin) =>
+    [...fs.files.keys()].filter((k) => k.startsWith(path.normalize(path.join(root, pin.llama.targetDir))));
+
+  it('the committed pin file has a files.fileSha256 slot: null (UNPINNED) or a 64-hex map of allow-listed names', () => {
+    expect(Object.hasOwn(REAL_PIN.files, 'fileSha256')).toBe(true);
+    const map = REAL_PIN.files.fileSha256;
+    if (map !== null) {
+      for (const [name, value] of Object.entries(map)) {
+        expect(isAllowedFile(name, REAL_PIN.files), name).toBe(true);
+        expect(value).toMatch(/^[0-9a-f]{64}$/);
+      }
+      expect(map['llama-server.exe']).toMatch(/^[0-9a-f]{64}$/);
+    }
+  });
+  it('zipFileDigests hashes exactly the allow-listed entries of the zip, in memory', () => {
+    expect(zipFileDigests(zip, pinFor(zip))).toEqual(digests);
+  });
+  it('main verifies every staged file against its per-file pin and writes NOTHING on a mismatch', async () => {
+    const good = pinFor(zip, { files: { fileSha256: digests } });
+    const ok = await run(good);
+    await expect(ok.p).resolves.toBeTruthy();
+    const bad = pinFor(zip, { files: { fileSha256: { ...digests, 'ggml.dll': sha('other') } } });
+    const r = await run(bad);
+    await expect(r.p).rejects.toThrow(/ggml\.dll does not match its per-file pin/);
+    expect(staged(r.fs, bad)).toEqual([]);
+  });
+  it('main refuses a staged file the map does not pin, and a pinned file the asset does not contain', async () => {
+    const missing = await run(
+      pinFor(zip, { files: { fileSha256: { 'llama-server.exe': digests['llama-server.exe'] } } }),
+    );
+    await expect(missing.p).rejects.toThrow(/ggml\.dll has no per-file pin/);
+    const extra = await run(pinFor(zip, { files: { fileSha256: { ...digests, 'mtmd.dll': sha('m') } } }));
+    await expect(extra.p).rejects.toThrow(/mtmd\.dll is pinned .* but is not in the asset/);
+  });
+  it('main with no per-file pins (null) still stages but warns that signed builds will refuse', async () => {
+    const r = await run(pinFor(zip, { files: { fileSha256: null } }));
+    await expect(r.p).resolves.toBeTruthy();
+    expect(r.lines.join('\n')).toMatch(/files\.fileSha256 is UNPINNED[\s\S]*--pin-files/);
+  });
+  it('applyFilePins fills only the slot (sorted, 4-space nested) and leaves everything else byte-identical', () => {
+    const source = readFileSync(path.join(ROOT, PIN_PATH), 'utf8');
+    const out = applyFilePins(source, { 'llama-server.exe': sha('a'), 'ggml.dll': sha('b') });
+    expect(JSON.parse(out).files.fileSha256).toEqual({ 'ggml.dll': sha('b'), 'llama-server.exe': sha('a') });
+    expect({ ...JSON.parse(out), files: null }).toEqual({ ...JSON.parse(source), files: null });
+    expect(out).toContain(`\n      "ggml.dll": "${sha('b')}",\n`);
+    const again = applyFilePins(out, { 'llama-server.exe': sha('z') });
+    expect(JSON.parse(again).files.fileSha256).toEqual({ 'llama-server.exe': sha('z') });
+    expect(() => applyFilePins('{}', digests)).toThrow(/no files\.fileSha256 slot/);
+  });
+  it('pinFiles downloads ONLY the pinned zip (verified first), then records its per-file hashes', async () => {
+    const source = readFileSync(path.join(ROOT, PIN_PATH), 'utf8');
+    const pin = JSON.parse(source);
+    const realZip = buildZip({ 'llama-server.exe': 'S', 'ggml.dll': 'G', 'evil.exe': 'NEVER' });
+    const fs = memoryFs({ [path.normalize(path.join(root, PIN_PATH))]: source });
+    const urls = [];
+    const fetch = async (url) => (urls.push(url), okResponse(realZip));
+    // the real pin does not match this fake zip => refused before anything is written
+    await expect(pinFiles({ root, fs, fetch, log: () => undefined })).rejects.toThrow(/size mismatch|sha256 mismatch/);
+    expect((await fs.readFile(path.join(root, PIN_PATH), 'utf8')).toString()).toBe(source);
+    // a pin that matches the zip => the per-file map is recorded
+    const matching = source
+      .replace(pin.llama.sha256, createHash('sha256').update(realZip).digest('hex'))
+      .replace(`"size": ${pin.llama.size}`, `"size": ${realZip.length}`);
+    fs.files.set(path.normalize(path.join(root, PIN_PATH)), Buffer.from(matching));
+    const lines = [];
+    const got = await pinFiles({ root, fs, fetch, log: (m) => lines.push(m) });
+    expect(got).toEqual({ 'ggml.dll': sha('G'), 'llama-server.exe': sha('S') });
+    expect(JSON.parse((await fs.readFile(path.join(root, PIN_PATH), 'utf8')).toString()).files.fileSha256).toEqual(got);
+    expect(urls.every((u) => u === pin.llama.url)).toBe(true);
+    expect(lines.join('\n')).toContain('commit this change deliberately');
   });
 });

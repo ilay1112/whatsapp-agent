@@ -63,6 +63,7 @@ const V4_TRIGGERS = [
   'trg_auto_decisions_immutable',
   'trg_auto_policies_frozen',
   'trg_auto_policies_insert',
+  'trg_auto_policies_paused_from', // [v2-closeout auto-mode-8] v5 (a v3 file is migrated through v4 and v5)
   'trg_auto_policies_state',
   'trg_auto_writes_frozen',
   'trg_auto_writes_insert',
@@ -323,19 +324,19 @@ describe('v3 -> v4 through openDb', () => {
         ).toEqual(before[t]!.rows.map(({ value_json: _v, ...rest }) => rest));
       } else if (t === 'schema_migrations') {
         expect(after.slice(0, 3), t).toEqual(before[t]!.rows);
-        expect(after).toHaveLength(4);
+        expect(after).toHaveLength(MIGRATIONS.length); // v4 + [v2-closeout] v5
       } else {
         expect(after, t).toEqual(before[t]!.rows);
       }
     }
   });
 
-  it('is at SCHEMA_VERSION 4 with a clean foreign-key check and integrity', () => {
+  it('is at SCHEMA_VERSION (v4, then v5) with a clean foreign-key check and integrity', () => {
     const { file } = copyFixture();
     const db = openDb(file);
     handles.push(db);
-    expect(SCHEMA_VERSION).toBe(4);
-    expect(db.userVersion()).toBe(4);
+    expect(SCHEMA_VERSION).toBe(5); // [v2-closeout auto-mode-8] v5 auto_policy_paused_from follows v4
+    expect(db.userVersion()).toBe(SCHEMA_VERSION);
     expect(db.prepare('PRAGMA foreign_key_check').all()).toEqual([]);
     expect(db.prepare<{ integrity_check: string }>('PRAGMA integrity_check').get()!.integrity_check).toBe('ok');
     expect(
@@ -526,7 +527,9 @@ describe('v3 -> v4 through openDb', () => {
     const second = openDb(file);
     handles.push(second);
     expect(fs.readdirSync(path.join(dir, 'backups'))).toEqual(backups);
-    expect(second.prepare<{ n: number }>('SELECT COUNT(*) AS n FROM schema_migrations').get()!.n).toBe(4);
+    expect(second.prepare<{ n: number }>('SELECT COUNT(*) AS n FROM schema_migrations').get()!.n).toBe(
+      MIGRATIONS.length,
+    );
     expect(second.prepare<{ sql: string }>(`SELECT sql FROM sqlite_master ORDER BY name`).all()).toEqual(
       schemaAfterFirst,
     );
@@ -542,7 +545,7 @@ describe('v3 -> v4 through openDb', () => {
         () => backups++,
         () => 1,
       ),
-    ).toEqual({ from: 3, to: 4 });
+    ).toEqual({ from: 3, to: SCHEMA_VERSION }); // v4 and [v2-closeout] v5 behind ONE backup
     expect(backups).toBe(1);
     expect(
       migrate(
@@ -550,7 +553,7 @@ describe('v3 -> v4 through openDb', () => {
         () => backups++,
         () => 2,
       ),
-    ).toEqual({ from: 4, to: 4 });
+    ).toEqual({ from: SCHEMA_VERSION, to: SCHEMA_VERSION });
     expect(backups).toBe(1);
     // control for the byte-identity cases below: the same adapter, NOT failing, does change the file
     db.close();

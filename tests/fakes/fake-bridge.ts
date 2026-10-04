@@ -621,17 +621,21 @@ export async function startFakeBridge(opts: FakeBridgeOptions): Promise<FakeBrid
     },
 
     async historySync(rows): Promise<void> {
-      for (const row of rows) {
-        db.addChat(row.chatJid, null);
-        db.addMessage({
-          id: nextMessageId(),
-          chatJid: row.chatJid,
-          sender: row.fromMe ? '972500000000' : (row.chatJid.split('@')[0] ?? '972500000001'),
-          content: row.text,
-          fromMe: row.fromMe,
-          timestamp: db.formatTs(row.ts),
-        });
-      }
+      // [v2-closeout] the whole sync in ONE transaction (as the bridge stores a history batch): per-row autocommits made a 300-row
+      // sync cost 600 journal fsyncs, which timed pipeline-gates out under the full parallel suite
+      db.batch(() => {
+        for (const row of rows) {
+          db.addChat(row.chatJid, null);
+          db.addMessage({
+            id: nextMessageId(),
+            chatJid: row.chatJid,
+            sender: row.fromMe ? '972500000000' : (row.chatJid.split('@')[0] ?? '972500000001'),
+            content: row.text,
+            fromMe: row.fromMe,
+            timestamp: db.formatTs(row.ts),
+          });
+        }
+      });
       emitStdout(`History sync complete. Stored ${rows.length} messages.`);
       await Promise.resolve(); // rows arrive WITHOUT webhooks, exactly like the real history sync
     },

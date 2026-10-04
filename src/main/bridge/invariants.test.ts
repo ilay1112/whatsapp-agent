@@ -12,6 +12,9 @@ import {
   stripComments,
   sweepBridgeEndpointRefs,
   BRIDGE_EXE,
+  BRIDGE_SIGNED_PIN_FILE,
+  BRIDGE_PIN_FILE_MAX_BYTES,
+  selectBridgePin,
   FORBIDDEN_BRIDGE_ARGS,
   OS_ENV_PASSTHROUGH,
   SPAWN_VIOLATIONS,
@@ -351,5 +354,75 @@ describe('B5 endpoint sweep', () => {
       { file: 'src/main/bridge/readClient.ts', kind: 'forbidden_endpoint', detail: '/api/react' },
     ]);
     expect(stripComments('a/b // c')).toBe('a/b ');
+  });
+});
+
+// [signing-pipeline, D-078] post-signing re-pin: which ONE hash the launcher compares the exe against.
+describe('selectBridgePin', () => {
+  const ORIG = BRIDGE_EXE.sha256;
+  const SIGNED = 'be'.repeat(32);
+  const OTHER = '0c'.repeat(32);
+  const repoFile = `${ORIG.toUpperCase()}  whatsapp-bridge.exe\n`;
+  const signedFile = `${SIGNED.toUpperCase()}  whatsapp-bridge.exe\n# wca-signed-from ${ORIG.toUpperCase()}  whatsapp-bridge.exe\n`;
+
+  it('[signing-fix] the signed pin file lives in app.asar (out/main/bridge-signed-pin.txt) and is small', () => {
+    expect(BRIDGE_SIGNED_PIN_FILE).toBe('bridge-signed-pin.txt');
+    expect(BRIDGE_PIN_FILE_MAX_BYTES).toBe(4096);
+  });
+  it('unsigned build (no file, or the repo file): the compiled-in original pin', () => {
+    expect(selectBridgePin(null)).toEqual({ sha256: ORIG, source: 'original' });
+    expect(selectBridgePin(repoFile)).toEqual({ sha256: ORIG, source: 'original' });
+    expect(selectBridgePin('')).toEqual({ sha256: ORIG, source: 'original' });
+  });
+  it('the file hash line alone never changes the pin (no signed-from line => original)', () => {
+    expect(selectBridgePin(`${OTHER}  whatsapp-bridge.exe\n`)).toEqual({ sha256: ORIG, source: 'original' });
+    expect(selectBridgePin(`${SIGNED} *whatsapp-bridge.exe\r\n`)).toEqual({ sha256: ORIG, source: 'original' });
+  });
+  it('signed build: the post-signing hash, lower-case, CRLF and binary marker tolerated', () => {
+    expect(selectBridgePin(signedFile)).toEqual({ sha256: SIGNED, source: 'signed' });
+    expect(selectBridgePin(signedFile.replace(/\n/g, '\r\n').replace('  whatsapp', ' *whatsapp'))).toEqual({
+      sha256: SIGNED,
+      source: 'signed',
+    });
+    expect(selectBridgePin(`# wca-signed-from ${ORIG}  whatsapp-bridge.exe\n${SIGNED}  whatsapp-bridge.exe`)).toEqual({
+      sha256: SIGNED,
+      source: 'signed',
+    });
+  });
+  it('fails closed to the original pin on every malformed signed entry', () => {
+    const rejected = { sha256: ORIG, source: 'signed_entry_rejected' };
+    // signed from a DIFFERENT original (another bridge build)
+    expect(selectBridgePin(signedFile.replace(`from ${ORIG.toUpperCase()}`, `from ${OTHER}`))).toEqual(rejected);
+    // two signed-from lines
+    expect(selectBridgePin(`${signedFile}# wca-signed-from ${ORIG}  whatsapp-bridge.exe\n`)).toEqual(rejected);
+    // two hash lines (which one would be "the" pin?)
+    expect(selectBridgePin(`${signedFile}${OTHER}  whatsapp-bridge.exe\n`)).toEqual(rejected);
+    // no hash line at all
+    expect(selectBridgePin(`# wca-signed-from ${ORIG}  whatsapp-bridge.exe\n`)).toEqual(rejected);
+    // a "signed" hash equal to the original is not a signed build
+    expect(selectBridgePin(`${ORIG}  whatsapp-bridge.exe\n# wca-signed-from ${ORIG}  whatsapp-bridge.exe\n`)).toEqual(
+      rejected,
+    );
+  });
+  it('lines for other files, short hashes and an oversized file are ignored', () => {
+    expect(
+      selectBridgePin(`${signedFile}${OTHER}  LICENSE\n${'ab'.repeat(20)}  whatsapp-bridge.exe\n# comment\n`),
+    ).toEqual({ sha256: SIGNED, source: 'signed' });
+    expect(selectBridgePin(signedFile + ' '.repeat(BRIDGE_PIN_FILE_MAX_BYTES))).toEqual({
+      sha256: ORIG,
+      source: 'original',
+    });
+  });
+  it('an explicit original pin (seam) is honoured and compared case-insensitively', () => {
+    expect(selectBridgePin(null, OTHER.toUpperCase())).toEqual({ sha256: OTHER, source: 'original' });
+    expect(selectBridgePin(signedFile, ORIG.toUpperCase())).toEqual({ sha256: SIGNED, source: 'signed' });
+  });
+  it('the repo pin file carries only the original line (every unsigned build stays on the original pin)', () => {
+    const repoText = readFileSync(
+      fileURLToPath(new URL('../../../resources/bridge/SHA256SUMS', import.meta.url)),
+      'utf8',
+    );
+    expect(selectBridgePin(repoText)).toEqual({ sha256: ORIG, source: 'original' });
+    expect(repoText).not.toMatch(/wca-signed-from/);
   });
 });

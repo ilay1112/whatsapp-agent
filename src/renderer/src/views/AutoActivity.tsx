@@ -113,6 +113,8 @@ export function AutoActivity({ onBack }: AutoActivityProps) {
   };
 
   const policy = autoState?.policy ?? null;
+  /** The live trial's tally (`shadow` only: a trial writes nothing, every decision is a would-have). */
+  const trialTally = policy?.state === 'shadow' ? (autoState?.shadowTally ?? null) : null;
   const exportJson = async () => {
     const r = await api.exportAuto();
     setExported(r.ok ? r.value.saved : false);
@@ -168,9 +170,17 @@ export function AutoActivity({ onBack }: AutoActivityProps) {
         </div>
       ) : null}
 
+      {/* ux-i18n-v2-10: a trial decides but never writes. Its decisions have no row read channel yet, so the page shows
+          the trial's own tally (numbers only) instead of claiming that nothing happened. */}
+      {trialTally !== null ? (
+        <p className="m-0" data-testid="activity-trial">
+          {t('activity.trial', { count: trialTally.decisions, wouldAuto: trialTally.wouldAuto })}
+        </p>
+      ) : null}
+
       {rows !== null && groups.length === 0 ? (
         <p className="m-0 text-text-muted" data-testid="activity-empty">
-          {t('activity.empty')}
+          {t(trialTally !== null ? 'activity.emptyTrial' : 'activity.empty')}
         </p>
       ) : null}
 

@@ -96,8 +96,16 @@ export function createCliStatus(deps: {
   runner: CliRunner;
   clock: { now(): EpochMs };
   cacheMs: number;
+  /**
+   * [v2-closeout] true once the quit sequence began: get() never probes again (a probe is a CLI job - `--version`, `auth status`,
+   * `agy -p /usage` - that would be spawned after killJobs and outlive app.exit() with its pid file). It answers the last known status,
+   * even a stale or invalidated one, else 'unknown'. Absent = never closed.
+   */
+  closed?: () => boolean;
 }): CliStatusRecorder {
   const cache = new Map<CliProviderId, { at: EpochMs; status: CliStatusVM }>();
+  /** The last probed status per provider, kept across invalidate() for the closed path only. */
+  const lastKnown = new Map<CliProviderId, CliStatusVM>();
   const inflight = new Map<CliProviderId, Promise<CliStatusVM>>();
   const tests = new Map<CliProviderId, CliStatus['lastTest']>();
   const quotas = new Map<CliProviderId, LlmQuota | null>();
@@ -140,8 +148,24 @@ export function createCliStatus(deps: {
       if (hit !== undefined && deps.clock.now() - hit.at < deps.cacheMs) return decorate(hit.status);
       const running = inflight.get(provider);
       if (running !== undefined) return decorate(await running);
+      if (deps.closed?.() === true) {
+        // [v2-closeout] quitting: no probe job. The last known answer (a closing window only needs something to draw), else unknown.
+        const known = lastKnown.get(provider);
+        return decorate(
+          known ?? {
+            provider,
+            state: 'unknown',
+            version: null,
+            minVersion: CLI_MIN_VERSION[provider],
+            quota: null,
+            lastTest: null,
+            workspaceTrusted: null,
+          },
+        );
+      }
       const p = probe(provider).then((status) => {
         cache.set(provider, { at: deps.clock.now(), status });
+        lastKnown.set(provider, status);
         return status;
       });
       inflight.set(provider, p);

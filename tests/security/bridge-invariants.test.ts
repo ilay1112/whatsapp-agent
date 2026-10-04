@@ -681,7 +681,10 @@ describe('[R2] reaper - a hostile pid file spawns nothing and kills nothing', ()
     expect(taskkillArgs(4242, false)).toEqual(['/PID', '4242', '/F']);
     expect(taskkillArgs(4242, true).join(' ')).not.toMatch(/\/IM/);
     const command = PS_QUERY_ARGS.join(' ');
-    expect(command).toContain('[int]$args[0]');
+    // [v2-closeout] was `[int]$args[0]` (with `-- <pid>` appended), which PowerShell never binds after -Command: the pid now travels
+    // in the query's environment, cast by PowerShell itself; the argv stays a constant with no pid in it.
+    expect(command).toContain('[int]$env:REAPER_QUERY_PID');
+    expect(command).not.toContain('$args');
     expect(command).not.toMatch(/ProcessId=\d/); // the pid is never baked into the WQL filter
     expect(PS_QUERY_ARGS).toContain('-NoProfile');
     expect(PS_QUERY_ARGS).toContain('-NonInteractive');

@@ -55,7 +55,10 @@ function rig(
   const db = openDb(MEMORY_DB);
   const repos = createRepos(db);
   // withVoice:false - the audio row is seeded, its transcripts row comes from the Map below (repos.transcripts is V2-W1-01's)
-  const world = seedWaWorld(fake, repos, { nowMs: NOW, historyDays: opts.historyDays, withVoice: false });
+  // [v2-closeout] one transaction for the whole world: per-row autocommits (journal fsync per row) timed this file out under load
+  const world = fake.batch(() =>
+    seedWaWorld(fake, repos, { nowMs: NOW, historyDays: opts.historyDays, withVoice: false }),
+  );
   const bridge = createBridgeDb(fake.path);
   const transcripts = new Map<string, TranscriptRecord>([[`${WA_WORLD_JIDS.trigger}|WAWTAUD1`, transcript()]]);
   const r: Rig = {

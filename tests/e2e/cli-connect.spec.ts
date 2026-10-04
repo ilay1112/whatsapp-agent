@@ -13,8 +13,9 @@
 //   blocked and badged; zero sends until a click; one approve = exactly one send;
 //   (7) usage_limit -> CLOUD_QUOTA with "usage resets HH:MM", items held; overage -> CLOUD_OVERAGE; extra_tool ->
 //   CLI_TOOLSET_MISMATCH (Export diagnostics);
-//   (8) "Show experimental" -> Gemini - your subscription (experimental): consent with the Terms read date, the workspace-trust step
-//   (one-line diff, scripted dialog, settings.json changed only in trustedWorkspaces + a backup), automatic mode unavailable.
+//   (8) "Show experimental" -> Gemini - your subscription (experimental): consent with the Terms read date, automatic mode
+//   unavailable; in the isolated agy profile (D-063 / F3, this build's default) the workspace-trust step is recorded as not
+//   needed: no diff, no dialog, the user's own settings.json untouched with no backup, and the provider is selectable.
 // After every spec: no job pid survives the quit, no job pid file, empty cli-runs\ and agy-workspace\runs\, every fake journal clean.
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -382,12 +383,14 @@ test('(8) experimental Gemini: hidden until "Show experimental", Terms read date
   await expect.poll(() => connectState(page, 'antigravity_cli'), { timeout: 30_000 }).toBe('ready');
   await e2e.screenshot(page, 'connect-agy-en');
 
-  // the workspace-trust step (T2 10 (8)): a one-line diff the user confirms in a native dialog. Soft: the card asks for it, but
-  // main answers the preview with `isolated_profile` (F3 isolated mode), so no diff is shown and "Allow" stays disabled - see the
-  // notes file, REQUESTS.
-  await expect
-    .soft(page.getByTestId('agy-workspace-diff'), 'the workspace-trust step shows its one-line diff')
-    .toBeVisible({ timeout: 10_000 });
+  // The workspace-trust step of T2 10 (8) (one-line diff + native dialog + backup) exists only in the GLOBAL-profile fallback.
+  // This build runs agy in the isolated `<userData>\agy-home` profile (D-063 / F3: isolated by default), which already trusts
+  // the app's own workspace; the v2 repair of REQUEST 9 (compose.ts: `cliStatus.recordWorkspaceTrusted(true)` when
+  // AGY_PROFILE_MODE === 'isolated') records the step as "not needed". The isolated-mode outcome is therefore: no workspace
+  // block, no diff, no Allow button, no workspace dialog, the user's file untouched, and the provider selectable (below).
+  await expect(page.getByTestId('agy-workspace'), 'isolated mode (D-063, F3): no workspace-trust step').toHaveCount(0);
+  await expect(page.getByTestId('agy-workspace-diff'), 'isolated mode: no settings.json diff is shown').toHaveCount(0);
+  await expect(page.getByTestId('agy-workspace-allow'), 'isolated mode: nothing to allow').toHaveCount(0);
 
   // hard: the user's own settings file is untouched and no backup was written
   expect(readFileSync(settingsFile, 'utf8')).toBe(original);

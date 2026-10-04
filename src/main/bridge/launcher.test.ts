@@ -16,7 +16,7 @@ import type { AuditKind } from '../../shared/types';
 import { BRIDGE_STATUSES, type BridgeStatus, type PairingState } from '../../shared/health';
 import type { ErrorCode } from '../../shared/errors';
 import { BRIDGE_MARKERS, type BridgeMarker } from './stdoutMarkers';
-import { BRIDGE_EXE } from './invariants';
+import { BRIDGE_EXE, BRIDGE_SIGNED_PIN_FILE } from './invariants';
 import {
   BRIDGE_BACKOFF_MS,
   BRIDGE_BREAKER,
@@ -30,7 +30,10 @@ import {
   READINESS_BUDGET_MS,
   bridgeStatusToErrorCode,
   createBridgeLauncher,
+  SIGNED_BUILD,
+  readBridgePinFile,
   resolveBridgeExe,
+  signedPinPathFor,
   type BridgeLauncherDeps,
 } from './launcher';
 
@@ -898,6 +901,114 @@ describe('resolveBridgeExe', () => {
       seamBridgeCmd: { command: 'c:/node/node.exe', args: [] },
     });
     expect(noPin?.expectedSha256).toBe('');
+  });
+});
+
+// [signing-fix, D-078, signing-review MAJOR 1] pin selection. The UNSIGNED default build (compile-time flag
+// __AUTHENTICODE_SIGNED_BUILD__ = false) reads NO pin file at all: the compiled-in original pin, exactly as before the signing
+// pipeline. A SIGNED build reads the post-signing pin from INSIDE app.asar (<resources>\app.asar\out\main\
+// bridge-signed-pin.txt, written by sign-windows.mjs beforePack before the asar is packed), never from the writable
+// <resources>\bridge\SHA256SUMS. A tampered exe fails in both (exact match, never "any signed file").
+describe('resolveBridgeExe pin selection (signed / unsigned build)', () => {
+  const ORIG = BRIDGE_EXE.sha256;
+  const pinDirs: string[] = [];
+  afterEach(() => {
+    for (const d of pinDirs.splice(0)) rmSync(d, { recursive: true, force: true });
+  });
+  /** A packaged layout: <resources>\bridge\{whatsapp-bridge.exe,SHA256SUMS} + an app.asar stand-in DIRECTORY holding
+   *  out/main/bridge-signed-pin.txt (Electron's fs reads a real app.asar the same way). */
+  function packaged(o: { sums?: string; asarPin?: string; exeBody: string }): { exe: string; exeSha: string } {
+    const res = mkdtempSync(join(tmpdir(), 'wca-pin-'));
+    pinDirs.push(res);
+    mkdirSync(join(res, 'bridge'));
+    const exe = join(res, 'bridge', 'whatsapp-bridge.exe');
+    writeFileSync(exe, o.exeBody);
+    if (o.sums !== undefined) writeFileSync(join(res, 'bridge', 'SHA256SUMS'), o.sums);
+    if (o.asarPin !== undefined) {
+      mkdirSync(join(res, 'app.asar', 'out', 'main'), { recursive: true });
+      writeFileSync(join(res, 'app.asar', 'out', 'main', BRIDGE_SIGNED_PIN_FILE), o.asarPin);
+    }
+    return { exe, exeSha: createHash('sha256').update(o.exeBody).digest('hex') };
+  }
+  const pinText = (signed: string, from: string = ORIG): string =>
+    `${signed.toUpperCase()}  whatsapp-bridge.exe\n# wca-signed-from ${from.toUpperCase()}  whatsapp-bridge.exe\n`;
+
+  it('the vitest build is the UNSIGNED default (the flag is compiled in by electron-vite only)', () => {
+    expect(SIGNED_BUILD).toBe(false);
+  });
+  it('UNSIGNED build: a forged <resources>\\bridge\\SHA256SUMS (+ asar file) never changes the pin - nothing is read', () => {
+    // signing-review MAJOR 1: any hash + "# wca-signed-from <public original pin>" used to become the pin
+    const forged = packaged({ exeBody: 'swapped-bridge', sums: '', asarPin: '' });
+    writeFileSync(join(forged.exe, '..', 'SHA256SUMS'), pinText(forged.exeSha));
+    writeFileSync(signedPinPathFor(forged.exe), pinText(forged.exeSha));
+    expect(resolveBridgeExe({ bridgeExe: forged.exe, e2e: false })?.expectedSha256).toBe(ORIG);
+    const reads: string[] = [];
+    const readPinFile = (p: string): string => {
+      reads.push(p);
+      return pinText(forged.exeSha);
+    };
+    expect(resolveBridgeExe({ bridgeExe: forged.exe, e2e: false, signedBuild: false, readPinFile })).toEqual({
+      exePath: forged.exe,
+      exeArgs: [],
+      expectedSha256: ORIG,
+    });
+    expect(reads).toEqual([]);
+  });
+  it('SIGNED build: the post-signing pin, read from inside app.asar', () => {
+    const { exe, exeSha } = packaged({ exeBody: 'signed-bridge-bytes', asarPin: pinText('00'.repeat(32)) });
+    writeFileSync(signedPinPathFor(exe), pinText(exeSha));
+    expect(readBridgePinFile(signedPinPathFor(exe))).toContain('wca-signed-from');
+    expect(resolveBridgeExe({ bridgeExe: exe, e2e: false, signedBuild: true })?.expectedSha256).toBe(exeSha);
+  });
+  it('SIGNED build: <resources>\\bridge\\SHA256SUMS is never consulted (asar pin wins; no asar pin => original)', () => {
+    const signedSha = createHash('sha256').update('the-real-signed-bytes').digest('hex');
+    const a = packaged({ exeBody: 'x', sums: pinText('cd'.repeat(32)), asarPin: pinText(signedSha) });
+    expect(resolveBridgeExe({ bridgeExe: a.exe, e2e: false, signedBuild: true })?.expectedSha256).toBe(signedSha);
+    const b = packaged({ exeBody: 'x', sums: pinText('cd'.repeat(32)) });
+    expect(resolveBridgeExe({ bridgeExe: b.exe, e2e: false, signedBuild: true })?.expectedSha256).toBe(ORIG);
+  });
+  it('the asar pin path is <resources>\\app.asar\\out\\main\\bridge-signed-pin.txt, derived from the bridge path', () => {
+    expect(signedPinPathFor(join('C:\\app', 'resources', 'bridge', 'whatsapp-bridge.exe'))).toBe(
+      join('C:\\app', 'resources', 'app.asar', 'out', 'main', 'bridge-signed-pin.txt'),
+    );
+  });
+  it('a tampered exe fails in both builds: the selected pin is never the tampered hash', () => {
+    const unsigned = packaged({ exeBody: 'tampered-1', sums: `${ORIG}  whatsapp-bridge.exe\n` });
+    expect(resolveBridgeExe({ bridgeExe: unsigned.exe, e2e: false })?.expectedSha256).not.toBe(unsigned.exeSha);
+    const signedSha = createHash('sha256').update('the-real-signed-bytes').digest('hex');
+    const signed = packaged({ exeBody: 'tampered-2', asarPin: pinText(signedSha) });
+    const pin = resolveBridgeExe({ bridgeExe: signed.exe, e2e: false, signedBuild: true })?.expectedSha256;
+    expect(pin).toBe(signedSha);
+    expect(pin).not.toBe(signed.exeSha);
+  });
+  it('an asar pin claiming a different original is rejected (original pin, fail closed)', () => {
+    const { exe } = packaged({ exeBody: 'x', asarPin: pinText('cd'.repeat(32), 'ef'.repeat(32)) });
+    expect(resolveBridgeExe({ bridgeExe: exe, e2e: false, signedBuild: true })?.expectedSha256).toBe(ORIG);
+  });
+  it('missing, unreadable (a directory) or oversized pin file => null => original pin', () => {
+    const missing = packaged({ exeBody: 'x' });
+    expect(readBridgePinFile(signedPinPathFor(missing.exe))).toBeNull();
+    const dir = packaged({ exeBody: 'x', asarPin: '' });
+    rmSync(signedPinPathFor(dir.exe));
+    mkdirSync(signedPinPathFor(dir.exe));
+    expect(readBridgePinFile(signedPinPathFor(dir.exe))).toBeNull();
+    const big = packaged({ exeBody: 'x', asarPin: pinText('ab'.repeat(32)) + ' '.repeat(5000) });
+    expect(readBridgePinFile(signedPinPathFor(big.exe))).toBeNull();
+    expect(resolveBridgeExe({ bridgeExe: big.exe, e2e: false, signedBuild: true })?.expectedSha256).toBe(ORIG);
+  });
+  it('the reader is injectable, reads only the asar path, and e2e mode never consults it', () => {
+    const reads: string[] = [];
+    const readPinFile = (p: string): string => {
+      reads.push(p);
+      return pinText('ab'.repeat(32));
+    };
+    const bridgeExe = join('C:\\res', 'bridge', 'whatsapp-bridge.exe');
+    expect(resolveBridgeExe({ bridgeExe, e2e: false, signedBuild: true, readPinFile })?.expectedSha256).toBe(
+      'ab'.repeat(32),
+    );
+    expect(reads).toEqual([signedPinPathFor(bridgeExe)]);
+    expect(resolveBridgeExe({ bridgeExe, e2e: true, signedBuild: true, readPinFile })).toBeNull();
+    expect(reads).toHaveLength(1);
   });
 });
 

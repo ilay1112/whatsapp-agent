@@ -179,3 +179,51 @@ describe('every automatic pause trigger of B7 (and manual approvals keep working
     expect(w.rig.repos.autoPolicies.live()).toMatchObject({ state: 'paused', pausedReason: 'unattended' });
   });
 });
+
+// [v2-closeout auto-mode-8] "Resume" on a trial the APP paused (unattended / calendar disconnect / snapshot change) used to set the policy
+// straight to `on` once 3 shadow decisions existed - real automatic writes without the user's explicit "Turn on for real". Through the
+// real auto:resume handler, the real policy service, the real repo and the v5 trigger: a paused trial resumes as `shadow`, writes nothing,
+// and only auto:endShadow (a focused click) ever turns it on.
+describe('auto-mode-8: Resume returns to the state the user last confirmed', () => {
+  async function trialWithDecisions(): Promise<PolicyWorld> {
+    const w = await enabled(true);
+    for (const day of [7, 8, 9]) expect((await eligible(w, day)).out.verdict).toBe('shadow');
+    return w;
+  }
+  it('a trial paused by the unattended tick resumes as shadow: zero automatic writes until auto:endShadow', async () => {
+    const w = await trialWithDecisions();
+    w.env.lastFocus = w.rig.clock.now() as EpochMs;
+    await w.rig.clock.advance(LIMITS.autoUnattendedMs);
+    w.svc.tick(w.rig.clock.now() as EpochMs);
+    expect(w.rig.repos.autoPolicies.live()).toMatchObject({ state: 'paused', pausedReason: 'unattended' });
+    w.env.lastFocus = w.rig.clock.now() as EpochMs;
+    expect(await w.handlers['auto:resume']({ confirm: true }, CTX)).toMatchObject({
+      ok: true,
+      value: { policy: { state: 'shadow', pausedReason: null } },
+    });
+    const creates = w.rig.cal.calls.filter((c) => c.tool === 'create-event').length;
+    const { c, out } = await eligible(w, 22); // the clock moved 7 days: a slot well after the 15-min lead
+    expect(out).toMatchObject({ verdict: 'shadow', reason: 'ok' });
+    expect(w.rig.repos.actions.byId(c.action.id)!.state).toBe('pending');
+    expect(w.rig.cal.calls.filter((x) => x.tool === 'create-event').length).toBe(creates);
+    expect(w.rig.repos.autoWrites.since(0 as EpochMs)).toEqual([]);
+    // the explicit step still works afterwards
+    expect(await w.handlers['auto:endShadow']({ confirm: true }, CTX)).toMatchObject({
+      ok: true,
+      value: { policy: { state: 'on' } },
+    });
+  });
+  it('a trial paused by a calendar disconnect resumes as shadow; a raw promotion is refused by the database', async () => {
+    const w = await trialWithDecisions();
+    w.env.connected = false;
+    expect((await eligible(w, 10)).out.reason).toBe('calendar_disconnected');
+    expect(w.rig.repos.autoPolicies.live()).toMatchObject({ state: 'paused', pausedReason: 'calendar_disconnected' });
+    const id = w.rig.repos.autoPolicies.live()!.id;
+    expect(() => w.rig.repos.autoPolicies.setState(id, { state: 'on' })).toThrow(/paused trial resumes as shadow/);
+    w.env.connected = true;
+    expect(await w.handlers['auto:resume']({ confirm: true }, CTX)).toMatchObject({
+      ok: true,
+      value: { policy: { state: 'shadow' } },
+    });
+  });
+});

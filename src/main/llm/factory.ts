@@ -42,6 +42,11 @@ export interface ProviderFactoryDeps {
   cliRunnerHealth?: () => { code: ErrorCode } | null;
   /** [v2-repair REQUEST 7, additive] called after the CLI readiness changed (a smoke passed or failed) - compose refreshes AppHealth.llm. */
   onReadiness?: () => void;
+  /**
+   * [v2-closeout, additive] true once the quit sequence began: get() builds nothing any more (LlmError 'not_ready'), and a CLI build in
+   * flight stops before its provider-start smoke - a job started after killJobs would outlive app.exit() with its pid file. Absent = never.
+   */
+  closed?: () => boolean;
 }
 
 /** The secret each API-key provider reads. [V2 CHANGE] keyed by ApiKeyProviderId (C2 9: the CLI providers hold no secret). */
@@ -127,6 +132,11 @@ export function createProviderFactory(deps: ProviderFactoryDeps): ProviderFactor
       await fresh.dispose().catch(() => undefined);
       return cached.provider;
     }
+    if (deps.closed?.() === true) {
+      // [v2-closeout] the quit began while the locator probes ran: never start the smoke job (no readiness change either)
+      await fresh.dispose().catch(() => undefined);
+      throw new LlmError('not_ready');
+    }
     const v = await fresh.validate(AbortSignal.timeout(LIMITS.cliTestWallClockMs + 10_000));
     if (!v.ok) {
       const code = providerErrorToErrorCode(id, v.reason);
@@ -187,6 +197,7 @@ export function createProviderFactory(deps: ProviderFactoryDeps): ProviderFactor
     async get(): Promise<LlmProvider> {
       // A second caller during construction waits for the SAME provider; it never starts a second one.
       if (inFlight) return inFlight;
+      if (deps.closed?.() === true) throw new LlmError('not_ready'); // [v2-closeout] quitting: build nothing (no probe, no smoke)
       inFlight = build().finally(() => {
         inFlight = null;
       });

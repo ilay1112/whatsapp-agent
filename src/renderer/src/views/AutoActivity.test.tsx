@@ -200,6 +200,58 @@ describe('AutoActivity - page', () => {
     expect(invokeMocks['auto:resume']).not.toHaveBeenCalled();
   });
 
+  // ux-i18n-v2-10: during a trial the page said "Nothing happened automatically yet." although the trial had decided.
+  // Per-decision rows need a read channel main does not have; the trial's own tally (AutoState.shadowTally) is shown.
+  it('a trial shows its tally and says nothing is written during the trial - never "Nothing happened"', async () => {
+    const tally = { decisions: 4, wouldAuto: 3, approvedUnchanged: 2, edited: 1, dismissed: 0 };
+    useAutoStore.setState({
+      state: {
+        ...onState,
+        policy: { ...onState.policy!, state: 'shadow', shadowUntil: NOW + 3_600_000 },
+        shadowTally: tally,
+      },
+    });
+    render(<AutoActivity onBack={() => {}} />);
+    expect(screen.getByTestId('activity-trial')).toHaveTextContent(
+      'Trial so far: 4 decisions seen - 3 would have been done automatically.',
+    );
+    await waitFor(() =>
+      expect(screen.getByTestId('activity-empty')).toHaveTextContent(
+        'Nothing is written to your calendar during the trial.',
+      ),
+    );
+    expect(screen.queryByText('Nothing happened automatically yet.')).toBeNull();
+  });
+
+  it('a trial with one decision says "1 decision"; outside a trial there is no tally line', async () => {
+    const shadow = { ...onState.policy!, state: 'shadow' as const, shadowUntil: NOW + 3_600_000 };
+    const tally = { decisions: 1, wouldAuto: 1, approvedUnchanged: 0, edited: 0, dismissed: 0 };
+    useAutoStore.setState({ state: { ...onState, policy: shadow, shadowTally: tally } });
+    const { unmount } = render(<AutoActivity onBack={() => {}} />);
+    expect(screen.getByTestId('activity-trial')).toHaveTextContent('Trial so far: 1 decision seen');
+    unmount();
+    useAutoStore.setState({ state: { ...onState, shadowTally: tally } });
+    render(<AutoActivity onBack={() => {}} />);
+    expect(screen.queryByTestId('activity-trial')).toBeNull();
+    await waitFor(() =>
+      expect(screen.getByTestId('activity-empty')).toHaveTextContent('Nothing happened automatically yet.'),
+    );
+  });
+
+  it('he: the trial tally uses the Hebrew dual for two decisions', async () => {
+    await i18next.changeLanguage('he');
+    try {
+      const shadow = { ...onState.policy!, state: 'shadow' as const, shadowUntil: NOW + 3_600_000 };
+      const tally = { decisions: 2, wouldAuto: 1, approvedUnchanged: 0, edited: 0, dismissed: 0 };
+      useAutoStore.setState({ state: { ...onState, policy: shadow, shadowTally: tally } });
+      render(<AutoActivity onBack={() => {}} />);
+      expect(screen.getByTestId('activity-trial')).toHaveTextContent('שתי החלטות');
+      expect(screen.getByTestId('activity-trial')).not.toHaveTextContent(/\d החלטות/);
+    } finally {
+      await i18next.changeLanguage('en');
+    }
+  });
+
   it('a paused policy shows its state word', () => {
     useAutoStore.setState({
       state: { ...onState, policy: { ...onState.policy!, state: 'paused', pausedReason: 'user' } },

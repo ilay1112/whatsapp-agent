@@ -319,13 +319,46 @@ describe('endShadow / pause / resume / disable', () => {
     expect(await h.svc.resume(WIN)).toEqual({ ok: false, error: { code: 'BAD_REQUEST' } });
     expect(h.r.repos.autoPolicies.newest()!.state).toBe('expired');
   });
-  it('a paused TRIAL resumes only when it could have been ended anyway (>= 3 decisions)', async () => {
+  // [v2-closeout auto-mode-8] This test used to assert that a paused trial with >= 3 decisions resumes straight to `on` - exactly the
+  // defect: "Resume" skipped the explicit "Turn on for real" (auto:endShadow) step. Resume now returns to the state the user last
+  // confirmed: a paused trial resumes as `shadow`, whatever its tally, and only endShadow / the native dialog ever produce `on`.
+  it('a paused TRIAL resumes as shadow (2 or 3 decisions); only endShadow then turns it on', async () => {
     const h = await shadowWithDecisions(2);
     h.svc.pause('user');
-    expect(await h.svc.resume(WIN)).toEqual({ ok: false, error: { code: 'BAD_REQUEST' } });
+    expect(await h.svc.resume(WIN)).toMatchObject({ ok: true, value: { policy: { state: 'shadow' } } });
     const h3 = await shadowWithDecisions(3);
     h3.svc.pause('user');
-    expect(await h3.svc.resume(WIN)).toMatchObject({ ok: true, value: { policy: { state: 'on' } } });
+    expect(await h3.svc.resume(WIN)).toMatchObject({ ok: true, value: { policy: { state: 'shadow' } } });
+    expect(h3.svc.endShadow()).toMatchObject({ ok: true, value: { policy: { state: 'on' } } });
+  });
+  it.each(['unattended', 'calendar_disconnected', 'snapshot_changed', 'circuit_breaker_unknown'] as const)(
+    'auto-mode-8: a trial the APP paused (%s) resumes as shadow, never on, and stays shadow for tryAuto',
+    async (reason) => {
+      const h = await shadowWithDecisions(3);
+      expect(h.svc.pause(reason)).toMatchObject({ ok: true, value: { policy: { state: 'paused' } } });
+      expect(h.appPauses).toEqual([reason]);
+      const res = await h.svc.resume(WIN);
+      expect(res).toMatchObject({ ok: true, value: { policy: { state: 'shadow', pausedReason: null } } });
+      expect(h.r.repos.autoPolicies.live()!.state).toBe('shadow');
+      expect(h.audits.filter((a) => a.kind === 'auto_policy_resumed').map((a) => a.detail)).toEqual([{ to: 'shadow' }]);
+      // the next eligible proposal is still only a shadow decision: zero automatic writes after Resume
+      const c = h.r.seedCreate({
+        chatN: 40,
+        slot: { startLocal: '2026-10-19T10:00:00', endLocal: '2026-10-19T11:00:00' },
+      });
+      expect((await h.r.exec.tryAuto(c.action.id)).verdict).toBe('shadow');
+    },
+  );
+  it('auto-mode-8: an `on` policy (trial ended by the user, or "Turn on now") still resumes to on', async () => {
+    const ended = await shadowWithDecisions(3);
+    ended.svc.endShadow();
+    ended.svc.pause('unattended');
+    expect(await ended.svc.resume(WIN)).toMatchObject({ ok: true, value: { policy: { state: 'on' } } });
+    expect(ended.audits.filter((a) => a.kind === 'auto_policy_resumed').map((a) => a.detail)).toEqual([{ to: 'on' }]);
+    const now = await harness();
+    await now.svc.requestEnable(REQ(false), WIN);
+    now.svc.pause('calendar_disconnected');
+    expect(await now.svc.resume(WIN)).toMatchObject({ ok: true, value: { policy: { state: 'on' } } });
   });
   it('a trial whose shadow was ended by the user resumes normally', async () => {
     const h = await shadowWithDecisions(3);

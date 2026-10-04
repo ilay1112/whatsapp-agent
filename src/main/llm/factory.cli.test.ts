@@ -294,3 +294,36 @@ describe('claude_cli through the factory', () => {
     expect(await h.factory.get()).toBe(p);
   });
 });
+
+// [v2-closeout] the quit sequence: a provider build must not start a CLI job (locate probes, the provider-start smoke) once the app is
+// closing - such a job would outlive app.exit() with its pid file (e2e cli-connect 7b/7c).
+describe('closed (the quit sequence began)', () => {
+  it('get() is refused before any make / smoke once closed', async () => {
+    let closed = true;
+    const make = vi.fn(async () => cliProvider());
+    const h = harness({ makeClaudeCli: make, closed: () => closed });
+    await expect(h.factory.get()).rejects.toMatchObject({ code: 'not_ready' });
+    expect(make).not.toHaveBeenCalled();
+    closed = false;
+    await expect(h.factory.get()).resolves.toMatchObject({ id: 'claude_cli' });
+  });
+  it('a build in flight when the quit begins never runs its smoke: the fresh provider is disposed instead', async () => {
+    let closed = false;
+    const p = cliProvider();
+    let located!: () => void;
+    const make = vi.fn(
+      () =>
+        new Promise<CliFake>((r) => {
+          located = () => r(p); // the locator probes are running
+        }),
+    );
+    const h = harness({ makeClaudeCli: make as never, closed: () => closed });
+    const pending = h.factory.get();
+    await vi.waitFor(() => expect(make).toHaveBeenCalled());
+    closed = true; // killJobs ran meanwhile
+    located();
+    await expect(pending).rejects.toMatchObject({ code: 'not_ready' });
+    expect(p.validate).not.toHaveBeenCalled();
+    expect(p.disposed).toBe(1);
+  });
+});

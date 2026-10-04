@@ -15,12 +15,22 @@
 //   - writes the staged file list to `vendor/whisper/MANIFEST.txt` and, [V2-W2-04], the sha256 of every staged file to
 //     `vendor/whisper/SHA256SUMS` (`<hex> *<name>`, the bridge's format) - the packaged smoke (T2 11 check 7) hashes every
 //     file of `<resources>\whisper` against it (the zip itself is verified by its pin before anything is unpacked).
+//   - [signing-fix] checks every staged file against the COMMITTED per-file pins `files.fileSha256` of
+//     `vendor/whisper.pin.json` before writing anything (`--pin-files` fills them from the pinned zip).
 // The downloaded binaries are NEVER executed - not by this script, not by the tests (T8).
 import { fileURLToPath } from 'node:url';
 import { createHash } from 'node:crypto';
 import fsp from 'node:fs/promises';
 import path from 'node:path';
-import { crtPlan, fetchText, fetchVerified, isAllowedFile, readZipEntries, stageCrt } from './fetch-llama.mjs';
+import {
+  allowedZipFiles,
+  checkFilePins,
+  crtPlan,
+  fetchText,
+  fetchVerified,
+  pinFiles as pinFilesOf,
+  stageCrt,
+} from './fetch-llama.mjs';
 
 export const OWNER = 'V2-W1-07-media-voice';
 export const PIN_PATH = 'vendor/whisper.pin.json';
@@ -64,13 +74,17 @@ export async function main(io = {}) {
     sha256: pin.whisper.sha256,
     size: pin.whisper.size,
   });
+  // [signing-fix] every file is checked against the committed per-file pins BEFORE anything is written
+  const files = allowedZipFiles(zip, pin, stripReleasePrefix);
+  checkFilePins(
+    Object.fromEntries(files.map((f) => [f.name, createHash('sha256').update(f.bytes).digest('hex')])),
+    pin,
+    { pinPath: PIN_PATH, script: 'scripts/fetch-whisper.mjs', log },
+  );
   const written = [];
-  for (const entry of readZipEntries(zip)) {
-    if (entry.isDirectory) continue;
-    const base = stripReleasePrefix(entry.name);
-    if (base === null || !isAllowedFile(base, { exact: pin.files.exact, prefix: pin.files.prefix })) continue;
-    await fs.writeFile(path.join(targetDir, base), entry.read());
-    written.push(base);
+  for (const { name, bytes } of files) {
+    await fs.writeFile(path.join(targetDir, name), bytes);
+    written.push(name);
   }
   for (const required of pin.files.required) {
     if (!written.includes(required)) throw new Error(`fetch-whisper: ${required} is not in the pinned asset`);
@@ -97,8 +111,17 @@ export async function main(io = {}) {
   return { files: all, targetDir, digests };
 }
 
+/**
+ * [signing-fix] `--pin-files`: records `files.fileSha256` (Release/ stripped) from the verified, PINNED zip in
+ * vendor/whisper.pin.json. vendor/whisper/SHA256SUMS is gitignored and written by the same fetch, so it can never be
+ * the signing reference; scripts/sign-windows.mjs signs a whisper file only when it matches these committed pins.
+ */
+export function pinFiles(io = {}) {
+  return pinFilesOf(io, { pinPath: PIN_PATH, asset: 'whisper', nameOf: stripReleasePrefix, label: 'fetch-whisper' });
+}
+
 if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1])) {
-  main().catch((err) => {
+  (process.argv.includes('--pin-files') ? pinFiles() : main()).catch((err) => {
     process.stderr.write(`fetch-whisper: ${err instanceof Error ? err.message : String(err)}\n`);
     process.exit(1);
   });
