@@ -293,9 +293,10 @@ describe('D-068 media gates (G19): voice / picture items are automatic only afte
     const i = allClearCreate();
     return { ...i, item: { ...i.item, triggerKind: 'voice' } };
   };
+  // [v2-fix auto-mode-5] the badge set S4 actually writes for a picture that contributed text (readImage.imageBadgesOf): from_image
   const image = (): AutoGateInput => {
     const i = allClearCreate();
-    return { ...i, item: { ...i.item, triggerKind: 'image' } };
+    return { ...i, item: { ...i.item, triggerKind: 'image', badges: ['from_image'] } };
   };
   it('gates closed (the default) => media_derived for both media', () => {
     expect(reasonOf(voice())).toBe('media_derived');
@@ -311,6 +312,22 @@ describe('D-068 media gates (G19): voice / picture items are automatic only afte
     expect(reasonOf({ ...image(), mediaGates: { voicePassed: true, imagesPassed: false } })).toBe('media_derived');
     expect(reasonOf({ ...image(), mediaGates: { voicePassed: false, imagesPassed: true } })).toBe('ok');
     expect(reasonOf({ ...voice(), mediaGates: { voicePassed: false, imagesPassed: true } })).toBe('media_derived');
+  });
+  it('from_image is exempt from the zero-badges rule only on a picture item, which media_derived still gates', () => {
+    const closed = { ...image(), mediaGates: { voicePassed: true, imagesPassed: false } };
+    expect(reasonOf(closed)).toBe('media_derived'); // gate closed: still a fallback, with the informative reason
+    const passed = { ...image(), mediaGates: { voicePassed: false, imagesPassed: true } };
+    expect(reasonOf(passed)).toBe('ok');
+    // a text item carrying from_image (never written by S4, but the rule is narrow) still falls back
+    expect(reasonOf({ ...passed, item: { ...passed.item, triggerKind: 'text' } })).toBe('badge_info');
+    // the picture's OTHER badges are never exempt
+    expect(reasonOf({ ...passed, item: { ...passed.item, badges: ['from_image', 'image_unread'] } })).toBe(
+      'badge_info',
+    );
+    expect(reasonOf({ ...passed, item: { ...passed.item, badges: ['from_image', 'image_unclear'] } })).toBe(
+      'badge_amber',
+    );
+    expect(reasonOf({ ...passed, item: { ...passed.item, badges: ['from_image', 'manipulation'] } })).toBe('badge_red');
   });
 });
 

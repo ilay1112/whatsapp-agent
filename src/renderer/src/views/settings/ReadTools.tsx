@@ -40,16 +40,17 @@ export function ReadTools() {
     if (r.ok) useSettingsStore.getState().hydrate(r.value);
   }, []);
 
+  /** Asks main for a scope; true when main now reports exactly that scope (a cancelled confirmation answers the old one). */
   const applyScope = useCallback(
-    async (scope: 'trigger_chat' | 'all_chats') => {
+    async (scope: 'trigger_chat' | 'all_chats'): Promise<boolean> => {
       const r = await api.setReadScope(scope);
       if (!r.ok) {
         if (r.error.code === 'CONSENT_REQUIRED' && provider !== 'local') setConsentFor(provider);
         setRefused(true);
       }
-      await reload();
+      return r.ok && r.value.scope === scope;
     },
-    [provider, reload],
+    [provider],
   );
 
   if (!settings) return null;
@@ -57,13 +58,31 @@ export function ReadTools() {
   const checked: Choice = rt.enabled ? rt.scope : 'off';
   const windowDays = days ?? rt.windowDays;
 
+  /**
+   * ux-i18n-v2-5: the scope is settled FIRST and reading is switched on only after main agreed, so nothing is written
+   * before a "Not changed" and a cancelled consent / confirmation leaves it Off. A stored all_chats scope under Off is
+   * narrowed first (one click, the safe direction, nothing reads while Off) so that turning "all my chats" back on always
+   * goes through main's native confirmation (F11) - main skips the dialog when the scope does not change.
+   */
+  const turnOn = async (scope: 'trigger_chat' | 'all_chats', wasEnabled: boolean, storedScope: string) => {
+    if (scope === 'all_chats' && !wasEnabled && storedScope === 'all_chats') {
+      if (!(await applyScope('trigger_chat'))) {
+        await reload();
+        return;
+      }
+    }
+    const unchanged = scope === storedScope && (wasEnabled || scope === 'trigger_chat');
+    const settled = unchanged ? true : await applyScope(scope);
+    if (settled && !wasEnabled) await setSettings({ whatsapp: { readTools: { enabled: true } } });
+    await reload();
+  };
+
   const choose = async (choice: Choice) => {
     setRefused(false);
     if (choice === 'off') {
       await setSettings({ whatsapp: { readTools: { enabled: false } } });
       return;
     }
-    if (!rt.enabled) await setSettings({ whatsapp: { readTools: { enabled: true } } });
     if (choice === 'all_chats' && provider !== 'local') {
       const consent = await api.getConsent(CONSENT_KIND_FOR[provider]);
       const current =
@@ -76,7 +95,7 @@ export function ReadTools() {
         return;
       }
     }
-    if (choice !== rt.scope) await applyScope(choice);
+    await turnOn(choice, rt.enabled, rt.scope);
   };
 
   const onConsentAccept = async () => {
@@ -87,7 +106,7 @@ export function ReadTools() {
     const r = await api.acceptConsent(kind, CONSENT_VERSIONS[kind]);
     if (!r.ok) return;
     setRefused(false);
-    await applyScope('all_chats');
+    await turnOn('all_chats', rt.enabled, rt.scope);
   };
 
   const commitDays = (value: number) => {

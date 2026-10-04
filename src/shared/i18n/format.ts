@@ -172,13 +172,24 @@ export function formatClockDuration(seconds: number): string {
 }
 
 /**
- * Model file sizes in the UI (UX2 C1, ux.md 8.1): pinned bytes / 2^30 with ONE decimal, "1.5 GB" - never a copy literal.
- * Used for the voice tiers and the picture-reading projector (F24: the size of the CURRENT tier's projector).
+ * THE size string of the voice / picture-reading model files in the UI ("Download (1.6 GB)", "Download picture reading
+ * (0.99 GB)", the Settings rows, the onboarding opt-in) - F24, never a copy literal. One rule, identical to the
+ * manifest's `formatModelSize(entry)` (`src/main/llm/local/manifest.ts`; a parity test in format.test.ts holds the two
+ * together): decimal GB (bytes / 1e9) with ONE decimal from 1 GB, TWO decimals from 0.1 GB, whole MB (min 1) below.
+ * Digits are Latin with a "." in both languages. (The v1 LLM tier sizes keep their own v1 formula in Onboarding/frame.)
  */
 export function formatModelSize(bytes: number, lng: UiLang): string {
-  const gib = Math.max(0, bytes) / 2 ** 30;
-  const n = new Intl.NumberFormat(localeFor(lng), { minimumFractionDigits: 1, maximumFractionDigits: 1 }).format(gib);
-  return `${n} GB`;
+  const b = Number.isFinite(bytes) ? Math.max(0, bytes) : 0;
+  const gb = b / 1e9;
+  const fixed = (digits: number, value: number): string =>
+    new Intl.NumberFormat(localeFor(lng), {
+      minimumFractionDigits: digits,
+      maximumFractionDigits: digits,
+      useGrouping: false,
+    }).format(value);
+  if (gb >= 1) return `${fixed(1, Math.round(gb * 10) / 10)} GB`;
+  if (gb >= 0.1) return `${fixed(2, Math.round(gb * 100) / 100)} GB`;
+  return `${fixed(0, Math.max(1, Math.round(b / 1e6)))} MB`;
 }
 
 /** "28 Sept 2026" / "28 בספט׳ 2026" - consent dates, "Ended on", "Terms read on" (dateStyle medium, explicit zone). */

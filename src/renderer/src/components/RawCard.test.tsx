@@ -199,3 +199,21 @@ describe('RawCard - arrival edge (UX 2.4)', () => {
     expect(screen.getByTestId('card-1').className).toContain('card-arrival');
   });
 });
+
+// REPAIR v2-renderer-defects (V2-W2-03 REQUEST 8): the raw card has neither an EventChip nor a draft-scope badge row,
+// so a draft- or event-scope badge it carries (e.g. `manipulation` from a picture read) is shown in its one badge row.
+describe('RawCard - no badge is hidden by a missing host row (REQUEST 8)', () => {
+  it('manipulation (red, draft scope) and conflict (event scope) render once; automatic never does', () => {
+    render(
+      <RawCard
+        item={raw({ badges: ['manipulation', 'conflict', 'older_message', 'automatic'] })}
+        onOpen={() => undefined}
+      />,
+    );
+    expect(screen.getAllByTestId('badge-manipulation')).toHaveLength(1);
+    expect(screen.getByTestId('badge-manipulation').className).toContain('bg-danger-soft');
+    expect(screen.getAllByTestId('badge-conflict')).toHaveLength(1);
+    expect(screen.getAllByTestId('badge-older_message')).toHaveLength(1);
+    expect(screen.queryByTestId('badge-automatic')).toBeNull();
+  });
+});

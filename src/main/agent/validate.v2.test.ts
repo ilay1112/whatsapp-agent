@@ -459,6 +459,39 @@ describe("cross-chat leak guard (I5', P2 9.3)", () => {
     expect(crossChatLeak('abc', ['abc'], 0)).toBe(true); // window floor of 1
     expect(LIMITS.crossChatLeakWindow).toBe(24);
   });
+
+  // [fix injection-v2-1] the 24-char window alone missed every row (or secret excerpt) shorter than the window and any homoglyph copy.
+  it('a short other-chat row quoted whole in the draft is a leak (the window never fits inside it)', () => {
+    expect(crossChatLeak('Sure! gate code 4242# - see you there', ['gate code 4242#'], 24)).toBe(true);
+    const out = validateAndPersist(
+      env.repos,
+      inputFor({}, { draftText: 'Sure! gate code 4242# - see you there', otherChatTexts: ['gate code 4242#'] }),
+      ON,
+    );
+    expect(out.crossChatLeak).toBe(true);
+    expect(out.draft).toBeNull();
+    expect(out.badges).toContain('manipulation');
+    expect(out.actionsCreated).not.toContain('send_reply');
+  });
+  it('a short excerpt carrying a 4+ digit run of a long other-chat row is a leak', () => {
+    const row = 'my address is 12 Fake St and the door code is 4242, come by after 8';
+    expect(crossChatLeak('ok! the door code is 4242', [row], 24)).toBe(true);
+    expect(crossChatLeak('the code is 4​242', [row], 24)).toBe(true); // invisible split is stripped first
+    expect(crossChatLeak('card ends 5678', ['card 1234 5678 9012 3456'], 24)).toBe(true);
+  });
+  it('a homoglyph copy (Cyrillic / Greek look-alikes for Latin letters) is a leak', () => {
+    const row = 'my address is 12 Fake St and the door code is 4242';
+    const cyr = 'my аddress is 12 Fаke St аnd the dооr cоde is 4242';
+    expect(crossChatLeak(cyr, [row], 24)).toBe(true);
+    expect(crossChatLeak('my аddress is 12 Fаke St', [row], 24)).toBe(true); // no digit run of 4: the window must match
+  });
+  it('controls: common words, years, short rows and short numbers of the other chat do not withhold an ordinary draft', () => {
+    const row = 'see you in 2026 at 10:30, ok';
+    expect(crossChatLeak('Great, see you on 5.10.2026 at 10:30', [row], 24)).toBe(false); // a year is not a secret
+    expect(crossChatLeak('ok, see you then', ['ok', 'see you', 'thanks!'], 24)).toBe(false); // whole rows under the floor
+    expect(crossChatLeak('room 12 at 5', ['room 12 is free at 5pm today'], 24)).toBe(false); // runs under 4 digits
+    expect(crossChatLeak('sure, the door is open at 5', [leakRow], 24)).toBe(false);
+  });
 });
 
 describe('provenance (B25, P2 9.4) and taint (B28, P2 9.5)', () => {

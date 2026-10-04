@@ -9,6 +9,7 @@ import { CONSENT_VERSIONS, type CliStatus, type LlmConfig } from '@shared/types'
 import { IPC_DEFAULTS, invokeMocks, mockInvoke, setLlmState } from '../../../../../tests/setup-renderer';
 import { useCliStore } from '../../store/cli';
 import { useFocusGuardStore } from '../../store/health';
+import { useSettingsStore } from '../../store/settings';
 import { ChooseAi, VOICE_OPTIN_MIN_DISK_GIB, isCliProvider, voiceOptInBlocker } from './ChooseAi';
 
 const ready = (provider: CliStatus['provider'] = 'claude_cli'): CliStatus => ({
@@ -35,6 +36,7 @@ const paint = async (props: { embedded?: boolean; onDone?: () => void } = {}) =>
 };
 
 beforeEach(() => {
+  useSettingsStore.setState({ voiceIntent: null });
   useCliStore.setState({ status: {}, checkedAt: {}, error: {} });
   useFocusGuardStore.setState({ activationBlockedUntil: 0 });
 });
@@ -201,7 +203,7 @@ describe('ChooseAi v2 - onboarding', () => {
     await paint();
     await waitFor(() => expect(screen.getByTestId('onboarding-voice-optin')).toBeChecked());
     expect(screen.getByTestId('onboarding-choose-ai')).toHaveTextContent(
-      'Also understand voice notes (1.5 GB, Hebrew-optimised)',
+      'Also understand voice notes (1.6 GB, Hebrew-optimised)',
     );
     expect(screen.getByTestId('onboarding-pictures-note')).toHaveTextContent('downloads only when you ask');
     // nothing is downloaded by the checkbox itself
@@ -249,6 +251,8 @@ describe('ChooseAi v2 - onboarding', () => {
       { voice: { tier: 'voice-hebrew' } },
     ]);
     expect(invokeMocks['model:startDownload']).toHaveBeenCalledExactlyOnceWith({ tier: 'voice-hebrew' });
+    // ux-i18n-v2-4: the opt-in is remembered so App turns voice notes on once the files are ready
+    expect(useSettingsStore.getState().voiceIntent).toBe('voice-hebrew');
   });
 
   it('the pictures sentence names the projector size of the current tier when the plan carries it', async () => {
@@ -260,7 +264,7 @@ describe('ChooseAi v2 - onboarding', () => {
       },
     }));
     await paint();
-    await waitFor(() => expect(screen.getByTestId('onboarding-pictures-note')).toHaveTextContent('(0.9 GB)'));
+    await waitFor(() => expect(screen.getByTestId('onboarding-pictures-note')).toHaveTextContent('(0.99 GB)'));
   });
 
   it('onboarding never offers automatic mode', async () => {

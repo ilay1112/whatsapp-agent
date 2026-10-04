@@ -3,19 +3,46 @@
 // What retention does NOT do: it never deletes a hash (`item_messages.text_sha256`, `actions.content_sha256`, `media_cache.sha256`
 // stay until their row goes) and it never touches a non-terminal action - `trg_actions_frozen` would abort the statement, which is
 // exactly the intended guard. `auto_policies` are never purged (they are the consent history of automatic mode).
-import { LIMITS } from '../../../shared/types';
+import { LIMITS, type Sha256Hex } from '../../../shared/types';
+import { mediaCacheFileNames } from '../../media/mediaCache';
 import type { Db, Repos } from '../index';
 import { CLOSED_ITEM_MAX_AGE_MS } from '../retention';
-import { TERMINAL_ACTION_STATES } from './actions';
+import { sha256Hex, TERMINAL_ACTION_STATES } from './actions';
+import { MEDIA_CACHE_COLUMNS, type MediaCacheRow, toMediaCache } from './rows';
 
 export type RetentionRepo = Repos['retention'];
 
 const TERMINAL_LIST = TERMINAL_ACTION_STATES.map((s) => `'${s}'`).join(',');
 
-/** The files media/mediaCache.ts keeps for one media_cache row (C2 1.4: `<sha256>.jpg` + `<sha256>.thumb.jpg`), bare names only. */
-export function mediaFileNames(sha256: string): string[] {
-  return [`${sha256}.jpg`, `${sha256}.thumb.jpg`];
-}
+/**
+ * [v2-fix-src-main-db, data-integrity-v4-1] The files media/mediaCache.ts keeps for one purged media_cache row, bare names only.
+ * They come from the cache's OWN naming function with the hash compose wires into the cache (`sha256Hex(text)`), never re-derived
+ * here: the old `<media_cache.sha256>.jpg` names never matched what the cache wrote, so the daily job deleted the rows, unlinked
+ * files that did not exist (rmSync force) and left both pictures on disk with no row naming them.
+ */
+const cacheHash = (text: string): Sha256Hex => sha256Hex(text) as Sha256Hex;
+
+/**
+ * [v2-fix-src-main-db, data-integrity-v4-3] The ids of every item the 90-day closed-item rule must keep: the items it does not
+ * select at all (open, or closed after `closedBefore`), plus - transitively - every item one of them still depends on:
+ *   - its `event_origin_item_id` (I9 / F27: the chain root whose id is the event's `waItem` tag - ownershipOf needs the row),
+ *   - its `linked_item_id` (B20: the source a change card acts for),
+ *   - for an `in_calendar` item, every item holding the same `calendar_event_id` (the event's revision rows hang off them).
+ * Without this, `ON DELETE SET NULL` nulled the live holder's origin / link and its own still-live event read as foreign
+ * (CAL_EVENT_FOREIGN on cancel / reschedule / undo; tryAuto 'wrong_item'), and the cascade removed the event's revision history.
+ */
+const KEPT_ITEMS_CTE = `
+  WITH RECURSIVE kept(id) AS (
+    SELECT id FROM items WHERE closed_at IS NULL OR closed_at >= ?
+    UNION
+    SELECT dep.id
+      FROM kept k
+      JOIN items h ON h.id = k.id
+      JOIN items dep ON dep.id = h.event_origin_item_id
+                     OR dep.id = h.linked_item_id
+                     OR (h.state = 'in_calendar' AND h.calendar_event_id IS NOT NULL
+                         AND dep.calendar_event_id = h.calendar_event_id)
+  )`;
 
 export function createRetentionRepo(db: Db): RetentionRepo {
   return {
@@ -63,15 +90,22 @@ export function createRetentionRepo(db: Db): RetentionRepo {
         ).run(p.before);
         // [V2] media_cache rows go with the text; their files are named from the row, so collect the names BEFORE the delete.
         const media = db
-          .prepare<{ sha256: string }>(
-            `SELECT sha256 FROM media_cache WHERE created_at < ? ORDER BY created_at, wa_msg_id`,
+          .prepare<MediaCacheRow>(
+            `SELECT ${MEDIA_CACHE_COLUMNS} FROM media_cache WHERE created_at < ? ORDER BY created_at, wa_msg_id`,
           )
-          .all(p.before);
+          .all(p.before)
+          .map(toMediaCache);
         db.prepare(`DELETE FROM media_cache WHERE created_at < ?`).run(p.before);
-        // Closed items go completely, with their messages, proposals, runs, actions, revisions and decisions (ON DELETE CASCADE).
+        // Closed items go completely, with their messages, proposals, runs, actions, revisions and decisions (ON DELETE CASCADE) -
+        // except the ones a kept item still depends on (KEPT_ITEMS_CTE); they go together with the last item that needs them.
         const itemsDeleted = db
-          .prepare(`DELETE FROM items WHERE closed_at IS NOT NULL AND closed_at < ?`)
-          .run(p.closedBefore).changes;
+          .prepare(
+            `${KEPT_ITEMS_CTE}
+             DELETE FROM items
+              WHERE closed_at IS NOT NULL AND closed_at < ?
+                AND id NOT IN (SELECT id FROM kept)`,
+          )
+          .run(p.closedBefore, p.closedBefore).changes;
         // [V2] fixed horizons. Order matters: auto_writes first, so a decision is kept exactly while a write still references it.
         const revisionRows = db
           .prepare(
@@ -93,7 +127,7 @@ export function createRetentionRepo(db: Db): RetentionRepo {
           actionRows,
           itemsDeleted,
           transcriptRows,
-          mediaFiles: media.flatMap((m) => mediaFileNames(m.sha256)),
+          mediaFiles: media.flatMap((m) => mediaCacheFileNames(cacheHash, m)),
           revisionRows,
           autoWritesDeleted,
           autoDecisionsDeleted,

@@ -107,6 +107,13 @@ exports[`AutoActivity - page > RTL snapshot 1`] = `
             כבר אי אפשר לבטל
           </span>
         </div>
+        <button
+          class="btn btn-quiet"
+          data-testid="activity-show-33333333-3333-4333-8333-333333333333"
+          type="button"
+        >
+          הצגה
+        </button>
       </li>
     </ul>
   </section>

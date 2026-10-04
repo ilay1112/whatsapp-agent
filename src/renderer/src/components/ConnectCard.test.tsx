@@ -126,6 +126,24 @@ describe('ConnectCard - full size, the five states', () => {
     expect(screen.getByTestId('connect-claude_cli')).toHaveAttribute('data-state', 'not_signed_in');
   });
 
+  // ux-i18n-v2-11: a refused cli:signIn (CLI removed / downgraded since the cached status) used to show nothing.
+  it.each(['full', 'compact'] as const)(
+    'a refused Sign in (%s card) says why with role=alert and re-reads the status',
+    async (size) => {
+      mockInvoke('cli:signIn', () => ({ ok: false, error: { code: 'CLI_NOT_INSTALLED' } }));
+      paint(status({ state: 'not_signed_in', version: '2.1.258' }), { size });
+      const before = invokeMocks['cli:getStatus'].mock.calls.length;
+      await userEvent.click(screen.getByTestId('connect-signin-claude_cli'));
+      const alert = await screen.findByTestId('connect-signin-error-claude_cli');
+      expect(alert).toHaveAttribute('role', 'alert');
+      expect(alert).toHaveAttribute('data-code', 'CLI_NOT_INSTALLED');
+      expect(alert.textContent).not.toBe('');
+      expect(alert.textContent).not.toMatch(/errors\./);
+      await waitFor(() => expect(invokeMocks['cli:getStatus'].mock.calls.length).toBeGreaterThan(before));
+      expect(screen.getByTestId('connect-claude_cli')).not.toHaveAttribute('data-state', 'waiting_sign_in');
+    },
+  );
+
   it('unknown: Sign in and Check again', () => {
     paint(status({ state: 'unknown', version: '2.1.258' }));
     expect(screen.getByTestId('connect-claude_cli')).toHaveTextContent('Could not tell whether you are signed in.');

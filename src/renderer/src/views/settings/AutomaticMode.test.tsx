@@ -296,6 +296,52 @@ describe('AutomaticMode - live states', () => {
     await waitFor(() => expect(invokeMocks['auto:requestEnable']).toHaveBeenCalledOnce());
   });
 
+  // ux-i18n-v2-3: an expired policy with an unmet precondition hid both Renew and the reason - a dead end.
+  it('expired with an unmet precondition: no Renew, but the reason line is shown (never a bare "Ended on")', () => {
+    const state = withPolicy(policy('expired', { expiresAt: NOW - DAY }), {
+      preconditions: { ...base.preconditions, calendarConnected: false },
+    });
+    render(<AutomaticMode state={state} />);
+    expect(screen.queryByTestId('auto-renew')).toBeNull();
+    expect(screen.getByTestId('auto-precondition')).toHaveAttribute('data-reason', 'connect');
+    // the enable buttons stay the state card's Renew - they are not shown a second time below
+    expect(screen.queryByTestId('auto-enable-now')).toBeNull();
+  });
+
+  it('expired with every precondition met: Renew only, no second pair of enable buttons', () => {
+    render(<AutomaticMode state={withPolicy(policy('expired', { expiresAt: NOW - DAY }))} />);
+    expect(screen.getByTestId('auto-renew')).toBeInTheDocument();
+    expect(screen.queryByTestId('auto-precondition')).toBeNull();
+    expect(screen.queryByTestId('auto-enable-now')).toBeNull();
+  });
+
+  // ux-i18n-v2-2: BAD_REQUEST is not only the rate limit, and it must never be swallowed.
+  it('with antigravity_cli active, a refused enable says why - never "Try again in an hour."', async () => {
+    mockInvoke('auto:requestEnable', () => ({ ok: false, error: { code: 'BAD_REQUEST' } }));
+    render(<AutomaticMode state={{ ...base, preconditions: { ...base.preconditions, providerAllowsAuto: false } }} />);
+    await userEvent.click(screen.getByTestId('auto-enable-now'));
+    await waitFor(() => expect(screen.getByTestId('auto-refused')).toHaveAttribute('data-reason', 'provider'));
+    expect(screen.getByRole('alert')).toBe(screen.getByTestId('auto-refused'));
+    expect(screen.queryByText('Try again in an hour.')).toBeNull();
+    // the buttons stay (UX2 4.5) - after choosing another AI the user can try again
+    expect(screen.getByTestId('auto-enable-now')).toBeInTheDocument();
+  });
+
+  it.each([
+    ['auto:resume', 'auto-resume', policy('paused', { pausedReason: 'snapshot_changed' })],
+    ['auto:endShadow', 'auto-end-shadow', policy('shadow')],
+  ] as const)('a refused %s (BAD_REQUEST) tells the user to Stop and turn it on again', async (channel, testId, p) => {
+    mockInvoke(channel, () => ({ ok: false, error: { code: 'BAD_REQUEST' } }));
+    const tally = { decisions: 3, wouldAuto: 1, approvedUnchanged: 1, edited: 0, dismissed: 0 };
+    render(<AutomaticMode state={withPolicy(p, { shadowTally: tally })} />);
+    await userEvent.click(screen.getByTestId(testId));
+    await waitFor(() => expect(invokeMocks[channel]).toHaveBeenCalledOnce());
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveAttribute('data-testid', 'auto-refused');
+    expect(alert).toHaveAttribute('data-reason', 'restart');
+    expect(screen.getByTestId('auto-stop')).toBeInTheDocument();
+  });
+
   it('disabled reads as off', () => {
     render(<AutomaticMode state={withPolicy(policy('disabled'))} />);
     expect(screen.getByTestId('auto-state-card')).toHaveTextContent('Off - events wait');

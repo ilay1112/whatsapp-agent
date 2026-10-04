@@ -431,6 +431,37 @@ describe('init proof (I11): fail closed on the FIRST event, killed before any tu
     expect(res.sandbox.initOk).toBe(true);
   });
 
+  it.each<[string, string]>([
+    ['api_key_auth', init({ apiKeySource: 'ANTHROPIC_API_KEY' })],
+    ['extra_server', init({ mcp_servers: [{ name: 'claude.ai Gmail', status: 'connected' }] })],
+  ])(
+    '[cli-sandbox-2] %s pauses THAT provider on the FIRST failure (stdin already went out at spawn): no further spawn until resetBreaker',
+    async (_m, bad) => {
+      const { runner, jobs } = mk(() => ({ lines: [bad] }));
+      const first = await runner.run(req(), signal());
+      expect(first).toMatchObject({ error: 'sandbox' });
+      expect(jobs.specs.length).toBe(1);
+      // the next run (and a repair retry) carries no user data to the CLI: refused without a spawn, still 'sandbox'
+      const second = await runner.run(req(), signal());
+      expect(second).toMatchObject({ error: 'sandbox', sandbox: NO_PROOF, structured: null, text: null });
+      expect(jobs.specs.length).toBe(1);
+      // the other CLI is not paused by claude's identity change (it still spawns; its own proof decides its run)
+      await runner.run(req({ provider: 'antigravity_cli', exePath: 'C:\\x\\agy.exe' }), signal());
+      expect(jobs.specs.length).toBe(2);
+      // only the user's "Test again" (resetBreaker) lets claude spawn again
+      runner.resetBreaker();
+      await runner.run(req(), signal());
+      expect(jobs.specs.length).toBe(3);
+    },
+  );
+
+  it('[cli-sandbox-2] a possibly transient mismatch (server_error / no_init) keeps the 3-strike rule: the 2nd run spawns', async () => {
+    const { runner, jobs } = mk(() => ({ lines: [init({ mcp_server_errors: [{ server: 'x' }] })] }));
+    await runner.run(req(), signal());
+    await runner.run(req(), signal());
+    expect(jobs.specs.length).toBe(2);
+  });
+
   it('three init failures in 10 minutes open the breaker (CLI_UNSTABLE): the 4th run spawns nothing; resetBreaker closes it', async () => {
     const { runner, jobs } = mk(() => ({ lines: [init({ tools: ['Bash'] })] }));
     for (let i = 0; i < LIMITS.cliBreakerFailures; i++) await runner.run(req(), signal());
@@ -507,6 +538,50 @@ describe('strikes (non-mcp__wca__ tool_use, permission_denials)', () => {
       verdict: 'blocked_unknown_tool',
       runId: null,
     });
+  });
+
+  it('[cli-sandbox-1 / injection-v2-2, B17] S3: an mcp__wca__ name OUTSIDE exposedNames is a strike (the CLI answers it locally, the gate never sees it); only exposed names count as tool calls', async () => {
+    let ctxStrikes = 0;
+    const r = s3req({
+      onStrike: () => {
+        ctxStrikes += 1;
+        return ctxStrikes >= LIMITS.blockedCallsAbort;
+      },
+    });
+    const { runner, jobs } = mk([
+      {
+        lines: [
+          s3init(),
+          toolUse('mcp__wca__get_freebusy'),
+          toolUse('mcp__wca__send_message'), // never a wca tool at all
+          toolUse('mcp__wca__GET_FREEBUSY'), // case-sensitive like the ToolGate
+          result({ result: 'x' }),
+        ],
+      },
+    ]);
+    const res = await runner.run(r, signal());
+    expect(res).toMatchObject({ toolCalls: 1, blockedCalls: 2, stopReason: 'killed', error: null });
+    expect(ctxStrikes).toBe(2);
+    expect(jobs.kills).toBe(1);
+    expect(audits.filter((a) => a.kind === 'tool_blocked').map((a) => a.detail)).toEqual([
+      { nameSha8: nameSha8('mcp__wca__send_message'), nameLen: 22, verdict: 'blocked_unknown_tool', runId: 7 },
+      { nameSha8: nameSha8('mcp__wca__GET_FREEBUSY'), nameLen: 22, verdict: 'blocked_unknown_tool', runId: 7 },
+    ]);
+    expect(JSON.stringify(audits)).not.toContain('send_message');
+
+    // trigger_chat scope: wa_list_chats is a real wca tool but NOT exposed in this run => one strike, the run continues.
+    const one = mk([
+      {
+        lines: [
+          s3init(),
+          toolUse('mcp__wca__wa_list_chats'),
+          toolUse('mcp__wca__get_current_time'),
+          result({ result: 'ok' }),
+        ],
+      },
+    ]);
+    const res2 = await one.runner.run(s3req({ onStrike: undefined }), signal());
+    expect(res2).toMatchObject({ toolCalls: 1, blockedCalls: 1, stopReason: 'end', text: 'ok' });
   });
 
   it('on a schema run an mcp__wca__ tool_use is a strike (no MCP server exists there); malformed blocks are ignored', async () => {

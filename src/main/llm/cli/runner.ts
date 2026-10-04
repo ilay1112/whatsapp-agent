@@ -49,11 +49,11 @@ export interface CliRunRequest {
   observedVersion: string; // gates --permission-prompts none (>= 2.1.259)
 }
 export interface CliRunResult {
-  sandbox: CliSandboxProof; // initOk=false => nothing below is used; the job was killed before the first turn
+  sandbox: CliSandboxProof; // initOk=false => nothing below is used; the job is killed on the init line (best effort: the stdin line already went out at spawn, cli-sandbox-2)
   structured: unknown | null; // result.structured_output (UNTRUSTED; caller zod-parses)
   text: string | null; // result.result (S3) (UNTRUSTED; caller runs cleanDraft)
   toolCalls: number;
-  blockedCalls: number; // permission_denials + tool_use blocks that are neither mcp__wca__* nor (jsonSchema != null) CLI_SCHEMA_TOOL (F13) (each audited tool_blocked {nameSha8,nameLen,...})
+  blockedCalls: number; // permission_denials + tool_use blocks that are neither an EXPOSED mcp__wca__<name> (S3) nor (jsonSchema != null) CLI_SCHEMA_TOOL (F13) (each audited tool_blocked {nameSha8,nameLen,...})
   stopReason: 'end' | 'max_turns' | 'aborted' | 'killed' | 'bad_output';
   error: ProviderErrorCode | null; // is_error checked FIRST (subtype:'success' + is_error:true is a failure) ; api_retry.error / AGY_ERROR mapped
   quota: LlmQuota | null; // rate_limit_event / agy /usage
@@ -63,7 +63,7 @@ export interface CliRunResult {
 export interface CliRunner {
   /** Concurrency 1 (promise mutex over JobRunner kind 'cli'). Fresh empty cwd <userData>\cli-runs\<runId>\ (claude) or
    *  <userData>\agy-workspace\runs\<runId>\ (agy; agent file + schema.json written there), deleted in finally with the job kill.
-   *  Fail-closed init proof BEFORE any turn is consumed (I11); a mismatch kills the job, audits toolset_mismatch and returns sandbox.initOk=false
+   *  Fail-closed init proof on the FIRST event, before any later line is read (I11: the run is used only if it proved itself; the one stdin line is written at spawn, so the CLI already holds it - cli-sandbox-2); a mismatch kills the job, audits toolset_mismatch and returns sandbox.initOk=false
    *  - never a retry with looser flags. Writes the cli_run audit row (enums/numbers/booleans only). Budget: rate bucket cli_global
    *  (settings.llm.cli.maxRunsPerHour) checked before spawning; over budget => error 'usage_limit' without a spawn. */
   run(req: CliRunRequest, signal: AbortSignal): Promise<CliRunResult>;
@@ -227,6 +227,11 @@ export function createCliRunner(deps: {
   let overagePaused: { until: EpochMs | null } | null = null;
   let usagePausedUntil: EpochMs | null = null;
   let quota: LlmQuota | null = null;
+  /** [cli-sandbox-2] Providers whose init proved an identity / connector change (api_key_auth, extra_server). The stdin line is written
+   *  at spawn (C2 13.1 transport), so a failed per-run proof cannot un-send it: the FIRST such failure pauses that provider (no spawn,
+   *  error 'sandbox') until the user's "Test again" (resetBreaker), instead of letting up to cliBreakerFailures more runs carry data. */
+  const proofPaused = new Set<CliProviderId>();
+  const PAUSE_ON_FIRST: ReadonlyArray<CliSandboxProof['mismatch']> = ['api_key_auth', 'extra_server'];
 
   const pruneBreaker = (): void => {
     const since = deps.now() - LIMITS.cliBreakerWindowMs;
@@ -270,6 +275,7 @@ export function createCliRunner(deps: {
     if (h !== null)
       return refusal(h.code === 'CLOUD_OVERAGE' ? 'overage' : h.code === 'CLOUD_QUOTA' ? 'usage_limit' : 'not_ready');
     if (req.provider === 'antigravity_cli' && req.stage === 'read_image') return refusal('unsupported'); // capabilities.images:false
+    if (proofPaused.has(req.provider)) return refusal('sandbox'); // [cli-sandbox-2] no user data to a CLI that proved a changed identity
     // Budget BEFORE any spawn (B13): the 21st run of the hour is refused without a process.
     const t0 = deps.now();
     if (budget.countSince(t0 - 3_600_000) >= Math.min(budget.maxRunsPerHour(), LIMITS.cliRunsPerHourMax))
@@ -390,14 +396,16 @@ export function createCliRunner(deps: {
     const env: Record<string, string> = {
       SystemRoot: sysRoot,
       PATH: path.win32.join(sysRoot, 'System32'),
+      // The profile vars are the isolated profile's ONLY (F3; U-A7): plan.env below wins; these defaults are already under agy-home,
+      // never the real profile (cli-sandbox-3).
       USERPROFILE: plan.homeDir,
       HOME: plan.homeDir,
-      APPDATA: processEnv.APPDATA ?? '',
-      LOCALAPPDATA: processEnv.LOCALAPPDATA ?? '',
+      APPDATA: path.win32.join(plan.homeDir, 'AppData', 'Roaming'),
+      LOCALAPPDATA: path.win32.join(plan.homeDir, 'AppData', 'Local'),
       TEMP: runDir,
       TMP: runDir,
       AGY_CLI_DISABLE_AUTO_UPDATE: 'true',
-      ...plan.env,
+      ...(plan.env as Record<string, string>), // typed wide on purpose: it overrides the defaults above
     };
     return { ...base, args: [...argsPrefix(req.exePath), ...buildAgyArgs({ ...req, stage }, schemaPath)], env };
   };
@@ -445,7 +453,7 @@ export function createCliRunner(deps: {
           ? checkClaudeInit(ev, req, req.exposedNames ?? [])
           : checkAgyInit(ev, req.stage as 'extract' | 'draft' | 'smoke');
         if (!st.proof.initOk) {
-          // Fail closed BEFORE the first turn: kill, audit, never a retry with looser flags.
+          // Fail closed on the init line: kill (async taskkill - the CLI already holds the stdin line), audit, never a retry with looser flags.
           st.initFailed = true;
           deps.audit('toolset_mismatch', req.auditRef ?? null, {
             provider: req.provider,
@@ -462,7 +470,15 @@ export function createCliRunner(deps: {
           for (const block of ev.message.content) {
             if (!isRecord(block) || block.type !== 'tool_use' || typeof block.name !== 'string') continue;
             const name = block.name;
-            if (req.stage === 'draft' && name.startsWith(CLI_MCP_TOOL_PREFIX)) st.toolCalls += 1;
+            // [cli-sandbox-1 / injection-v2-2, B17] Only an EXPOSED wca tool is a tool call. An mcp__wca__ name outside
+            // req.exposedNames is not in the CLI's tool list, so Claude Code answers it locally ("No such tool") and never forwards
+            // it to the loopback server: the ToolGate never sees it, so the runner strikes it here (case-sensitive, like the gate).
+            if (
+              req.stage === 'draft' &&
+              name.startsWith(CLI_MCP_TOOL_PREFIX) &&
+              (req.exposedNames ?? []).includes(name.slice(CLI_MCP_TOOL_PREFIX.length))
+            )
+              st.toolCalls += 1;
             else if (req.jsonSchema !== null && name === CLI_SCHEMA_TOOL)
               continue; // F13: never a strike
             else strike(name);
@@ -533,6 +549,7 @@ export function createCliRunner(deps: {
         const code = classifyAgyExit(done.exitCode, done.stderrMarkers);
         if (code !== null) return { ...out(code, 'bad_output'), sandbox: NO_PROOF };
       }
+      if (st.initSeen && PAUSE_ON_FIRST.includes(st.proof.mismatch)) proofPaused.add(req.provider);
       breakerStrike();
       return { ...out('sandbox', 'killed'), sandbox: st.initSeen ? st.proof : NO_PROOF };
     }
@@ -620,6 +637,7 @@ export function createCliRunner(deps: {
       breakerOpenedAt = null;
       overagePaused = null;
       usagePausedUntil = null;
+      proofPaused.clear();
     },
     lastQuota: () => quota,
   };

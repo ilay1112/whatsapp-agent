@@ -72,7 +72,7 @@ describe('version parse table (F14)', () => {
 // scripted jobs for the probes
 // ---------------------------------------------------------------------------------------------------------------------
 function probeJobs(
-  answer: (spec: JobSpec) => { lines: string[]; exitCode: number | null } | Error,
+  answer: (spec: JobSpec) => { lines: string[]; exitCode: number | null; stderrMarkers?: string[] } | Error,
 ): JobRunner & { specs: JobSpec[] } {
   const specs: JobSpec[] = [];
   return {
@@ -94,7 +94,13 @@ function probeJobs(
         }),
         write: () => undefined,
         kill: () => undefined,
-        done: Promise.resolve({ exitCode: a.exitCode, killed: false, timedOut: false, stderrMarkers: [], ms: 1 }),
+        done: Promise.resolve({
+          exitCode: a.exitCode,
+          killed: false,
+          timedOut: false,
+          stderrMarkers: a.stderrMarkers ?? [],
+          ms: 1,
+        }),
       });
     },
     breaker: () => ({ open: false, failures: 0, openedAt: null }),
@@ -152,6 +158,7 @@ function mkLocator(
     settingsClaudeExePath: () => '',
     seam: null,
     jobs,
+    userDataDir: path.join(home, 'wca-userData'),
     ...over,
   });
   return { locator, runWhere, jobs };
@@ -283,6 +290,104 @@ describe('createCliLocator - antigravity_cli', () => {
     expect(await locator.signedIn('antigravity_cli', 'C:\\x\\agy.exe', sig)).toBe(false);
     expect(await locator.signedIn('antigravity_cli', 'C:\\x\\agy.exe', sig)).toBe('unknown');
     expect(await locator.signedIn('antigravity_cli', 'C:\\x\\agy.exe', sig)).toBe('unknown');
+  });
+
+  it("[cli-sandbox-3, F3/B14/I6'] every agy probe runs under the ISOLATED <userData>\\agy-home profile, cwd = the app workspace, settings.json written first", async () => {
+    const agy = touch('AppData', 'Local', 'agy', 'bin', 'agy.exe');
+    const userData = path.join(home, 'wca-userData');
+    const settingsFile = path.win32.join(userData, 'agy-home', '.gemini', 'antigravity-cli', 'settings.json');
+    const workspace = path.win32.join(userData, 'agy-workspace');
+    const seenAtSpawn: Array<{ settings: string | null; workspaceExists: boolean }> = [];
+    const { locator, jobs } = mkLocator(
+      {},
+      probeJobs((spec) => {
+        seenAtSpawn.push({
+          settings: fs.existsSync(settingsFile) ? fs.readFileSync(settingsFile, 'utf8') : null,
+          workspaceExists: fs.existsSync(workspace),
+        });
+        return spec.args.at(-1) === '--version' ? { lines: ['1.2.11'], exitCode: 0 } : { lines: ['{}'], exitCode: 0 };
+      }),
+    );
+    expect((await locator.find('antigravity_cli'))?.version).toBe('1.2.11');
+    expect(await locator.signedIn('antigravity_cli', agy, new AbortController().signal)).toBe(true);
+    expect(jobs.specs.map((s) => s.args)).toEqual([['--version'], ['-p', '/usage', '--output-format', 'json']]);
+    const real = envFor();
+    for (const spec of jobs.specs) {
+      expect(Object.keys(spec.env).sort()).toEqual([...AGY_ENV_KEYS].sort());
+      expect(spec.env).toMatchObject({
+        USERPROFILE: path.win32.join(userData, 'agy-home'),
+        HOME: path.win32.join(userData, 'agy-home'),
+        APPDATA: path.win32.join(userData, 'agy-home', 'AppData', 'Roaming'),
+        LOCALAPPDATA: path.win32.join(userData, 'agy-home', 'AppData', 'Local'),
+        TEMP: workspace,
+        TMP: workspace,
+      });
+      // never the real profile, never the agy install folder
+      for (const k of ['USERPROFILE', 'HOME', 'APPDATA', 'LOCALAPPDATA'] as const)
+        expect([real.USERPROFILE, real.APPDATA, real.LOCALAPPDATA]).not.toContain(spec.env[k]);
+      expect(spec.cwd).toBe(workspace);
+      expect(spec.cwd).not.toBe(path.dirname(agy));
+    }
+    for (const s of seenAtSpawn) {
+      expect(s.workspaceExists).toBe(true);
+      expect(JSON.parse(s.settings ?? 'null')).toEqual({ trustedWorkspaces: [workspace] });
+    }
+  });
+
+  it('[cli-sandbox-3] the isolated profile cannot see a login (U-A7) => not signed in; the auth prompt is read from the stderr MARKER', async () => {
+    const { locator } = mkLocator(
+      {},
+      probeJobs(() => ({ lines: [], exitCode: 1, stderrMarkers: ['auth_required'] })),
+    );
+    expect(await locator.signedIn('antigravity_cli', 'C:\\x\\agy.exe', new AbortController().signal)).toBe(false);
+  });
+
+  it('[cli-sandbox-3] without a userDataDir no agy job is ever spawned (fail closed): version null, signedIn unknown', async () => {
+    touch('AppData', 'Local', 'agy', 'bin', 'agy.exe');
+    const { locator, jobs } = mkLocator(
+      { userDataDir: undefined },
+      probeJobs(() => ({ lines: ['1.2.11'], exitCode: 0 })),
+    );
+    expect((await locator.find('antigravity_cli'))?.version).toBeNull();
+    expect(await locator.signedIn('antigravity_cli', 'C:\\x\\agy.exe', new AbortController().signal)).toBe('unknown');
+    expect(jobs.specs).toEqual([]);
+  });
+});
+
+describe('[cli-sandbox-6, B31] the exe path is reported BEFORE the first job of find()', () => {
+  it('onExeResolved(provider, exePath) runs before --version spawns, for both CLIs; nothing found => never called', async () => {
+    const claude = touch('.local', 'bin', 'claude.exe');
+    const agy = touch('AppData', 'Local', 'agy', 'bin', 'agy.exe');
+    const order: string[] = [];
+    const { locator } = mkLocator(
+      { onExeResolved: (provider, exePath) => order.push(`record:${provider}:${exePath}`) },
+      probeJobs((spec) => {
+        order.push(`spawn:${spec.exePath}`);
+        return { lines: ['2.1.258'], exitCode: 0 };
+      }),
+    );
+    await locator.find('claude_cli');
+    await locator.find('antigravity_cli');
+    expect(order).toEqual([
+      `record:claude_cli:${claude}`,
+      `spawn:${claude}`,
+      `record:antigravity_cli:${agy}`,
+      `spawn:${agy}`,
+    ]);
+    const none = mkLocator({ env: {}, onExeResolved: () => order.push('never') });
+    expect(await none.locator.find('claude_cli')).toBeNull();
+    expect(order).not.toContain('never');
+  });
+
+  it('a throwing recorder fails closed: no job is spawned for that path', async () => {
+    touch('.local', 'bin', 'claude.exe');
+    const { locator, jobs } = mkLocator({
+      onExeResolved: () => {
+        throw new Error('db locked');
+      },
+    });
+    await expect(locator.find('claude_cli')).rejects.toThrow('db locked');
+    expect(jobs.specs).toEqual([]);
   });
 });
 

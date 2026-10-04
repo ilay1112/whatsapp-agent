@@ -74,7 +74,7 @@ export function voiceOptInBlocker(hardware: HardwareInfo | null): 'disk' | 'ram'
   if (hardware.ramGiB < VOICE_OPTIN_MIN_RAM_GIB) return 'ram';
   return null;
 }
-/** The one voice tier the onboarding opt-in names ("1.5 GB, Hebrew-optimised"). */
+/** The one voice tier the onboarding opt-in names ("1.6 GB, Hebrew-optimised"). */
 const OPTIN_TIER = 'voice-hebrew' as const;
 const TIER_SETTINGS: readonly TierSetting[] = ['auto', ...MODEL_TIERS];
 
@@ -229,7 +229,11 @@ export function ChooseAi({ onDone, onBack, embedded = false }: ChooseAiProps) {
   const finish = useCallback(async () => {
     if (optIn) {
       const enabled = await api.setSettings({ voice: { enabled: true, tier: OPTIN_TIER } });
-      if (!enabled.ok) await api.setSettings({ voice: { tier: OPTIN_TIER } });
+      if (!enabled.ok) {
+        // ux-i18n-v2-4: main refuses enabled=true until the files are ready; App turns it on once they are.
+        await api.setSettings({ voice: { tier: OPTIN_TIER } });
+        useSettingsStore.getState().setVoiceIntent(OPTIN_TIER);
+      }
       await api.startDownload(OPTIN_TIER);
     }
     onDone();

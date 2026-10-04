@@ -117,8 +117,17 @@ Status: `todo` · `doing` · `review` · `done` · `blocked`. Details in `ops/ti
 
 | ID | Title | Owner | Status |
 |---|---|---|---|
-| T-700 | Repair the 13 v2 e2e product defects + voice-model URL pinning + fake calendar control | 4 repair agents | todo |
-| T-701 | Re-verify incl. full e2e | agent | todo |
-| T-702 | Adversarial v2 review (6 lenses) + skeptic verification | agents | todo |
-| T-703 | Fix confirmed findings | agents | todo |
-| T-704 | v2 acceptance vs the v2 request + original request | agent + orchestrator | todo |
+| T-700 | Repair the 13 v2 e2e product defects + voice-model URL pinning + fake calendar control | 4 repair agents | done |
+| T-701 | Re-verify incl. full e2e | agent | done |
+| T-702 | Adversarial v2 review (6 lenses) + skeptic verification | agents | done |
+| T-703 | Fix confirmed findings | agents | done |
+| T-704 | v2 acceptance vs the v2 request + original request | agent + orchestrator | done — NOT ACCEPTED YET (see PROGRESS 65) |
+
+## Phase 8 — signing readiness + Defender gate (after workflow ⑦)
+
+| ID | Title | Owner | Status |
+|---|---|---|---|
+| T-800 | Inactive, env-driven Windows signing pipeline (all PE files incl. installer/uninstaller and bundled exes/DLLs) | agent | todo |
+| T-801 | Post-signing hash re-pinning for bundled executables (launcher pins stay correct when signing is on) | agent | todo |
+| T-802 | Microsoft Defender scan gate on the packaged tree + installer; false-positive submission guide | agent | todo |
+| T-803 | README: licence, Smart App Control / signing / Defender section; package.json license MIT | orchestrator | todo |

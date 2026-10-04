@@ -9,7 +9,7 @@ import { useHealthStore } from '../../store/health';
 import { useSettingsStore } from '../../store/settings';
 import { CLOUD_PICTURE_PROVIDERS, Pictures, vendorKeyOf } from './Pictures';
 
-const MMPROJ_BYTES = 985_654_080; // 0.9 GB with the v1 size rule
+const MMPROJ_BYTES = 985_654_080; // 0.99 GB with the F24 size rule
 const plan = (status: 'none' | 'ready' | 'failed' | 'downloading' | null): Partial<ModelPlan> => ({
   mmproj:
     status === null
@@ -41,7 +41,7 @@ describe('Pictures', () => {
     withPlan(plan('none'));
     render(<Pictures />);
     expect(screen.queryByTestId('settings-images-cloud')).not.toBeInTheDocument();
-    await waitFor(() => expect(screen.getByTestId('settings-row-images-local')).toHaveTextContent('0.9 GB'));
+    await waitFor(() => expect(screen.getByTestId('settings-row-images-local')).toHaveTextContent('0.99 GB'));
     expect(screen.getByTestId('settings-images-local-status')).toHaveTextContent('not downloaded');
     expect(invokeMocks['model:startDownload']).not.toHaveBeenCalled();
     await userEvent.click(screen.getByTestId('settings-images-download'));

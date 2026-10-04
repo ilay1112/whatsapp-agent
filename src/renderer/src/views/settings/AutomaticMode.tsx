@@ -72,6 +72,10 @@ export function AutomaticMode({ state, onOpenActivity }: AutomaticModeProps) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<ErrorCode | null>(null);
   const [rateLimited, setRateLimited] = useState(false);
+  // ux-i18n-v2-2: main answers BAD_REQUEST for several refusals (C2 8: the 3/h bucket, a provider that cannot run
+  // automatic mode, a changed snapshot on Resume / "Turn on for real", an expired policy, a trial with < 3 decisions).
+  // The refusal is remembered WITH the policy state it was given for, so it disappears once the state moves on.
+  const [refused, setRefused] = useState<{ reason: 'provider' | 'restart'; forState: string } | null>(null);
   const [now] = useState(() => Date.now());
 
   useEffect(() => {
@@ -87,6 +91,7 @@ export function AutomaticMode({ state, onOpenActivity }: AutomaticModeProps) {
   const policy = state.policy;
   const live = isLive(state);
   const scope: AutoScope = live && policy ? policy.scope : draft;
+  const stateKey = policy?.state ?? 'none';
   const precondition = firstPrecondition(state, rateLimited);
   const tally = state.shadowTally;
   const shadowReady = (tally?.decisions ?? 0) >= LIMITS.autoMinShadowDecisions;
@@ -96,6 +101,7 @@ export function AutomaticMode({ state, onOpenActivity }: AutomaticModeProps) {
     if (r.ok) {
       useAutoStore.getState().setState(r.value);
       setError(null);
+      setRefused(null);
     } else {
       setError(r.error.code);
     }
@@ -104,22 +110,40 @@ export function AutomaticMode({ state, onOpenActivity }: AutomaticModeProps) {
   const enable = async (e: MouseEvent, trial: boolean) => {
     if (guarded(e) || waiting) return;
     setError(null);
+    setRefused(null);
     setWaiting(true);
     const r = await api.requestAutoEnable({ scope, trial });
     setWaiting(false);
-    if (!r.ok && r.error.code === 'BAD_REQUEST') setRateLimited(true);
+    if (!r.ok && r.error.code === 'BAD_REQUEST') {
+      // The enable buttons stay clickable with a provider that cannot run automatic mode (UX2 4.5) and main refuses it
+      // with BAD_REQUEST: that is NOT the rate limit. With the provider allowed (and no live policy - the buttons are
+      // not shown then) the remaining BAD_REQUEST is the 3/h dialog bucket. Either way the state is re-read from main.
+      if (!state.preconditions.providerAllowsAuto) setRefused({ reason: 'provider', forState: stateKey });
+      else setRateLimited(true);
+      void useAutoStore.getState().hydrate();
+      return;
+    }
     apply(r);
   };
 
-  const run = async (call: () => ReturnType<typeof api.getAutoState>) => {
+  /** `restartOnRefusal`: a BAD_REQUEST from Resume / "Turn on for real" means the policy cannot continue as it is. */
+  const run = async (call: () => ReturnType<typeof api.getAutoState>, restartOnRefusal = false) => {
     setBusy(true);
+    setRefused(null);
     const r = await call();
     setBusy(false);
+    if (!r.ok && r.error.code === 'BAD_REQUEST') {
+      // Never swallowed (ux-i18n-v2-2): said together with the action that works - Stop, then turn it on again. A
+      // BAD_REQUEST from Pause only means the page was behind main; the re-read below corrects it.
+      if (restartOnRefusal) setRefused({ reason: 'restart', forState: stateKey });
+      setError(null);
+      void useAutoStore.getState().hydrate();
+      return;
+    }
     apply(r);
   };
 
   // ---- the state card: one line + its actions -----------------------------------------------------------------------
-  const stateKey = policy?.state ?? 'none';
   const stateLine = (() => {
     switch (policy?.state) {
       case 'expired':
@@ -196,7 +220,7 @@ export function AutomaticMode({ state, onOpenActivity }: AutomaticModeProps) {
                 disabled={busy}
                 onClick={(e) => {
                   if (guarded(e)) return;
-                  void run(() => api.endAutoShadow());
+                  void run(() => api.endAutoShadow(), true);
                 }}
               >
                 {t('auto.endShadow')}
@@ -230,7 +254,7 @@ export function AutomaticMode({ state, onOpenActivity }: AutomaticModeProps) {
               disabled={busy}
               onClick={(e) => {
                 if (guarded(e)) return;
-                void run(() => api.resumeAuto());
+                void run(() => api.resumeAuto(), true);
               }}
             >
               {t('auto.resume')}
@@ -393,7 +417,9 @@ export function AutomaticMode({ state, onOpenActivity }: AutomaticModeProps) {
         </p>
       ) : null}
 
-      {!live && policy?.state !== 'expired' ? (
+      {/* ux-i18n-v2-3: an expired policy whose Renew is hidden by a precondition still says why. Its Renew lives in the
+          state card, so the enable pair below is only for a page without an ended policy. */}
+      {!live ? (
         precondition !== null ? (
           <p
             className="m-0 flex flex-wrap items-center gap-2"
@@ -413,7 +439,7 @@ export function AutomaticMode({ state, onOpenActivity }: AutomaticModeProps) {
               </button>
             ) : null}
           </p>
-        ) : (
+        ) : policy?.state === 'expired' ? null : (
           <div className="flex flex-wrap items-center justify-end gap-2">
             <button
               type="button"
@@ -441,6 +467,16 @@ export function AutomaticMode({ state, onOpenActivity }: AutomaticModeProps) {
         <p className="m-0 text-sm" role="status" data-testid="auto-waiting-dialog">
           {t('auto.waitingDialog')}
         </p>
+      ) : null}
+      {refused !== null && refused.forState === stateKey ? (
+        <div
+          role="alert"
+          className="rounded-sm bg-warn-soft p-2"
+          data-testid="auto-refused"
+          data-reason={refused.reason}
+        >
+          <p className="m-0">{t(`auto.refused.${refused.reason}`)}</p>
+        </div>
       ) : null}
       {error && error !== 'BAD_REQUEST' ? (
         <div role="alert" className="rounded-sm bg-warn-soft p-2" data-testid="auto-error" data-code={error}>

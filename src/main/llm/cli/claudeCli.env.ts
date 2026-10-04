@@ -57,20 +57,57 @@ export function buildClaudeEnv(input: {
   return env;
 }
 
-/** Probe env for `agy --version` / `agy -p /usage` (AGY_ENV_KEYS; real profile: a probe reads no config). V2-W1-09 owns the run env. */
+/** Folder names under <userData> (paths.ts owns the absolute paths; these match AppPaths.agyWorkspaceDir and the runner's run dirs).
+ *  Defined here (re-exported by antigravityCli.ts) so locator.ts can build the isolated probe profile without an import cycle. */
+export const AGY_WORKSPACE_DIR = 'agy-workspace';
+export const AGY_HOME_DIR = 'agy-home';
+/** The four profile vars of the isolated agy profile. */
+export type AgyHomeEnv = Record<'USERPROFILE' | 'HOME' | 'APPDATA' | 'LOCALAPPDATA', string>;
+
+/** [F3] Isolated profile (default): creates <userData>\agy-home\ with ONLY .gemini\antigravity-cli\settings.json = {trustedWorkspaces:[workspaceDir]}
+ *  (app-written, idempotent) and returns the env overrides (USERPROFILE, HOME, and APPDATA/LOCALAPPDATA per U-A7). Nothing of the user's profile is read. */
+export function planAgyHome(
+  userDataDir: string,
+  workspaceDir: string,
+): { homeDir: string; files: Array<{ path: string; text: string }>; env: AgyHomeEnv } {
+  const homeDir = path.win32.join(userDataDir, AGY_HOME_DIR);
+  return {
+    homeDir,
+    files: [
+      {
+        path: path.win32.join(homeDir, '.gemini', 'antigravity-cli', 'settings.json'),
+        text: `${JSON.stringify({ trustedWorkspaces: [workspaceDir] }, null, 2)}\n`,
+      },
+    ],
+    // U-A7 (M-AGY-1): APPDATA / LOCALAPPDATA point under the app-owned home as well, so no user-level agy/Gemini state is found there
+    // either. The sign-in lives in Windows Credential Manager and is expected to survive the redirect (UNVERIFIED until M-AGY-1).
+    env: {
+      USERPROFILE: homeDir,
+      HOME: homeDir,
+      APPDATA: path.win32.join(homeDir, 'AppData', 'Roaming'),
+      LOCALAPPDATA: path.win32.join(homeDir, 'AppData', 'Local'),
+    },
+  };
+}
+
+/**
+ * Probe env for `agy --version` / `agy -p /usage` (AGY_ENV_KEYS). [cli-sandbox-3] The profile vars come ONLY from `home`
+ * (planAgyHome().env - the isolated <userData>\agy-home profile, F3/B14/I6'): the global ~/.gemini mcp_config.json / hooks.json load in
+ * EVERY agy run (research v2-gemini-cli-backend), a probe included, so a probe never sees the user's real profile. V2-W1-09 owns the run env.
+ */
 export function buildAgyProbeEnv(
   processEnv: Readonly<Record<string, string | undefined>>,
   tempDir: string,
+  home: Readonly<AgyHomeEnv>,
 ): Record<string, string> {
   const sysRoot = systemRootOf(processEnv);
-  const home = envValue(processEnv, 'USERPROFILE');
   return {
     SystemRoot: sysRoot,
     PATH: path.win32.join(sysRoot, 'System32'),
-    USERPROFILE: home,
-    HOME: home,
-    APPDATA: envValue(processEnv, 'APPDATA'),
-    LOCALAPPDATA: envValue(processEnv, 'LOCALAPPDATA'),
+    USERPROFILE: home.USERPROFILE,
+    HOME: home.HOME,
+    APPDATA: home.APPDATA,
+    LOCALAPPDATA: home.LOCALAPPDATA,
     TEMP: tempDir,
     TMP: tempDir,
     AGY_CLI_DISABLE_AUTO_UPDATE: 'true',

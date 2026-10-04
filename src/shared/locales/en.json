@@ -767,7 +767,8 @@
         "off": "Pictures: off"
       },
       "auto": {
-        "on": "Automatic mode: on - ends in {{count}} days",
+        "on_one": "Automatic mode: on - ends in {{count}} day",
+        "on_other": "Automatic mode: on - ends in {{count}} days",
         "shadow": "Automatic mode: trial - {{seen}} of 3 seen",
         "paused": "Automatic mode: paused - {{reason}}",
         "off": "Automatic mode: off"
@@ -1443,7 +1444,8 @@
       "paused": "Automatic mode is paused - {{reason}}.",
       "trialEarly": "Automatic mode - trial: {{seen}} of 3 decisions seen so far.",
       "trialReady": "Automatic mode - trial: {{wouldAdd}} would have been added, {{wouldChange}} changed.",
-      "expiring": "Automatic mode ends in {{count}} days.",
+      "expiring_one": "Automatic mode ends in {{count}} day.",
+      "expiring_other": "Automatic mode ends in {{count}} days.",
       "expired": "Automatic mode ended on <bdi>{{date}}</bdi>. Events wait for your approval again.",
       "review": "Review",
       "trialReadyTotal": "Automatic mode - trial: {{wouldAuto}} would have been done automatically."
@@ -1650,6 +1652,10 @@
       "rate": "Try again in an hour.",
       "providerWarning": "With Gemini - your subscription (experimental) nothing will happen automatically; every event will wait for you."
     },
+    "refused": {
+      "provider": "Not turned on - automatic mode does not work with the AI you chose. Choose another AI under 'AI engine' first.",
+      "restart": "Not changed - automatic mode cannot continue as it is. Stop it, then turn it on again."
+    },
     "notAutomatic": "Not automatic: {{reason}}",
     "reason": {
       "no_policy": "automatic mode is off",
@@ -1708,6 +1714,10 @@
       "message": "Events will be added to and changed in '{{calendar}}' without asking you first.",
       "ends": "Ends on {{date}}.",
       "checkbox": "I understand events can be added or moved without asking me",
+      "checkboxCancels": "I understand events can be added, moved or cancelled without asking me",
+      "cancels": "also cancels events when the contact asks - Undo brings them back",
+      "anyHour": "at any hour, also at night - quiet hours are off",
+      "quietCustom": "quiet hours only {{from}}-{{to}}",
       "cancel": "Cancel",
       "trial": "Start a 24-hour trial",
       "now": "Turn on now",

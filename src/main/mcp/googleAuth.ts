@@ -55,6 +55,9 @@ export interface GoogleAuthExtras {
   /** B7: every successful list-calendars persists {[calendarId]: accessRole} to meta.calendar_roles_json (absent = not owned).
    *  compose.ts wires it to repos.meta.set('calendar_roles_json', JSON.stringify(roles)). */
   persistCalendarRoles?: (roles: Readonly<Record<string, CalendarAccessRole>>) => void;
+  /** [V2] B7 / auto-mode-6: every account answer (a manage-accounts list, or null on disconnect) so the automatic-mode snapshot
+   *  stays bound to the signed-in account across restarts. compose.ts stores only a short hash of it in meta, never the e-mail. */
+  persistAccount?: (email: string | null) => void;
 }
 
 // ---------------------------------------------------------------------------------------------------------------------
@@ -205,12 +208,22 @@ export function createGoogleAuth(deps: GoogleAuthDeps & GoogleAuthExtras): Googl
     }
   };
 
+  /** [V2] auto-mode-6: a persistence failure never breaks the wizard (the snapshot then falls back to unknown or the old value). */
+  const setAccount = (email: string | null): void => {
+    accountEmail = email;
+    try {
+      deps.persistAccount?.(email);
+    } catch {
+      deps.log.warn('google.account_persist_failed', {});
+    }
+  };
+
   const pollAccount = async (): Promise<'active' | 'waiting' | McpErrorKind> => {
     const res = await deps.admin.manageAccounts('list');
     if (!res.ok) return res.error;
     if (res.value.action !== 'list') return 'bad_response';
     const personal = res.value.accounts.find((a) => a.accountId === 'personal');
-    accountEmail = personal?.email ?? null;
+    setAccount(personal?.email ?? null);
     return personal !== undefined && personal.status === 'active' ? 'active' : 'waiting';
   };
 
@@ -297,7 +310,7 @@ export function createGoogleAuth(deps: GoogleAuthDeps & GoogleAuthExtras): Googl
       } catch {
         deps.log.warn('google.tokens_unlink_failed', {});
       }
-      accountEmail = null;
+      setAccount(null);
       credentialsProblem = null;
       deps.audit('settings_changed', null, { what: 'google_disconnect', accepted: true }, deps.clock.now());
       return succeed();

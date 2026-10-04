@@ -25,7 +25,7 @@ import {
   isGoogleAuthUrl,
   validateCredentialsJson,
 } from './googleAuth';
-import type { GoogleAuthDeps } from './googleAuth';
+import type { GoogleAuthDeps, GoogleAuthExtras } from './googleAuth';
 import type { McpAdminClient } from './adminClient';
 import type { FakeCalendarOptions } from '../../../tests/fakes/fake-mcp-calendar';
 import type { AuditEntry, AuditKind, CredentialsProblem, EpochMs, GoogleWizardState } from '../../shared/types';
@@ -184,7 +184,10 @@ interface Harness {
   stop: () => Promise<void>;
 }
 
-async function harness(opts: FakeCalendarOptions = {}, overrides: Partial<GoogleAuthDeps> = {}): Promise<Harness> {
+async function harness(
+  opts: FakeCalendarOptions = {},
+  overrides: Partial<GoogleAuthDeps & GoogleAuthExtras> = {},
+): Promise<Harness> {
   const fake = createFakeMcpCalendar(opts);
   await fake.connect();
   const writes: Array<{ path: string; text: string }> = [];
@@ -634,6 +637,45 @@ describe('status, disconnect, listCalendars and change events', () => {
       { fs: { writeFile: async () => undefined, unlink: async () => undefined, exists: () => true } },
     );
     expect(h.auth.wizardState().hasCredentials).toBe(true);
+    await h.stop();
+  });
+});
+
+// [V2] auto-mode-6 (B7): the account an automatic-mode policy is bound to must survive a restart, so every account answer
+// is handed to the composition root (which stores only a short hash of it) and disconnect clears it.
+describe('[V2] B7 account persistence (auto-mode-6)', () => {
+  it('hands every polled account to persistAccount and clears it on disconnect', async () => {
+    const seen: Array<string | null> = [];
+    const h = await harness({}, { persistAccount: (email) => seen.push(email) });
+    await h.auth.importCredentials(good());
+    await h.auth.status();
+    expect(seen.at(-1)).toBe('user@example.test');
+    await h.auth.disconnect();
+    expect(seen.at(-1)).toBeNull();
+    await h.stop();
+  });
+
+  it('persists the account a sign-in ends with', async () => {
+    const seen: Array<string | null> = [];
+    const h = await harness({}, { persistAccount: (email) => seen.push(email) });
+    await h.auth.importCredentials(good());
+    await expect(h.auth.startSignIn()).resolves.toMatchObject({ ok: true });
+    expect(seen.at(-1)).toBe('user@example.test');
+    await h.stop();
+  });
+
+  it('a persistence failure never breaks the wizard', async () => {
+    const h = await harness(
+      {},
+      {
+        persistAccount: () => {
+          throw new Error('disk full');
+        },
+      },
+    );
+    await h.auth.importCredentials(good());
+    await expect(h.auth.status()).resolves.toMatchObject({ accountEmail: 'user@example.test' });
+    await expect(h.auth.disconnect()).resolves.toMatchObject({ ok: true });
     await h.stop();
   });
 });

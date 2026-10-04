@@ -552,6 +552,35 @@ describe('V1 READ-IMAGE hand-off (P2 4)', () => {
     expect(p.event?.startLocal).toBe('2026-09-24T20:00:00');
   });
 
+  // [fix injection-v2-3] a read with digits but an EMPTY readText attaches no imageText (imageInWindow false), yet the picture's
+  // digits complete the slot: the proposal is picture-derived and must say so (trigger_kind image, the media_derived rail).
+  it('a slot completed only from the picture digits (readText empty) is trigger_kind image, not text', async () => {
+    const w = [msg(1, { text: 'hey', fromMe: true }), picture(2, '')];
+    openItem(w[1]!);
+    const llm = stub(
+      rules({
+        intent: 'schedule_request',
+        change: 'no_change',
+        refersToExisting: false,
+        dateKind: 'none',
+        time24h: '',
+      }),
+    );
+    await run(
+      build(w, llm, {
+        existingEvent: () => null,
+        pickImage: () => Promise.resolve(IMAGE),
+        readImage: read({ ok: true, read: { ...READ, readText: '' }, route: 'local', runId: 1 }),
+      }),
+    );
+    expect(userText(llm.calls[0]!.messages)).not.toContain('"imageText"');
+    const p = env.repos.proposals.current(item.id)!;
+    expect(p.event?.startLocal).toBe('2026-09-24T20:00:00'); // the date AND time came only from the picture
+    const fresh = env.repos.items.byId(item.id)!;
+    expect(fresh.badges).toContain('from_image');
+    expect(fresh.triggerKind).toBe('image');
+  });
+
   it('a failed read never blocks S1: image_unread, the text path still runs', async () => {
     const w = [picture(1, 'see attached')];
     openItem(w[0]!);
@@ -817,6 +846,18 @@ describe('pure helpers', () => {
     expect(triggerKindOfRun({ voiceInWindow: false, imageInWindow: true, imageTriggerUnread: false })).toBe('image');
     expect(triggerKindOfRun({ voiceInWindow: false, imageInWindow: false, imageTriggerUnread: true })).toBe('image');
     expect(triggerKindOfRun({ voiceInWindow: false, imageInWindow: false, imageTriggerUnread: false })).toBe('text');
+    // [fix injection-v2-3] picture digits that shaped the slot make the run media-derived even without picture text
+    expect(
+      triggerKindOfRun({
+        voiceInWindow: false,
+        imageInWindow: false,
+        imageTriggerUnread: false,
+        imageShapedSlot: true,
+      }),
+    ).toBe('image');
+    expect(
+      triggerKindOfRun({ voiceInWindow: true, imageInWindow: false, imageTriggerUnread: false, imageShapedSlot: true }),
+    ).toBe('voice');
   });
 
   it('draftDeltaOf maps every S2 outcome to the S3 view', () => {

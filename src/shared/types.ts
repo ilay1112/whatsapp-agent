@@ -271,8 +271,10 @@ export const META_KEYS = [
   'cli_last_version',
   'agy_last_version',
   'agy_workspace_trusted_at',
+  'google_account_sha8',
 ] as const; // [V2 CHANGE] + six keys (ARCH-v2 9.1). calendar_roles_json = {[calendarId]: CalendarAccessRole} from the last list-calendars;
 //             cli_exe_paths_json = {claude_cli?: string, antigravity_cli?: string} recorded at provider start (reaper B31); never sent to the renderer.
+// [v2-fix auto-mode-6] google_account_sha8 = googleAccountEmailSha8 of the last account answer ('' = none); binds auto_policies.snapshot_sha across restarts.
 // [R2] last_online_ts: written on every ONLINE -> not-ONLINE transition and every clean quit (backlog gate, ARCH 4.6)
 export type MetaKey = (typeof META_KEYS)[number];
 // [R2] paired_at (and live_from_ts = paired_at - settings.whatsapp.backlogHours) is (re)set on EVERY NEEDS_PAIRING -> ONLINE transition that followed a QR
@@ -879,7 +881,7 @@ export interface TranscriptRecord {
   errorCode: import('./errors').ErrorCode | null;
   createdAt: EpochMs;
 }
-/** Row of media_cache (B19). File = <userData>\media-cache\<sha256(chatJid|waMsgId)>.jpg (+ .thumb.jpg). */
+/** Row of media_cache (B19). File = <userData>\media-cache\<sha256(waMsgId|sha256)>.jpg (+ .thumb.jpg) - media/mediaCache.ts mediaCacheFileNames. */
 export interface MediaCacheRecord {
   itemId: ItemId | null;
   chatId: ChatRef;

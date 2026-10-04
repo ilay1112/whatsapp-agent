@@ -112,6 +112,9 @@ export interface SettingsHandlersV2 {
 export interface LlmHandlersV2 {
   cliStatus: Pick<import('../llm/cli/locator').CliStatusService, 'get'>;
   listAgyModels: () => Promise<string[]>;
+  /** [v2-repair REQUEST 13, additive] the cli:test smoke, run by llm:setProvider when the provider has no passed test within 24 h
+   *  (UX2 7.1: "While main runs the provider-start smoke: Checking..."). Absent => the old refusal (CLI_UNSTABLE). */
+  runCliTest?: (provider: import('../../shared/types').CliProviderId) => Promise<Result<unknown>>;
 }
 /** data:purgeNow additionally disables a live automatic policy (`disabled_reason 'purge'`, C2 16.1) and wipes the v2 dirs. */
 export interface DataHandlersV2 {

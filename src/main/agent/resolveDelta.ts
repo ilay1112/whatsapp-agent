@@ -78,9 +78,15 @@ const HE_WEEKDAYS: ReadonlyArray<readonly [RegExp, number]> = [
   [heWeekday('שבת', false), 6], // שבת
 ];
 
+/** [fix editing-undo-6] The Friday greeting "שבת שלום" (optionally "ושבת שלום") names no day; it is blanked before the weekday scan.
+ *  "בשבת" / "מוצאי שבת" etc. stay weekday words (they can name the day a change lands on). */
+const HE_SHABBAT_GREETING_RE = new RegExp(
+  `(^|[^\\u05D0-\\u05EA])\\u05D5?\\u05E9\\u05D1\\u05EA\\s+\\u05E9\\u05DC\\u05D5\\u05DD${HE_EDGE_R}`, // [ו]שבת שלום
+  'gu',
+);
 /** Weekday indices (0 = Sunday) named by a he/en weekday word in the text. Exported for the unit table. */
 export function namedWeekdays(text: string): Set<number> {
-  const clean = sanitizeForModel(text).text.normalize('NFKC');
+  const clean = sanitizeForModel(text).text.normalize('NFKC').replace(HE_SHABBAT_GREETING_RE, '$1 ');
   const out = new Set<number>();
   for (const [re, day] of [...EN_WEEKDAYS, ...HE_WEEKDAYS]) if (re.test(clean)) out.add(day);
   return out;
@@ -286,7 +292,13 @@ export function resolveDeltaOutcome(
     if (kind === 'cancel') {
       // R8: a cancel that names a DIFFERENT slot is a reschedule ("the model said cancel, the text says move"); a slot equal to the
       // event's own start (or none) only names the event being called off ("can't make it tomorrow").
-      const named = x.dateKind !== 'none' || x.time24h !== '' ? newSlot(x, existing, wctx, opts.image) : null;
+      // [fix editing-undo-7] the bare weekday of the event itself ("cancel Wednesday", weekOffset 0) names the event wherever it is:
+      // resolveWhen's "the coming one, today counts" would land on THIS week's day and turn a cancel of an event a week or more ahead
+      // into a reschedule. Its date is the event's own date; only a different time can still make it a new slot.
+      const namesEventDay =
+        x.dateKind === 'weekday' && x.weekOffset === 0 && x.weekday === weekdayOfDate(from.startLocal.slice(0, 10));
+      const xr: Extraction = namesEventDay ? { ...x, dateKind: 'none' } : x;
+      const named = xr.dateKind !== 'none' || xr.time24h !== '' ? newSlot(xr, existing, wctx, opts.image) : null;
       if (named !== null && named.ok && named.startLocal !== from.startLocal) {
         kind = 'reschedule';
         slot = named;
@@ -313,9 +325,12 @@ export function resolveDeltaOutcome(
   }
 
   // R10: a weekday word that contradicts the day the change lands on (reschedule) or the event's own day (cancel).
+  // [fix editing-undo-6] in a reschedule the event's CURRENT day ("move Wednesday's meeting to tomorrow") identifies the event and
+  // contradicts nothing: only the other named days are checked against the new day.
   if (kind === 'reschedule' || kind === 'cancel') {
     const named = namedWeekdays(rawTriggerText);
     const target = weekdayOfDate((kind === 'cancel' ? from : to).startLocal.slice(0, 10));
+    if (kind === 'reschedule') named.delete(weekdayOfDate(from.startLocal.slice(0, 10)));
     if (named.size > 0 && !named.has(target)) return { path: 'unclear', why: 'weekday_mismatch' };
   }
   // R11: sanity of the NEW slot (a cancel / move keeps the event's own slot, which may already have started within the grace window).

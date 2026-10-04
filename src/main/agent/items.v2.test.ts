@@ -698,6 +698,106 @@ describe('ItemService v2 view models', () => {
     }
   });
 
+  // -------------------------------------------------------------------------------------------------------------------
+  // [fix data-integrity-v4-7] ARCHITECTURE-v2 9.3 / B19: Dismiss and "Never analyse" null the derived media text AT ONCE
+  // -------------------------------------------------------------------------------------------------------------------
+  describe('Dismiss / "Never analyse" delete media-derived data at once (9.3)', () => {
+    const transcript = (waMsgId: string, text = 'SENTINEL_TRANSCRIPT') => ({
+      chatJid: chat.jid,
+      waMsgId,
+      status: 'done' as const,
+      text,
+      language: 'he',
+      seconds: 3,
+      modelLabel: 'hebrew',
+      errorCode: null,
+      createdAt: ANCHOR_MS,
+    });
+    /** A voice item with a snapshot row, its transcript and a proposal carrying delta_json + image_json. */
+    const mediaItem = (waMsgId: string, closed = false): Item => {
+      const a = seedItem({ eventState: 'proposed', triggerKind: 'voice' }, waMsgId);
+      env.repos.items.snapshotMessages(a.id, [
+        { itemId: a.id, waMsgId, fromMe: false, ts: ANCHOR_MS, text: '', textSha256: 'e'.repeat(64) },
+      ]);
+      env.repos.transcripts.upsert(transcript(waMsgId));
+      env.repos.proposals.insertNext({
+        itemId: a.id,
+        provider: 'local',
+        model: 'stub',
+        extraction: null,
+        draftText: 'draft',
+        replyLang: 'he',
+        event: null,
+        freeBusy: null,
+        suspicious: false,
+        createdAt: ANCHOR_MS,
+        delta: DELTA,
+        imageRead: IMAGE_READ,
+      });
+      if (closed) env.repos.items.update(a.id, { closedReason: 'dismissed' }, ANCHOR_MS);
+      return env.repos.items.byId(a.id)!;
+    };
+    const mediaRow = (itemId: number | null, waMsgId: string) => ({
+      itemId,
+      chatId: chat.id,
+      waMsgId,
+      sha256: 'b'.repeat(64),
+      width: 1,
+      height: 1,
+      bytes: 1,
+      createdAt: ANCHOR_MS,
+    });
+    const rawProposal = (itemId: number): { delta_json: string | null; image_json: string | null } =>
+      env.repos.db
+        .prepare<{ delta_json: string | null; image_json: string | null }>(
+          `SELECT delta_json, image_json FROM proposals WHERE item_id = ? ORDER BY version DESC LIMIT 1`,
+        )
+        .get(itemId)!;
+
+    it('Dismiss nulls the transcripts of the item and the delta_json / image_json of its proposals', () => {
+      const other = mediaItem('wamid.KEEP1', true); // another (closed) item of the same chat is untouched
+      const a = mediaItem('wamid.DISMISS1');
+      expect(rawProposal(a.id).delta_json).not.toBeNull();
+      expect(service.dismiss(a.id).ok).toBe(true);
+      expect(env.repos.transcripts.get(chat.jid, 'wamid.DISMISS1')?.text).toBeNull();
+      expect(rawProposal(a.id)).toEqual({ delta_json: null, image_json: null });
+      expect(env.repos.transcripts.get(chat.jid, 'wamid.KEEP1')?.text).toBe('SENTINEL_TRANSCRIPT');
+      expect(rawProposal(other.id).image_json).not.toBeNull();
+    });
+
+    it('"Never analyse" nulls every transcript and delta/image JSON of the chat and deletes its cached pictures', () => {
+      const a = mediaItem('wamid.NEVER1', true);
+      const b = mediaItem('wamid.NEVER2');
+      env.repos.mediaCache.upsert(mediaRow(a.id, 'wamid.NEVER1'));
+      env.repos.mediaCache.upsert(mediaRow(b.id, 'wamid.NEVER2'));
+      const otherChat = seedChat(env.repos, { jid: '972550000077@s.whatsapp.net' });
+      env.repos.transcripts.upsert({ ...transcript('wamid.OTHER'), chatJid: otherChat.jid });
+      const deleteForItem = vi.fn((id: number) => env.repos.mediaCache.deleteForItem(id).length);
+      const svc = build({ mediaCache: { thumb: () => null, dataUrl: () => null, deleteForItem } });
+
+      const res = svc.setChatPolicy({ chatRef: chat.id, policy: 'never' });
+      expect(res.ok && res.value.policy).toBe('never');
+      for (const id of ['wamid.NEVER1', 'wamid.NEVER2'])
+        expect(env.repos.transcripts.get(chat.jid, id)?.text).toBeNull();
+      for (const it of [a, b]) expect(rawProposal(it.id)).toEqual({ delta_json: null, image_json: null });
+      expect(deleteForItem.mock.calls.map((c) => c[0]).sort()).toEqual([a.id, b.id].sort());
+      expect(env.repos.mediaCache.forItem(a.id)).toEqual([]);
+      expect(env.repos.mediaCache.forItem(b.id)).toEqual([]);
+      expect(env.repos.transcripts.get(otherChat.jid, 'wamid.OTHER')?.text).toBe('SENTINEL_TRANSCRIPT');
+    });
+
+    it('any other policy deletes nothing', () => {
+      const a = mediaItem('wamid.DEFAULT1');
+      const deleteForItem = vi.fn(() => 0);
+      const svc = build({ mediaCache: { thumb: () => null, dataUrl: () => null, deleteForItem } });
+      svc.setChatPolicy({ chatRef: chat.id, policy: 'default' });
+      svc.setChatPolicy({ chatRef: chat.id, autoPolicy: 'never' }); // "Never automatic" is not "Never analyse"
+      expect(env.repos.transcripts.get(chat.jid, 'wamid.DEFAULT1')?.text).toBe('SENTINEL_TRANSCRIPT');
+      expect(rawProposal(a.id).delta_json).not.toBeNull();
+      expect(deleteForItem).not.toHaveBeenCalled();
+    });
+  });
+
   it('chat:setPolicy {autoPolicy} stores "never" / "inherit" and lists the chat', () => {
     const never = service.setChatPolicy({ chatRef: chat.id, autoPolicy: 'never' });
     expect(never.ok && never.value.autoPolicy).toBe('never');

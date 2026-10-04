@@ -12,7 +12,17 @@ function errorCodeOrNull(lastError: string | undefined): string | null {
   return lastError !== undefined && (ERROR_CODES as readonly string[]).includes(lastError) ? lastError : null;
 }
 
-export function createQueueRepo(db: Db): QueueRepo {
+/** [v2-repair] The e2e `WCA_TIMERS` seam (delays only, testSeams.ts); production passes nothing and keeps LIMITS exactly. */
+export interface QueueTimers {
+  debounceMs?: number;
+  debounceCapMs?: number;
+}
+const positiveOr = (v: number | undefined, fallback: number): number =>
+  typeof v === 'number' && Number.isFinite(v) && v > 0 ? v : fallback;
+
+export function createQueueRepo(db: Db, timers?: QueueTimers): QueueRepo {
+  const debounceMs = positiveOr(timers?.debounceMs, LIMITS.debounceMs);
+  const debounceCapMs = positiveOr(timers?.debounceCapMs, LIMITS.debounceCapMs);
   return {
     /** Debounce: due = min(now + 20 s, first_enqueued_at + 60 s) - a chatty conversation still gets triaged within a minute. */
     enqueue(chatId, now) {
@@ -23,12 +33,12 @@ export function createQueueRepo(db: Db): QueueRepo {
         if (!existing) {
           db.prepare(`INSERT INTO triage_queue(chat_id, due_at, first_enqueued_at, attempts) VALUES (?, ?, ?, 0)`).run(
             chatId,
-            now + LIMITS.debounceMs,
+            now + debounceMs,
             now,
           );
           return;
         }
-        const due = Math.min(now + LIMITS.debounceMs, existing.first_enqueued_at + LIMITS.debounceCapMs);
+        const due = Math.min(now + debounceMs, existing.first_enqueued_at + debounceCapMs);
         // `rev` is bumped on every re-arm so the worker's `remove(chatId, rev)` can tell "the row I dequeued" from
         // "a row a newer message re-armed under me". `due_at` cannot serve: under the 60 s cap it re-computes to the
         // SAME value the worker dequeued, and `first_enqueued_at` deliberately does not move here.

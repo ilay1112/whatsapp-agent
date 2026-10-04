@@ -153,13 +153,18 @@ import { createLocalProvider, DEFAULT_LOCAL_SAMPLING } from './llm/local';
 import { createLlamaRuntime, type LlamaRuntime } from './llm/local/llamaServer';
 import { createSupervisedLlama } from './llm/local/supervised';
 import { createModelManager, type ModelManager } from './llm/local/download';
-import { MODEL_MANIFEST } from './llm/local/manifest';
+import {
+  MEDIA_MODEL_MANIFEST,
+  MODEL_MANIFEST,
+  type MediaModelManifestEntry,
+  type ModelManifestEntry,
+} from './llm/local/manifest';
 import { pickTier, preferredDeviceArg, probeHardware } from './llm/local/hardware';
 import { runDualSelfTest } from './llm/local/selfTest';
 import type { LlmProvider } from './llm/types';
 
 import { createToolGate } from './agent/toolGate';
-import { createStage0, releaseHeldItems } from './agent/stage0';
+import { createStage0, releaseHeldItems, releaseQuotaHeldItems } from './agent/stage0';
 import { createTriageQueue, type TriageQueue } from './agent/queue';
 import { createOrchestrator } from './agent/orchestrator';
 import { createItemService, type ItemService } from './agent/items';
@@ -200,7 +205,13 @@ import { createJobRunner, type JobRunner } from './proc/jobRunner';
 import { createCliRunner } from './llm/cli/runner';
 import { createCliLocator, createCliStatus, seamArgsPrefix, type CliSeam } from './llm/cli/locator';
 import { makeClaudeCliFactory } from './llm/cli/claudeCli';
-import { createAgyProvider, createAgyWorkspace, listAgyModels, makeAgyFactory } from './llm/cli/antigravityCli';
+import {
+  AGY_PROFILE_MODE,
+  createAgyProvider,
+  createAgyWorkspace,
+  listAgyModels,
+  makeAgyFactory,
+} from './llm/cli/antigravityCli';
 import { startToolServer } from './mcp/toolServer';
 import { parseCalendarRolesJson } from './mcp/adminClient';
 import { MMPROJ_FOR_TIER } from './llm/local/manifest';
@@ -383,6 +394,111 @@ export function supervisedCalendarHost(input: SupervisedCalendarHostInput): Goog
   };
 }
 
+/** [v2-repair REQUEST 11] The host every model file a test build does NOT get from WCA_MODEL_MANIFEST points at: loopback, discard port -
+ *  the connection is refused at once, nothing ever leaves the machine. */
+export const E2E_UNREACHABLE_MODEL_URL = 'http://127.0.0.1:9/wca-e2e-no-model-host/';
+
+// ---------------------------------------------------------------------------------------------------------------------
+// [V2] auto-mode-6 (B7): the automatic-mode snapshot is bound to the Google account it was granted under, ACROSS RESTARTS.
+// googleAuth's e-mail lives only in memory (null after every restart until a sign-in), so every account answer is also
+// persisted - as the 8-hex googleAccountEmailSha8, never the e-mail - in meta.google_account_sha8 ('' = no account).
+// ---------------------------------------------------------------------------------------------------------------------
+type AccountMeta = Pick<Repos['meta'], 'get' | 'set'>;
+const ACCOUNT_SHA8_RE = /^[0-9a-f]{8}$/;
+const googleAccountSha8 = (email: string): string =>
+  createHash('sha256').update(email.toLowerCase()).digest('hex').slice(0, 8);
+
+/** googleAuth's `persistAccount`: the account (or null on disconnect / no account) -> meta.google_account_sha8. */
+export function persistGoogleAccount(meta: Pick<Repos['meta'], 'set'>): (email: string | null) => void {
+  return (email) => meta.set('google_account_sha8', email === null ? '' : googleAccountSha8(email));
+}
+
+/** C2 5 AutoSnapshotInput -> auto_policies.snapshot_sha: a policy is bound to the calendar, the account, the provider and the
+ *  app major.minor it was granted under; any change => snapshot_changed (pause). The account is the wizard's live e-mail, else
+ *  the persisted one. An UNKNOWN account answers '' (not a sha256): autoPolicy refuses AUTO_CALENDAR_NOT_OWNED and AutoGate
+ *  never matches a stored snapshot - fail closed, never a hash of an empty account. */
+export function createAutoSnapshotSha(src: {
+  accountEmail: () => string | null;
+  meta: AccountMeta;
+  targetCalendarId: () => string;
+  provider: () => ProviderId;
+  appVersion: string;
+}): () => string {
+  return () => {
+    const email = src.accountEmail();
+    const persisted = src.meta.get('google_account_sha8');
+    const sha8 =
+      email !== null
+        ? googleAccountSha8(email)
+        : persisted !== null && ACCOUNT_SHA8_RE.test(persisted)
+          ? persisted
+          : '';
+    if (sha8 === '') return '';
+    const input: AutoSnapshotInput = {
+      targetCalendarId: src.targetCalendarId(),
+      googleAccountEmailSha8: sha8,
+      provider: src.provider(),
+      appMajorMinor: src.appVersion.split('.').slice(0, 2).join('.'),
+    };
+    return createHash('sha256').update(canonicalJson(input)).digest('hex');
+  };
+}
+
+/**
+ * [v2-repair REQUEST 11] The two manifests of a TEST build from the parsed WCA_MODEL_MANIFEST file (T2 4.1 "extended": keyed by
+ * ModelFileId - LLM tiers as full ModelManifestEntry objects, media ids as SeamModelEntry {tier,url,size,sha256,kind?,magic?}).
+ * An entry the file does not name keeps its pinned label / file name / size / sha256 but gets an unreachable loopback URL, so a test
+ * build can never fetch a real Hugging Face URL. Pure; compose() calls it only when seams !== null.
+ */
+export function e2eModelManifests(raw: unknown): {
+  llm: Record<keyof typeof MODEL_MANIFEST, ModelManifestEntry>;
+  media: Record<keyof typeof MEDIA_MODEL_MANIFEST, MediaModelManifestEntry>;
+} {
+  const file = typeof raw === 'object' && raw !== null && !Array.isArray(raw) ? (raw as Record<string, unknown>) : {};
+  const entryOf = (id: string): Record<string, unknown> | null => {
+    const e = file[id];
+    if (typeof e !== 'object' || e === null) return null;
+    const r = e as Record<string, unknown>;
+    return typeof r.url === 'string' && typeof r.size === 'number' && typeof r.sha256 === 'string' ? r : null;
+  };
+  const str = (v: unknown, fallback: string): string => (typeof v === 'string' && v.length > 0 ? v : fallback);
+  const llm = {} as Record<keyof typeof MODEL_MANIFEST, ModelManifestEntry>;
+  for (const tier of Object.keys(MODEL_MANIFEST) as Array<keyof typeof MODEL_MANIFEST>) {
+    const base = MODEL_MANIFEST[tier];
+    const e = entryOf(tier);
+    llm[tier] =
+      e === null
+        ? { ...base, url: E2E_UNREACHABLE_MODEL_URL + tier }
+        : {
+            tier,
+            label: str(e.label, base.label),
+            fileName: str(e.fileName, base.fileName),
+            url: e.url as string,
+            size: e.size as number,
+            sha256: e.sha256 as ModelManifestEntry['sha256'],
+          };
+  }
+  const media = {} as Record<keyof typeof MEDIA_MODEL_MANIFEST, MediaModelManifestEntry>;
+  for (const id of Object.keys(MEDIA_MODEL_MANIFEST) as Array<keyof typeof MEDIA_MODEL_MANIFEST>) {
+    const base = MEDIA_MODEL_MANIFEST[id];
+    const e = entryOf(id);
+    media[id] =
+      e === null
+        ? { ...base, url: E2E_UNREACHABLE_MODEL_URL + id }
+        : {
+            ...base,
+            label: str(e.label, base.label),
+            fileName: str(e.fileName, base.fileName),
+            url: e.url as string,
+            size: e.size as number,
+            sha256: e.sha256 as MediaModelManifestEntry['sha256'],
+            kind: e.kind === 'mmproj' || e.kind === 'asr' || e.kind === 'vad' ? e.kind : base.kind,
+            magic: e.magic === 'GGUF' || e.magic === 'GGML' ? e.magic : base.magic,
+          };
+  }
+  return { llm, media };
+}
+
 export async function compose(deps: ComposeDeps): Promise<AppRuntimeHandle> {
   const { paths, clock, random, spawn, fetch, electron, seams, isPackaged, version, execPath } = deps;
   const log = deps.logger;
@@ -458,7 +574,19 @@ export async function compose(deps: ComposeDeps): Promise<AppRuntimeHandle> {
 
   const opened = openDbWithRecovery(paths.appDb, paths.backupsDir, now);
   const db: Db = opened.db;
-  const repos = createRepos(db);
+  // [v2-repair REQUEST 1] the WCA_TIMERS debounce reaches the ONE place the triage debounce is computed (repos.queue.enqueue);
+  // production (seams === null) passes nothing and keeps LIMITS.debounceMs / debounceCapMs.
+  const repos = createRepos(
+    db,
+    seamTimers === undefined
+      ? undefined
+      : {
+          queueTimers: {
+            ...(seamTimers.debounceMs === undefined ? {} : { debounceMs: seamTimers.debounceMs }),
+            ...(seamTimers.debounceCapMs === undefined ? {} : { debounceCapMs: seamTimers.debounceCapMs }),
+          },
+        },
+  );
   const audit = (kind: AuditKind, ref: string | null, detail: AuditEntry['detail'], at: EpochMs): void => {
     repos.audit.append(kind, ref, detail, at);
   };
@@ -549,6 +677,8 @@ export async function compose(deps: ComposeDeps): Promise<AppRuntimeHandle> {
     windowRef.show();
     windowRef.focus();
   };
+  /** [v2-fix auto-mode-1] auto_writes ids whose toast Undo is running -> true once runUndo's notifyAuto('undo') toasted its result. */
+  const toastUndos = new Map<string, boolean>();
   const notifier: Notifier = createNotifier({
     electron,
     t: () => t,
@@ -559,16 +689,30 @@ export async function compose(deps: ComposeDeps): Promise<AppRuntimeHandle> {
       emit('navigate', { view: 'dashboard', ...(itemId === null ? {} : { itemId }) });
     },
     // ---- [V2] automatic-mode toasts: action 0 = Undo (main-only, approved_by 'user_toast'), action 1 = Show ----
+    // [v2-fix auto-mode-1] ONE truthful result toast per click. undoAuto answers ok:true for 'failed' / 'needs_confirm_*'
+    // outcomes too, so r.ok is never "undone". When runUndo reached its write it already toasted from auto_writes.undo_state
+    // (notifyAuto 'undo' below marks toastUndos); only a refusal before that (expired, started, changed, stale, a throw) is
+    // toasted here - and then only 'done' could ever say "undone".
     onUndo: (autoWriteId) => {
+      if (toastUndos.has(autoWriteId)) return; // this toast's Undo is already running (the executor would answer ACTION_STALE)
+      toastUndos.set(autoWriteId, false);
+      let settled = false;
+      const settle = (undone: boolean): void => {
+        if (settled) return;
+        settled = true;
+        const reported = toastUndos.get(autoWriteId) === true;
+        toastUndos.delete(autoWriteId);
+        if (!reported) notifier.autoUndone(undone);
+      };
       void executor
         .undoAuto(autoWriteId, 'user_toast', null)
         .then((r) => {
-          notifier.autoUndone(r.ok);
+          settle(r.ok && r.value.outcome === 'done');
           emitAutoChanged();
         })
         .catch((err: unknown) => {
           log.warn('toast_undo_failed', { reason: err instanceof Error ? err.name : 'unknown' });
-          notifier.autoUndone(false);
+          settle(false);
         });
     },
     onShow: (itemId) => {
@@ -817,6 +961,8 @@ export async function compose(deps: ComposeDeps): Promise<AppRuntimeHandle> {
     targetCalendarId: () => settings().calendar.targetCalendarId,
     // [V2] B7: {[calendarId]: accessRole} of the last list-calendars; automatic mode needs 'owner' for the target calendar.
     persistCalendarRoles: (roles) => repos.meta.set('calendar_roles_json', JSON.stringify(roles)),
+    // [V2] auto-mode-6: the account the automatic-mode snapshot binds to, as a short hash only (survives restarts).
+    persistAccount: persistGoogleAccount(repos.meta),
   });
   googleAuth.onChange((s) => emit('google', s));
   const calendarRoles = (): ReturnType<typeof parseCalendarRolesJson> =>
@@ -825,16 +971,22 @@ export async function compose(deps: ComposeDeps): Promise<AppRuntimeHandle> {
   // ---------------------------------------------------------------------------------------------------------------
   // 11. LLM: model manager -> lazy llama runtime -> provider factory
   // ---------------------------------------------------------------------------------------------------------------
-  const seamManifest = ((): typeof MODEL_MANIFEST => {
-    if (seams?.modelManifest === undefined) return MODEL_MANIFEST;
-    try {
-      const raw = JSON.parse(nodeFs.readFileSync(seams.modelManifest, 'utf8')) as typeof MODEL_MANIFEST;
-      return raw;
-    } catch {
-      log.warn('seam_manifest_unreadable', {});
-      return MODEL_MANIFEST;
+  // [v2-repair REQUEST 11] a test build (seams !== null) never downloads from a real host: every LLM tier AND every media file
+  // (projectors, voice models, VAD) comes from the WCA_MODEL_MANIFEST file, and whatever it does not name points at an unreachable
+  // loopback placeholder. Production (seams === null) keeps the pinned manifests exactly.
+  const seamManifests = ((): ReturnType<typeof e2eModelManifests> | null => {
+    if (seams === null) return null;
+    let raw: unknown = null;
+    if (seams.modelManifest !== undefined) {
+      try {
+        raw = JSON.parse(nodeFs.readFileSync(seams.modelManifest, 'utf8')) as unknown;
+      } catch {
+        log.warn('seam_manifest_unreadable', {});
+      }
     }
+    return e2eModelManifests(raw);
   })();
+  const seamManifest: typeof MODEL_MANIFEST = seamManifests?.llm ?? MODEL_MANIFEST;
 
   const listDevices = async (): Promise<string | null> => null; // the exe is never executed to probe; hardware uses the cached list
   const hardwareOnce = (() => {
@@ -870,7 +1022,8 @@ export async function compose(deps: ComposeDeps): Promise<AppRuntimeHandle> {
 
   const modelManager: ModelManager = createModelManager({
     manifest: seamManifest,
-    allowHttpLoopback: e2e && seams?.modelManifest !== undefined, // production: always false (W1-07)
+    ...(seamManifests === null ? {} : { mediaManifest: seamManifests.media }),
+    allowHttpLoopback: e2e, // production: always false (W1-07); a test build only ever reaches loopback (seamManifests)
     modelsDir: paths.modelsDir,
     repos,
     hardware,
@@ -978,7 +1131,7 @@ export async function compose(deps: ComposeDeps): Promise<AppRuntimeHandle> {
         );
       }),
   };
-  const cliRunner = createCliRunner({
+  const cliRunnerCore = createCliRunner({
     jobs,
     userDataDir: paths.userData,
     now,
@@ -993,11 +1146,32 @@ export async function compose(deps: ComposeDeps): Promise<AppRuntimeHandle> {
     argsPrefix: (exe) => seamArgsPrefix(cliSeam, exe),
     ...(seamTimers?.jobGraceMs?.cli === undefined ? {} : { graceMs: seamTimers.jobGraceMs.cli }),
   });
+  /**
+   * [v2-repair REQUEST 7] What a finished CLI run says about the PROVIDER (not the chat) reaches AppHealth.llm: a failed init proof
+   * ('sandbox' = CLI_TOOLSET_MISMATCH) is shown until a later run of that CLI passes its proof cleanly; the account states (usage
+   * window, overage, breaker) come from the runner's own pause through providerFactory.usable(). Observation only: the result is
+   * returned unchanged, so every safety behaviour of the runner (no S3 after a failed S1 proof, no run while paused) is untouched.
+   */
+  const cliIssue = new Map<CliProviderId, ErrorCode>();
+  const cliRunner: typeof cliRunnerCore = {
+    ...cliRunnerCore,
+    run: async (req, signal) => {
+      const res = await cliRunnerCore.run(req, signal);
+      if (res.error === 'sandbox') cliIssue.set(req.provider, 'CLI_TOOLSET_MISMATCH');
+      else if (res.error === null && res.sandbox.initOk) cliIssue.delete(req.provider);
+      refreshLlmHealth();
+      return res;
+    },
+  };
   const cliLocator = createCliLocator({
     ...locate,
     settingsClaudeExePath: () => settings().llm.cli.claudeExePath,
     seam: cliSeam,
     jobs,
+    // [cli-sandbox-3] agy probes run under the isolated <userData>\agy-home profile (F3/B14/I6'), never the real one
+    userDataDir: paths.userData,
+    // [cli-sandbox-6, B31] every located exe path is recorded BEFORE its first job (probe, cli:test, smoke) can spawn
+    onExeResolved: (provider, exePath) => recordCliExePath(provider, exePath),
   });
   const cliStatus = createCliStatus({
     locator: cliLocator,
@@ -1005,6 +1179,11 @@ export async function compose(deps: ComposeDeps): Promise<AppRuntimeHandle> {
     clock,
     cacheMs: seamTimers?.cliStatusCacheMs ?? LIMITS.cliStatusCacheMs,
   });
+  // [v2-repair REQUEST 9] F3 isolated profile: the app-owned <userData>/agy-home already trusts the app's own workspace, so no
+  // workspace-trust step exists (cli:previewWorkspaceChange answers isolated_profile). Recorded as satisfied ("not needed"), or the
+  // Connect card waits for an Allow that can never be offered and the experimental provider can never be chosen. The user's own
+  // settings.json is never read or written in this mode.
+  if (AGY_PROFILE_MODE === 'isolated') cliStatus.recordWorkspaceTrusted(true);
   const onCliQuota = (provider: CliProviderId, q: import('../shared/types').LlmQuota): void => {
     cliStatus.recordQuota(provider, q);
     healthHub.setLlmQuota(q);
@@ -1074,6 +1253,8 @@ export async function compose(deps: ComposeDeps): Promise<AppRuntimeHandle> {
     cliStatus,
     jobs,
     now,
+    cliRunnerHealth: () => cliRunnerCore.health(), // [v2-repair REQUEST 7]
+    onReadiness: () => refreshLlmHealth(), // [v2-repair REQUEST 7]
   });
 
   /** ARCH section 8: the `usable()` ErrorCode decides WHICH non-ready `LlmStatus` the health pill shows. */
@@ -1091,6 +1272,12 @@ export async function compose(deps: ComposeDeps): Promise<AppRuntimeHandle> {
         return 'quota';
       case 'CLOUD_UNAVAILABLE':
         return 'degraded';
+      // [v2-repair REQUEST 7] C2 3: the CLI states (a failed init proof, CLI_UNSTABLE and CLOUD_OVERAGE stay 'failed' + code)
+      case 'CLI_NOT_INSTALLED':
+      case 'CLI_VERSION':
+        return 'not_installed';
+      case 'CLI_NOT_SIGNED_IN':
+        return 'not_signed_in';
       case 'DOWNLOAD_FAILED':
       case 'DISK_FULL':
         return 'downloading';
@@ -1098,21 +1285,40 @@ export async function compose(deps: ComposeDeps): Promise<AppRuntimeHandle> {
         return 'failed';
     }
   };
+  /** [v2-repair REQUEST 7] true once start() ran its recovery pass: only then may refreshLlmHealth release quota-held chats. */
+  const llmRelease = { armed: false };
   const refreshLlmHealth = (): void => {
     const s = settings();
+    const id = s.llm.provider;
     const usable = providerFactory.usable();
+    // [v2-repair REQUEST 7] every provider reports its OWN model id (the CLI ids used to fall through to the Gemini model)
     const model =
-      s.llm.provider === 'local'
+      id === 'local'
         ? seamManifest[resolvedTier].label
-        : s.llm.provider === 'claude'
+        : id === 'claude'
           ? s.llm.claudeModel
-          : s.llm.geminiModel;
+          : id === 'gemini'
+            ? s.llm.geminiModel
+            : id === 'claude_cli'
+              ? s.llm.cli.claudeModel
+              : s.llm.cli.agyModel;
+    const issue = id === 'claude_cli' || id === 'antigravity_cli' ? cliIssue.get(id) : undefined;
     // 'idle' = Local configured, llama-server not running (lazy); 'ready' = a cloud provider with a usable key.
     healthHub.setLlm(
-      usable.ok
-        ? { state: s.llm.provider === 'local' ? 'idle' : 'ready', provider: s.llm.provider, model }
-        : { state: llmStatusFor(usable.code), code: usable.code, provider: s.llm.provider, model },
+      !usable.ok
+        ? { state: llmStatusFor(usable.code), code: usable.code, provider: id, model }
+        : issue !== undefined
+          ? { state: 'failed', code: issue, provider: id, model }
+          : { state: id === 'local' ? 'idle' : 'ready', provider: id, model },
     );
+    // [v2-repair REQUEST 7] the subscription window reset (usable again): the chats it held as budget/CLOUD_QUOTA go back to the queue
+    if (usable.ok && llmRelease.armed) {
+      const released = releaseQuotaHeldItems(repos, now());
+      if (released.length > 0) {
+        notifyChanged(released);
+        theQueue.poke();
+      }
+    }
   };
 
   // ---------------------------------------------------------------------------------------------------------------
@@ -1199,7 +1405,15 @@ export async function compose(deps: ComposeDeps): Promise<AppRuntimeHandle> {
     clock,
     log,
     paths: { voiceTmpDir: paths.voiceTmpDir, whisperDir: paths.whisperDir, whisperCliExe: paths.whisperCliExe },
-    onProgress: (p) => emit('voice:progress', p),
+    onProgress: (p) => {
+      emit('voice:progress', p);
+      // [v2-repair REQUEST 5] the orchestrator opens the header line with onTranscribing(0) before the note's duration is known; the
+      // seconds arrive here (decided from the last Ogg granule before any decoder runs) and become "Transcribing a voice note (0:03)".
+      if (transcribingSeconds !== null && p.audioSeconds > 0 && p.audioSeconds !== transcribingSeconds) {
+        transcribingSeconds = p.audioSeconds;
+        pushQueue();
+      }
+    },
     window: (chatId) => mediaWindowFor({ bridgeDb, repos }, chatId, LIMITS.contextMessages),
     // e2e without the whisper command seam: voice is disabled (null = no whisper at all); production: the shipped whisper exe
     ...(whisperSeam === undefined ? (e2e ? { whisperSeam: null } : {}) : { whisperSeam }),
@@ -1403,18 +1617,14 @@ export async function compose(deps: ComposeDeps): Promise<AppRuntimeHandle> {
       signal?.addEventListener('abort', onAbort, { once: true });
     });
 
-  /** C2 5 AutoSnapshotInput -> auto_policies.snapshot_sha: a policy is bound to the calendar, the account, the provider and the app
-   *  major.minor it was granted under; any change => snapshot_changed (pause). The account is the wizard's last known e-mail. */
-  const snapshotSha = (): string => {
-    const email = googleAuth.wizardState().accountEmail;
-    const input: AutoSnapshotInput = {
-      targetCalendarId: settings().calendar.targetCalendarId,
-      googleAccountEmailSha8: email === null ? '' : sha256Hex(email.toLowerCase()).slice(0, 8),
-      provider: settings().llm.provider,
-      appMajorMinor: version.split('.').slice(0, 2).join('.'),
-    };
-    return sha256Hex(canonicalJson(input));
-  };
+  /** C2 5 AutoSnapshotInput -> auto_policies.snapshot_sha (see createAutoSnapshotSha; auto-mode-6: survives restarts, '' when unknown). */
+  const snapshotSha = createAutoSnapshotSha({
+    accountEmail: () => googleAuth.wizardState().accountEmail,
+    meta: repos.meta,
+    targetCalendarId: () => settings().calendar.targetCalendarId,
+    provider: () => settings().llm.provider,
+    appVersion: version,
+  });
   /** RFC 4122 v4 from S-RAND bytes (auto_decisions / auto_writes ids). */
   const randomUuidOf = (bytes: Uint8Array): string => {
     const b = Array.from(bytes.slice(0, 16));
@@ -1452,6 +1662,7 @@ export async function compose(deps: ComposeDeps): Promise<AppRuntimeHandle> {
       if (e.kind === 'write') {
         notifier.autoWrite({ kind: w.kind, autoWriteId: w.id, burstCount: 0, itemId: w.itemId });
       } else if (e.kind === 'undo') {
+        if (toastUndos.has(w.id)) toastUndos.set(w.id, true); // [v2-fix auto-mode-1] the toast's onUndo must not toast again
         notifier.autoUndone(w.undoState === 'undone');
       }
     },
@@ -1782,40 +1993,50 @@ export async function compose(deps: ComposeDeps): Promise<AppRuntimeHandle> {
       argsPrefix: seamArgsPrefix(cliSeam, loc.exePath),
     });
   };
+  const cliHandlers = createCliHandlers({
+    ...handlerDepsV2,
+    cliLocator,
+    cliRunner,
+    autoDialog,
+    window: dialogParent,
+    ...(deps.pickExePath === undefined ? {} : { pickExePath: deps.pickExePath }),
+    homeDir,
+    agyRunning,
+    agySettingsExists: () =>
+      nodeFs.existsSync(nodePath.win32.join(homeDir(), '.gemini', 'antigravity-cli', 'settings.json')),
+    makeAgyForTest: (exePath, observedVersion) =>
+      createAgyProvider({
+        runner: cliRunner,
+        locator: cliLocator,
+        model: settings().llm.cli.agyModel,
+        exePath,
+        userDataDir: paths.userData,
+        observedVersion,
+        now,
+      }),
+  });
+  /** [v2-repair REQUEST 13] llm:setProvider's smoke for a never/stale-tested CLI: the cli:test handler itself (same consent, same
+   *  locator, same recorder), refused while the runner breaker is open (that IS "keeps stopping", reset only by a Test-again click). */
+  const runCliTest = async (provider: CliProviderId): Promise<import('../shared/types').Result<unknown>> => {
+    if (cliRunner.breakerOpen()) return { ok: false, error: { code: 'CLI_UNSTABLE' } };
+    return cliHandlers['cli:test'](
+      { provider },
+      { windowFocused: true, windowVisible: true, shownByNotificationAt: null },
+    );
+  };
   const baseHandlers: IpcHandlers = mergeHandlerGroups([
     createAppHandlers(handlerDepsV2),
     createItemsHandlers(handlerDepsV2, { undo }),
     createActionsHandlers(handlerDepsV2),
     createSettingsHandlers(handlerDepsV2, { voice, autoDialog, dialogParent }),
     createSecretsHandlers(handlerDepsV2),
-    createLlmHandlers(handlerDepsV2, { cliStatus, listAgyModels: listAgyModelsNow }),
+    createLlmHandlers(handlerDepsV2, { cliStatus, listAgyModels: listAgyModelsNow, runCliTest }),
     createModelHandlers(handlerDepsV2),
     createPairingHandlers(handlerDepsV2),
     createGoogleHandlers(handlerDepsV2),
     createDataHandlers(handlerDepsV2, { autoPolicy }),
     createAutoHandlers(handlerDepsV2, { dialogParent }),
-    createCliHandlers({
-      ...handlerDepsV2,
-      cliLocator,
-      cliRunner,
-      autoDialog,
-      window: dialogParent,
-      ...(deps.pickExePath === undefined ? {} : { pickExePath: deps.pickExePath }),
-      homeDir,
-      agyRunning,
-      agySettingsExists: () =>
-        nodeFs.existsSync(nodePath.win32.join(homeDir(), '.gemini', 'antigravity-cli', 'settings.json')),
-      makeAgyForTest: (exePath, observedVersion) =>
-        createAgyProvider({
-          runner: cliRunner,
-          locator: cliLocator,
-          model: settings().llm.cli.agyModel,
-          exePath,
-          userDataDir: paths.userData,
-          observedVersion,
-          now,
-        }),
-    }),
+    cliHandlers,
     createVoiceHandlers(handlerDepsV2),
   ]);
 
@@ -1873,6 +2094,7 @@ export async function compose(deps: ComposeDeps): Promise<AppRuntimeHandle> {
     }
     if (s.llm.provider !== lastProvider) {
       lastProvider = s.llm.provider;
+      cliIssue.clear(); // [v2-repair REQUEST 7] a provider switch re-proves the CLI from scratch
       void providerFactory.invalidate().then(() => {
         void effectiveTier().then((tr) => {
           resolvedTier = tr;
@@ -2021,6 +2243,7 @@ export async function compose(deps: ComposeDeps): Promise<AppRuntimeHandle> {
     const clones = executor.offerRetryForUnknown();
     if (clones > 0) log.info('recovery_retry_offered', { clones });
 
+    llmRelease.armed = true; // [v2-repair REQUEST 7]
     refreshLlmHealth();
     refreshVoiceHealth(); // [V2]
     healthHub.setCalendarUpdates(updateSurfaceAvailable()); // [V2] after the calendar startup guard ran
@@ -2033,6 +2256,8 @@ export async function compose(deps: ComposeDeps): Promise<AppRuntimeHandle> {
 
     // periodic work
     every(LIMITS.scanIntervalMs, () => ingest?.poke());
+    // [v2-repair REQUEST 7] time-based provider states (a usage window resetting at resetsAt) reach AppHealth + release held chats
+    every(LIMITS.scanIntervalMs, () => refreshLlmHealth());
     every(JANITOR_INTERVAL_MS, () => {
       try {
         runMediaJanitor({ storeDir: paths.bridgeStoreDir, now, maxAgeDays: MEDIA_MAX_AGE_DAYS });

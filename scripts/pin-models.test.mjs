@@ -21,6 +21,12 @@ import {
 
 const ROOT = path.resolve(fileURLToPath(new URL('..', import.meta.url)));
 const REAL_MANIFEST_SOURCE = readFileSync(path.join(ROOT, ...MANIFEST_PATH.split('/')), 'utf8');
+/** [v2-repair-v2-packaging-pins] The real manifest is commit-pinned now (smoke check 8). The resolve/main -> commit path the
+ *  script exists for is exercised on this copy, whose four voice URLs are put back to the floating `resolve/main/` form. */
+const VOICE_REPO_RE =
+  /(ivrit-ai\/whisper-large-v3-turbo-ggml|ggerganov\/whisper\.cpp|ggml-org\/whisper-vad)\/resolve\/[0-9a-f]{40}\//g;
+const FLOATING_MANIFEST_SOURCE = REAL_MANIFEST_SOURCE.replace(VOICE_REPO_RE, '$1/resolve/main/');
+const PIN_JSON = JSON.parse(readFileSync(path.join(ROOT, ...PIN_OUT_PATH.split('/')), 'utf8'));
 
 const entry = (over = {}) => ({
   tier: 'small',
@@ -177,15 +183,19 @@ describe('checkEntry', () => {
 // ---------------------------------------------------------------------------------------------------------------------
 describe('main', () => {
   const files = new Map();
+  const fsFor = (source) => ({
+    readFile: async () => source,
+    writeFile: async (p, data) => void files.set(p, String(data)),
+  });
   const fs = {
-    readFile: async () => REAL_MANIFEST_SOURCE,
+    readFile: async () => FLOATING_MANIFEST_SOURCE,
     writeFile: async (p, data) => void files.set(p, String(data)),
   };
   const COMMIT = 'c'.repeat(40);
-  const media = parseMediaManifestSource(REAL_MANIFEST_SOURCE);
+  const media = parseMediaManifestSource(FLOATING_MANIFEST_SOURCE);
   /** A loopback-free scripted Hugging Face API: trees per commit, `revision/main` for the unpinned voice repos, 4-byte magic reads. */
   const hfApi = (over = {}) => {
-    const llm = parseManifestSource(REAL_MANIFEST_SOURCE);
+    const llm = parseManifestSource(FLOATING_MANIFEST_SOURCE);
     const byTree = new Map(llm.map((e) => [treeUrl(parseResolveUrl(e.url)), [e]]));
     for (const e of media) {
       const p = parseMediaResolveUrl(e.url);
@@ -242,11 +252,61 @@ describe('main', () => {
     await expect(main({ fs, log: () => undefined, fetch: hfApi({ badMagic: true }) })).rejects.toThrow(/drifted/);
     expect(files.size).toBe(0);
   });
+
+  it('[v2-repair] the real, commit-pinned manifest: the floating copy differs only in the four voice URLs', () => {
+    expect(FLOATING_MANIFEST_SOURCE).not.toBe(REAL_MANIFEST_SOURCE);
+    expect(FLOATING_MANIFEST_SOURCE.match(/\/resolve\/main\//g) ?? []).toHaveLength(4);
+    expect(REAL_MANIFEST_SOURCE).not.toMatch(/\/resolve\/main\//);
+  });
+
+  it('[v2-repair] on the real manifest every media URL is kept verbatim and no copy-into-manifest hint is logged', async () => {
+    files.clear();
+    const real = parseMediaManifestSource(REAL_MANIFEST_SOURCE);
+    const byTree = new Map();
+    for (const e of [...parseManifestSource(REAL_MANIFEST_SOURCE), ...real]) {
+      const p = parseMediaResolveUrl(e.url);
+      const key = treeUrl({ repo: p.repo, commit: p.commit });
+      byTree.set(key, [...(byTree.get(key) ?? []), e]);
+    }
+    const fetchFn = async (url, init) => {
+      if (url.endsWith('/revision/main')) throw new Error(`a pinned manifest must not resolve main: ${url}`);
+      if (init?.headers?.range === 'bytes=0-3') {
+        const e = real.find((m) => url.endsWith(`/${m.fileName}`));
+        return { ok: true, status: 206, body: new Response(new Uint8Array([...MAGIC_BYTES[e.magic], 9])).body };
+      }
+      const rows = byTree.get(url);
+      if (rows === undefined) return { ok: false, status: 404 };
+      return treeResponse(rows.map((e) => ({ path: e.fileName, lfs: { size: e.size, oid: e.sha256 } })));
+    };
+    const lines = [];
+    const results = await main({
+      fs: fsFor(REAL_MANIFEST_SOURCE),
+      root: 'C:\\repo',
+      log: (m) => lines.push(m),
+      fetch: fetchFn,
+    });
+    expect(results.every((r) => r.ok)).toBe(true);
+    const pin = JSON.parse([...files.values()][0]);
+    expect(pin.media.map((e) => e.url)).toEqual(real.map((e) => e.url));
+    expect(lines.join('\n')).not.toMatch(/copy the commit-pinned URLs/);
+  });
+
+  it('[v2-repair] the committed vendor/models.pin.json equals the shipped manifest (the unit-level twin of smoke check 8)', () => {
+    const llm = parseManifestSource(REAL_MANIFEST_SOURCE);
+    const real = parseMediaManifestSource(REAL_MANIFEST_SOURCE);
+    expect(PIN_JSON.llm.map((e) => [e.id, e.fileName, e.url, e.size, e.sha256])).toEqual(
+      llm.map((e) => [e.tier, e.fileName, e.url, e.size, e.sha256]),
+    );
+    expect(PIN_JSON.media.map((e) => [e.id, e.kind, e.magic, e.fileName, e.url, e.size, e.sha256])).toEqual(
+      real.map((e) => [e.tier, e.kind, e.magic, e.fileName, e.url, e.size, e.sha256]),
+    );
+    for (const e of [...PIN_JSON.llm, ...PIN_JSON.media]) expect(e.url).toMatch(/\/resolve\/[0-9a-f]{40}\//);
+  });
 });
 
 describe('[V2] media entries (MEDIA_MODEL_MANIFEST)', () => {
   const COMMIT = 'd'.repeat(40);
-  const vad = () => ({ ...parseMediaManifestSource(REAL_MANIFEST_SOURCE).find((e) => e.tier === 'voice-vad') });
+  const vad = () => ({ ...parseMediaManifestSource(FLOATING_MANIFEST_SOURCE).find((e) => e.tier === 'voice-vad') });
   const proj = () => ({ ...parseMediaManifestSource(REAL_MANIFEST_SOURCE).find((e) => e.tier === 'mmproj-mid') });
   const api =
     (e, over = {}) =>

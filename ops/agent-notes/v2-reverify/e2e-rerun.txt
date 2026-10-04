@@ -1,0 +1,113 @@
+
+Running 3 tests using 1 worker
+
+E2E_KEEP_TMP=1: temp root kept at C:\Users\ilay1\AppData\Local\Temp\wca-e2e-uJ3Jya
+  x  1 tests\e2e\cli-connect.spec.ts:355:1 › (8) experimental Gemini: hidden until "Show experimental", Terms read date, the user's own agy settings untouched, selectable (12.3s)
+E2E_KEEP_TMP=1: temp root kept at C:\Users\ilay1\AppData\Local\Temp\wca-e2e-ZBzKyk
+  x  2 tests\e2e\cli-connect.spec.ts:410:1 › (9) quitting while a CLI job runs: the job pid is dead within 10 s, no job pid file, empty cli-runs dir (2.2s)
+E2E_KEEP_TMP=1: temp root kept at C:\Users\ilay1\AppData\Local\Temp\wca-e2e-4BRg1T
+  x  3 tests\e2e\undo.spec.ts:87:1 › a manual reschedule is undone from its card back to the pre-write slot; a hidden window cannot undo (35.3s)
+
+
+  1) tests\e2e\cli-connect.spec.ts:355:1 › (8) experimental Gemini: hidden until "Show experimental", Terms read date, the user's own agy settings untouched, selectable 
+
+    Error: the workspace-trust step shows its one-line diff
+
+    expect(locator).toBeVisible() failed
+
+    Locator: getByTestId('agy-workspace-diff')
+    Expected: visible
+    Timeout: 10000ms
+    Error: element(s) not found
+
+    Call log:
+      - the workspace-trust step shows its one-line diff getByTestId('agy-workspace-diff') with timeout 10000ms
+      - waiting for getByTestId('agy-workspace-diff')
+
+
+      388 |   await expect
+      389 |     .soft(page.getByTestId('agy-workspace-diff'), 'the workspace-trust step shows its one-line diff')
+    > 390 |     .toBeVisible({ timeout: 10_000 });
+          |      ^
+      391 |
+      392 |   // hard: the user's own settings file is untouched and no backup was written
+      393 |   expect(readFileSync(settingsFile, 'utf8')).toBe(original);
+        at C:\dev\whatsapp agent\tests\e2e\cli-connect.spec.ts:390:6
+
+    Error Context: test-results\cli-connect--8-experimenta-3b4d4-ttings-untouched-selectable\error-context.md
+
+    attachment #2: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results\cli-connect--8-experimenta-3b4d4-ttings-untouched-selectable\trace.zip
+    Usage:
+
+        npx playwright show-trace test-results\cli-connect--8-experimenta-3b4d4-ttings-untouched-selectable\trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  2) tests\e2e\cli-connect.spec.ts:410:1 › (9) quitting while a CLI job runs: the job pid is dead within 10 s, no job pid file, empty cli-runs dir 
+
+    Error: E2E quit leak: pid files left in run\: job-cli-768c5e42-bbc9-4ca5-98c5-10775fb27aa3; job pid files left in run\ (1)
+
+       at helpers\fixtures.ts:588
+
+      586 |     }
+      587 |     leaks.push(...jobDirLeaks(launched.userDataDir));
+    > 588 |     if (leaks.length > 0) throw new Error(`E2E quit leak: ${leaks.join('; ')}`);
+          |                                 ^
+      589 |   }
+      590 |
+      591 |   /**
+        at E2eContext.quit (C:\dev\whatsapp agent\tests\e2e\helpers\fixtures.ts:588:33)
+        at C:\dev\whatsapp agent\tests\e2e\cli-connect.spec.ts:426:3
+
+    Error Context: test-results\cli-connect--9-quitting-wh-53e08-pid-file-empty-cli-runs-dir\error-context.md
+
+    attachment #2: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results\cli-connect--9-quitting-wh-53e08-pid-file-empty-cli-runs-dir\trace.zip
+    Usage:
+
+        npx playwright show-trace test-results\cli-connect--9-quitting-wh-53e08-pid-file-empty-cli-runs-dir\trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  3) tests\e2e\undo.spec.ts:87:1 › a manual reschedule is undone from its card back to the pre-write slot; a hidden window cannot undo 
+
+    Error: the card shows the restored 15:00 slot after Undo
+
+    expect(locator).toContainText(expected) failed
+
+    Locator: getByTestId('card-2').getByTestId('event-chip-range')
+    Expected substring: "15:00"
+    Received string:    "⁨17:00-18:00⁩"
+    Timeout: 30000ms
+
+    Call log:
+      - the card shows the restored 15:00 slot after Undo getByTestId('card-2').getByTestId('event-chip-range') with timeout 30000ms
+      - waiting for getByTestId('card-2').getByTestId('event-chip-range')
+        63 × locator resolved to <span data-testid="event-chip-range" class="tnum block text-sm text-text-muted">⁨17:00-18:00⁩</span>
+           - unexpected value "⁨17:00-18:00⁩"
+
+
+      155 |       'the card shows the restored 15:00 slot after Undo',
+      156 |     )
+    > 157 |     .toContainText('15:00', { timeout: 30_000 });
+          |      ^
+      158 |   await expect
+      159 |     .poll(
+      160 |       () =>
+        at C:\dev\whatsapp agent\tests\e2e\undo.spec.ts:157:6
+
+    Error Context: test-results\undo-a-manual-reschedule-i-8ead3-a-hidden-window-cannot-undo\error-context.md
+
+    attachment #2: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results\undo-a-manual-reschedule-i-8ead3-a-hidden-window-cannot-undo\trace.zip
+    Usage:
+
+        npx playwright show-trace test-results\undo-a-manual-reschedule-i-8ead3-a-hidden-window-cannot-undo\trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  3 failed
+    tests\e2e\cli-connect.spec.ts:355:1 › (8) experimental Gemini: hidden until "Show experimental", Terms read date, the user's own agy settings untouched, selectable 
+    tests\e2e\cli-connect.spec.ts:410:1 › (9) quitting while a CLI job runs: the job pid is dead within 10 s, no job pid file, empty cli-runs dir 
+    tests\e2e\undo.spec.ts:87:1 › a manual reschedule is undone from its card back to the pre-write slot; a hidden window cannot undo 

@@ -1,0 +1,30 @@
+hash-bridge: OK 43540541 bytes sha256 AC23221E8BCF3937A4CA346B3BD80A8DA09DF94CBECD949AF2916C4BC8D22FF5
+  • electron-builder  version=26.15.3 os=10.0.26200
+  • loaded configuration  file=C:\dev\whatsapp agent\electron-builder.yml
+  • description is missed in the package.json  appPackageFile=C:\dev\whatsapp agent\package.json
+  • author is missed in the package.json  appPackageFile=C:\dev\whatsapp agent\package.json
+  • skipped dependencies rebuild  reason=npmRebuild is set to false
+  • packaging       platform=win32 arch=x64 electron=44.4.3 appOutDir=dist\win-unpacked
+  • downloaded      label=electron progress=100%
+  • downloaded electron zip extracted successfully  output=C:\dev\whatsapp agent\dist\win-unpacked
+  • searching for node modules  pm=npm searchDir=C:\dev\whatsapp agent
+  • duplicate dependency references  dependencies=["@modelcontextprotocol/sdk@1.30.0","debug@4.4.3","fetch-blob@3.2.0","gaxios@7.3.1","ecdsa-sig-formatter@1.0.11","ajv@8.20.0","express@5.2.1","mime-types@3.0.2","debug@4.4.3","http-errors@2.0.1","iconv-lite@0.7.3","on-finished@2.4.1","qs@6.16.0","raw-body@3.0.2","type-is@2.1.0","debug@4.4.3","debug@4.4.3","on-finished@2.4.1","get-intrinsic@1.3.0","call-bind-apply-helpers@1.0.2","call-bind-apply-helpers@1.0.2","es-object-atoms@1.1.2","call-bound@1.0.4","get-intrinsic@1.3.0","side-channel-map@1.0.1","debug@4.4.3","debug@4.4.3","http-errors@2.0.1","mime-types@3.0.2","on-finished@2.4.1","send@1.2.1","mime-types@3.0.2","http-errors@2.0.1"]
+  • updating asar integrity executable resource  executablePath=dist\win-unpacked\WhatsApp Calendar Agent.exe
+  • signing with signtool.exe  path=dist\win-unpacked\resources\whisper\whisper-cli.exe
+  • signing with signtool.exe  path=dist\win-unpacked\resources\bridge\whatsapp-bridge.exe
+  • signing with signtool.exe  path=dist\win-unpacked\resources\llama\llama-server.exe
+  • executing @electron/fuses  electronPath=dist\win-unpacked\WhatsApp Calendar Agent.exe
+  • signing with signtool.exe  path=dist\win-unpacked\WhatsApp Calendar Agent.exe
+smoke-packaged: C:\dev\whatsapp agent\dist\win-unpacked
+  [ok]   check 4a - calendar server packaged: all 156 staged package folder(s), calendar-mcp\node_modules\@cocal\google-calendar-mcp\build\index.js and the ARCH 15.3 package.json/package-lock.json are in <resources>\calendar-mcp
+smoke-packaged: Error: spawn UNKNOWN
+    at ChildProcess.spawn (node:internal/child_process:458:11)
+    at spawn (node:child_process:813:9)
+    at spawnAsNode (file:///C:/dev/whatsapp%20agent/scripts/smoke-packaged.mjs:876:10)
+    at mcpSession (file:///C:/dev/whatsapp%20agent/scripts/smoke-packaged.mjs:884:17)
+    at check1Mcp (file:///C:/dev/whatsapp%20agent/scripts/smoke-packaged.mjs:1117:19)
+    at main (file:///C:/dev/whatsapp%20agent/scripts/smoke-packaged.mjs:1567:9)
+    at file:///C:/dev/whatsapp%20agent/scripts/smoke-packaged.mjs:1598:3
+    at ModuleJob.run (node:internal/modules/esm/module_job:439:25)
+    at async node:internal/modules/esm/loader:643:26
+    at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:101:5)

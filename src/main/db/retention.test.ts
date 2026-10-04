@@ -1,6 +1,7 @@
 // TESTS 5.3 row `db/*`: retention nulls item_messages.text, the proposal text columns AND actions.canonical_json /
 // approved_final_json (terminal rows only - a pending row older than the window is untouched) but keeps every hash;
 // `data:purgeNow` deletes `backups\*` and leaves exactly one fresh backup.
+import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -30,10 +31,14 @@ import {
 import { DEFAULT_SETTINGS } from '../../shared/settings';
 import type { Settings } from '../../shared/settings';
 import type { Repos } from './index';
+import { createMediaCache, mediaCacheFileNames, type MediaCache, type MediaCacheFs } from '../media/mediaCache';
+import type { EpochMs, Item, ItemId, Sha256Hex } from '../../shared/types';
 
 afterEach(cleanup);
 
 const DAY = 24 * 3600_000;
+/** The hash compose.ts wires into media/mediaCache.ts (`sha256Hex(text)`). */
+const cacheSha = (t: string): Sha256Hex => createHash('sha256').update(t).digest('hex') as Sha256Hex;
 const settingsWith =
   (retentionDays: number): (() => Settings) =>
   () => ({
@@ -357,7 +362,10 @@ describe('[V2] repos.retention.purge - v2 tables', () => {
     repos.mediaCache.upsert(rec(1, T0 - 31 * DAY));
     repos.mediaCache.upsert(rec(2, T0 - DAY));
     const r = repos.retention.purge(window);
-    expect(r.mediaFiles).toEqual(['1'.repeat(64) + '.jpg', '1'.repeat(64) + '.thumb.jpg']);
+    // [v2-fix-src-main-db, data-integrity-v4-1] the names the CACHE writes for the row (this used to pin `<sha256 column>.jpg`,
+    // a convention the cache never used); the end-to-end proof against the real cache is the data-integrity-v4-1 block below
+    expect(r.mediaFiles).toEqual(mediaCacheFileNames(cacheSha, rec(1, T0 - 31 * DAY)));
+    expect(r.mediaFiles).not.toContain('1'.repeat(64) + '.jpg');
     expect(repos.mediaCache.get(chat.id, 'IMG-1')).toBeNull();
     expect(repos.mediaCache.get(chat.id, 'IMG-2')).not.toBeNull();
   });
@@ -501,7 +509,7 @@ describe('[V2] runRetention - media files and the purgeNow directories', () => {
     const chat = seedChat(repos);
     repos.mediaCache.upsert(picture(chat.id, 'd'.repeat(64), T0 - 31 * DAY));
     const run = runRetention({ repos, settings: settingsWith(30), now: () => T0 });
-    expect(run.mediaFiles).toEqual(['d'.repeat(64) + '.jpg', 'd'.repeat(64) + '.thumb.jpg']);
+    expect(run.mediaFiles).toEqual(mediaCacheFileNames(cacheSha, picture(chat.id, 'd'.repeat(64), T0 - 31 * DAY)));
     expect(run.wipeDirs).toEqual([]);
   });
 
@@ -525,5 +533,178 @@ describe('[V2] runRetention - media files and the purgeNow directories', () => {
     const { repos } = memRepos();
     const v1Repos = { ...repos, retention: { purge: () => ({ textRows: 0, actionRows: 0, itemsDeleted: 0 }) } };
     expect(runRetention({ repos: v1Repos, settings: settingsWith(30), now: () => T0 }).mediaFiles).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------------------------------------------------
+// [v2-fix-src-main-db] data-integrity-v4-1: retention must name exactly the files media/mediaCache.ts actually wrote for a row,
+// not names built from the image-content hash column. The test drives the REAL cache and never re-derives a name itself, so it
+// stays true whatever the cache's naming convention is (the data-integrity-v4-2 fix changed it while this one was in flight).
+describe('[V2] retention x media/mediaCache - one naming convention (data-integrity-v4-1)', () => {
+  /** compose.ts wires the cache with `hash: (text) => sha256Hex(text)` - the same function here. */
+  const sha = (t: string | Uint8Array): Sha256Hex => createHash('sha256').update(t).digest('hex') as Sha256Hex;
+  const realFs: MediaCacheFs = {
+    writeFileSync: (p, d) => fs.writeFileSync(p, d),
+    readFileSync: (p) => fs.readFileSync(p),
+    rmSync: (p, o) => fs.rmSync(p, o),
+    mkdirSync: (p, o) => {
+      fs.mkdirSync(p, o);
+    },
+  };
+  const picture = (fill: number): Parameters<MediaCache['put']>[2] => {
+    const jpeg = new Uint8Array(64).fill(fill);
+    return {
+      jpeg,
+      width: 10,
+      height: 20,
+      sha256: sha(jpeg), // the content hash the row keeps
+      thumbDataUrl: `data:image/jpeg;base64,${Buffer.from(Uint8Array.of(0xff, 0xd8, fill, 0xff, 0xd9)).toString('base64')}`,
+      sourceMime: 'image/png',
+    };
+  };
+
+  it('the daily job unlinks exactly the two files the cache wrote for each purged media_cache row', () => {
+    const dir = path.join(tempDir(), 'media-cache');
+    const { repos } = memRepos();
+    const chat = seedChat(repos);
+    const cache = createMediaCache({ dir, repos, fs: realFs, hash: (t) => sha(t) });
+    // the young picture first, so its two files are known without re-deriving any name
+    cache.put(chat.id, 'IMGMSG0002', picture(0x43));
+    const youngFiles = fs.readdirSync(dir).sort();
+    expect(youngFiles).toHaveLength(2);
+    cache.put(chat.id, 'IMGMSG0001', picture(0x42));
+    expect(fs.readdirSync(dir)).toHaveLength(4);
+    // the first picture is past retentionDays, the second is young: it and its files must survive
+    repos.mediaCache.upsert({ ...repos.mediaCache.get(chat.id, 'IMGMSG0001')!, createdAt: T0 - 31 * DAY });
+    repos.mediaCache.upsert({ ...repos.mediaCache.get(chat.id, 'IMGMSG0002')!, createdAt: T0 - DAY });
+
+    const run = runRetention({ repos, settings: settingsWith(30), now: () => T0 as EpochMs });
+    expect(run.mediaFiles).toHaveLength(2);
+    // compose.ts RETENTION timer: plain names only, joined onto paths.mediaCacheDir, rmSync(force)
+    for (const name of run.mediaFiles) {
+      expect(path.basename(name)).toBe(name);
+      fs.rmSync(path.join(dir, name), { force: true });
+    }
+    expect(repos.mediaCache.get(chat.id, 'IMGMSG0001')).toBeNull();
+    expect(fs.readdirSync(dir).sort()).toEqual(youngFiles);
+    // ...and the young picture is still readable through the cache
+    const item = seedOpenItem(repos, chat.id);
+    repos.mediaCache.upsert({ ...repos.mediaCache.get(chat.id, 'IMGMSG0002')!, itemId: item.id });
+    expect(cache.thumb(item.id)).not.toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------------------------------------------------
+// [v2-fix-src-main-db] data-integrity-v4-3 (I9 / F27): a closed item that a surviving item still points at (event_origin_item_id /
+// linked_item_id), or that belongs to an event a live in_calendar item still holds, is NOT deleted by the 90-day rule - the FK
+// ON DELETE SET NULL would make the app's own live event read as foreign (CAL_EVENT_FOREIGN) and cascade its revision history away.
+describe('[V2] retention keeps the closed items a live event still depends on (data-integrity-v4-3)', () => {
+  const window = { before: T0 - 30 * DAY, closedBefore: T0 - CLOSED_ITEM_MAX_AGE_MS };
+  const FAR = (T0 + 200 * DAY) as EpochMs; // the event is still ahead (eventHorizonMonths = 12)
+
+  /** A created the event (origin, rev 1); B rescheduled it and holds it now; A closed 'superseded' at `closedAt`. */
+  function rescheduledOnce(repos: Repos, closedAt: number): { a: Item; b: Item } {
+    const created = seedCreatedEvent(repos, { now: (closedAt - DAY) as EpochMs, startTs: FAR });
+    repos.eventRevisions.insert({
+      calendarEventId: EVT_A,
+      itemId: created.item.id,
+      revision: 1,
+      kind: 'create',
+      prev: null,
+      next: content(),
+      actionId: created.action.id,
+      appliedAt: closedAt - DAY,
+      postEtag: null,
+      postUpdated: null,
+    });
+    const card = seedOpenItem(repos, created.chat.id, (closedAt - DAY) as EpochMs, 'm-change');
+    const b = repos.items.update(
+      card.id,
+      {
+        analysis: 'done',
+        eventState: 'updated',
+        linkedItemId: created.item.id,
+        calendarEventId: EVT_A,
+        eventStartTs: FAR,
+        eventRevision: 2,
+        eventOriginItemId: created.item.id,
+      },
+      closedAt as EpochMs,
+    );
+    const a = repos.items.update(created.item.id, { closedReason: 'superseded' }, closedAt as EpochMs);
+    return { a, b };
+  }
+  const revisionsOf = (db: ReturnType<typeof memRepos>['db'], itemId: ItemId): number =>
+    db.prepare<{ n: number }>(`SELECT COUNT(*) AS n FROM event_revisions WHERE item_id = ?`).get(itemId)!.n;
+
+  it('keeps the superseded origin while the in_calendar holder still points at it', () => {
+    const { db, repos } = memRepos();
+    const { a, b } = rescheduledOnce(repos, T0 - 91 * DAY);
+    expect(b.state).toBe('in_calendar');
+    expect(a.closedAt).toBe(T0 - 91 * DAY);
+
+    expect(repos.retention.purge(window).itemsDeleted).toBe(0);
+    expect(repos.items.byId(a.id)).not.toBeNull();
+    const holder = repos.items.byId(b.id)!;
+    expect({ origin: holder.eventOriginItemId, linked: holder.linkedItemId }).toEqual({ origin: a.id, linked: a.id });
+    expect(revisionsOf(db, a.id)).toBe(1); // the rev-1 row (undo / Restore original history) is not cascaded away
+    expect(db.prepare('PRAGMA foreign_key_check').all()).toEqual([]);
+  });
+
+  it('keeps a whole reschedule chain (origin <- superseded middle <- holder), transitively', () => {
+    const { repos } = memRepos();
+    const { a, b } = rescheduledOnce(repos, T0 - 150 * DAY);
+    const card = seedOpenItem(repos, b.chatId, (T0 - 120 * DAY) as EpochMs, 'm-change-2');
+    const c = repos.items.update(
+      card.id,
+      {
+        analysis: 'done',
+        eventState: 'updated',
+        linkedItemId: b.id,
+        calendarEventId: EVT_A,
+        eventStartTs: FAR,
+        eventRevision: 3,
+        eventOriginItemId: a.id,
+      },
+      (T0 - 100 * DAY) as EpochMs,
+    );
+    repos.items.update(b.id, { closedReason: 'superseded' }, (T0 - 100 * DAY) as EpochMs);
+
+    expect(repos.retention.purge(window).itemsDeleted).toBe(0);
+    expect([a.id, b.id, c.id].map((id) => repos.items.byId(id) !== null)).toEqual([true, true, true]);
+    expect(repos.items.byId(c.id)!.eventOriginItemId).toBe(a.id);
+    expect(repos.items.byId(c.id)!.linkedItemId).toBe(b.id);
+  });
+
+  it('keeps a closed item whose event a live in_calendar item still holds, even without a link column', () => {
+    const { db, repos } = memRepos();
+    const { a, b } = rescheduledOnce(repos, T0 - 91 * DAY);
+    // a holder whose link columns are not set: the shared event id alone protects the event's revision history
+    db.prepare(`UPDATE items SET linked_item_id = NULL, event_origin_item_id = NULL WHERE id = ?`).run(b.id);
+    expect(repos.retention.purge(window).itemsDeleted).toBe(0);
+    expect(repos.items.byId(a.id)).not.toBeNull();
+  });
+
+  it('deletes the chain once the holder itself is closed and aged out, and still deletes unrelated closed items', () => {
+    const { db, repos } = memRepos();
+    const { a, b } = rescheduledOnce(repos, T0 - 200 * DAY);
+    repos.items.update(b.id, { closedReason: 'past' }, (T0 - 95 * DAY) as EpochMs);
+    const otherChat = seedChat(repos, JID_B, T0 - 200 * DAY);
+    const other = seedOpenItem(repos, otherChat.id, (T0 - 200 * DAY) as EpochMs, 'm-other');
+    repos.items.update(other.id, { closedReason: 'replied' }, (T0 - 200 * DAY) as EpochMs);
+
+    expect(repos.retention.purge(window).itemsDeleted).toBe(3);
+    expect([a.id, b.id, other.id].map((id) => repos.items.byId(id))).toEqual([null, null, null]);
+    expect(db.prepare('PRAGMA foreign_key_check').all()).toEqual([]);
+  });
+
+  it('a young closed holder keeps its old origin only until the holder itself ages out', () => {
+    const { repos } = memRepos();
+    const { a, b } = rescheduledOnce(repos, T0 - 200 * DAY);
+    repos.items.update(b.id, { closedReason: 'past' }, (T0 - 10 * DAY) as EpochMs);
+    expect(repos.retention.purge(window).itemsDeleted).toBe(0);
+    expect(repos.items.byId(a.id)).not.toBeNull();
+    const later = { before: window.before + 81 * DAY, closedBefore: window.closedBefore + 81 * DAY };
+    expect(repos.retention.purge(later).itemsDeleted).toBe(2);
   });
 });

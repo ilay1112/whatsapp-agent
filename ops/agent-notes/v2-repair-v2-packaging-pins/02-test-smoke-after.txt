@@ -1,0 +1,41 @@
+hash-bridge: OK 43540541 bytes sha256 AC23221E8BCF3937A4CA346B3BD80A8DA09DF94CBECD949AF2916C4BC8D22FF5
+  • electron-builder  version=26.15.3 os=10.0.26200
+  • loaded configuration  file=C:\dev\whatsapp agent\electron-builder.yml
+  • description is missed in the package.json  appPackageFile=C:\dev\whatsapp agent\package.json
+  • author is missed in the package.json  appPackageFile=C:\dev\whatsapp agent\package.json
+  • skipped dependencies rebuild  reason=npmRebuild is set to false
+  • packaging       platform=win32 arch=x64 electron=44.4.3 appOutDir=dist\win-unpacked
+  • downloaded      label=electron progress=100%
+  • downloaded electron zip extracted successfully  output=C:\dev\whatsapp agent\dist\win-unpacked
+  • searching for node modules  pm=npm searchDir=C:\dev\whatsapp agent
+  • duplicate dependency references  dependencies=["@modelcontextprotocol/sdk@1.30.0","debug@4.4.3","fetch-blob@3.2.0","gaxios@7.3.1","ecdsa-sig-formatter@1.0.11","ajv@8.20.0","express@5.2.1","mime-types@3.0.2","debug@4.4.3","http-errors@2.0.1","iconv-lite@0.7.3","on-finished@2.4.1","qs@6.16.0","raw-body@3.0.2","type-is@2.1.0","debug@4.4.3","debug@4.4.3","on-finished@2.4.1","get-intrinsic@1.3.0","call-bind-apply-helpers@1.0.2","call-bind-apply-helpers@1.0.2","es-object-atoms@1.1.2","call-bound@1.0.4","get-intrinsic@1.3.0","side-channel-map@1.0.1","debug@4.4.3","debug@4.4.3","http-errors@2.0.1","mime-types@3.0.2","on-finished@2.4.1","send@1.2.1","mime-types@3.0.2","http-errors@2.0.1"]
+  • updating asar integrity executable resource  executablePath=dist\win-unpacked\WhatsApp Calendar Agent.exe
+  • signing with signtool.exe  path=dist\win-unpacked\resources\whisper\whisper-cli.exe
+  • signing with signtool.exe  path=dist\win-unpacked\resources\bridge\whatsapp-bridge.exe
+  • signing with signtool.exe  path=dist\win-unpacked\resources\llama\llama-server.exe
+  • executing @electron/fuses  electronPath=dist\win-unpacked\WhatsApp Calendar Agent.exe
+  • signing with signtool.exe  path=dist\win-unpacked\WhatsApp Calendar Agent.exe
+smoke-packaged: C:\dev\whatsapp agent\dist\win-unpacked
+  [ok]   check 4a - calendar server packaged: all 156 staged package folder(s), calendar-mcp\node_modules\@cocal\google-calendar-mcp\build\index.js and the ARCH 15.3 package.json/package-lock.json are in <resources>\calendar-mcp
+  [FAIL] check 1 - could not start the packaged exe as Node (spawn UNKNOWN); the check did NOT run. On Windows 11 this is usually Smart App Control or a WDAC policy refusing the freshly built, unsigned exe (Event Viewer > Microsoft-Windows-CodeIntegrity/Operational, events 3033/3077). Re-run on a machine that allows the build to execute, or sign the build; never count this as a pass.
+  [FAIL] check 2 - could not start the packaged exe as Node (spawn UNKNOWN); the check did NOT run. On Windows 11 this is usually Smart App Control or a WDAC policy refusing the freshly built, unsigned exe (Event Viewer > Microsoft-Windows-CodeIntegrity/Operational, events 3033/3077). Re-run on a machine that allows the build to execute, or sign the build; never count this as a pass.
+(node:337064) ExperimentalWarning: stripTypeScriptTypes is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+  [ok]   check 3 - the fuse wire read back equals the seven ARCH 15.2 values
+  [ok]   check 4 - packaged whatsapp-bridge.exe streams to the pinned SHA-256 (43540541 bytes, never executed)
+  [ok]   check 4 - all 24 files of vendor/llama/MANIFEST.txt are in resources\llama (none executed)
+  [ok]   check 4 - the five tray/notification icons are present
+  [ok]   check 4 - THIRD_PARTY_NOTICES.txt is present
+  [ok]   check 5 - app.asar listing clean (4541 entries, no map/test/native/seam content in 1 main chunk(s), nothing unpacked)
+  [ok]   check 7 - <resources>\whisper = the 13 MANIFEST files, each streams to SHA256SUMS; pin b5130 / 8,573,270 B; whisper-cli.exe is PE32+ x64 (header read, never executed); no ggml mixing with llama
+  [ok]   check 8 - the packaged model manifest deep-equals vendor/models.pin.json (B18 voice, F19 projectors)
+  [FAIL] check 9 - no tools/list result from check 1 to inspect (see check 1 above)
+  [ok]   check 10 - no claude/agy/gemini/whisper-server binary among 6793 files; no ARCH-v2 12 forbidden package inside app.asar
+  [ok]   check 11 - opus-decoder@0.7.12 + its three MIT/Apache deps are in app.asar; no .wasm file anywhere; nothing unpacked (seam strings: check 5)
+  [ok]   check 12 - THIRD_PARTY_NOTICES.txt carries all 8 v2 anchors and the whisper.cpp MIT text
+  [ok]   check 6 - no-GUI rule held: all 2 spawn(s) ran the packaged exe as plain Node. Starting the packaged GUI is manual item M9.
+
+smoke-packaged: FAIL - 3 problem(s):
+  - check 1 - could not start the packaged exe as Node (spawn UNKNOWN); the check did NOT run. On Windows 11 this is usually Smart App Control or a WDAC policy refusing the freshly built, unsigned exe (Event Viewer > Microsoft-Windows-CodeIntegrity/Operational, events 3033/3077). Re-run on a machine that allows the build to execute, or sign the build; never count this as a pass.
+  - check 2 - could not start the packaged exe as Node (spawn UNKNOWN); the check did NOT run. On Windows 11 this is usually Smart App Control or a WDAC policy refusing the freshly built, unsigned exe (Event Viewer > Microsoft-Windows-CodeIntegrity/Operational, events 3033/3077). Re-run on a machine that allows the build to execute, or sign the build; never count this as a pass.
+  - check 9 - no tools/list result from check 1 to inspect (see check 1 above)

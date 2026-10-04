@@ -9,8 +9,8 @@ import type { Repos } from '../db/index';
 import type { ActionId, ItemId } from '../../shared/types';
 import type { EventContentWithStatus } from '../../shared/schemas';
 import type { OwnedEventProjection } from '../mcp/readClient';
-import { LIMITS } from '../../shared/types';
-import { contentOfProjection, normaliseField } from './eventContent';
+import { CALENDAR_EVENT_STATES, LIMITS } from '../../shared/types';
+import { contentOfProjection, equalContent, normaliseField } from './eventContent';
 
 /** The approved payload (canonical_json after the user's edit). Returns null for a row whose JSON was nulled by retention. */
 export function parseFinalPayload(action: ApprovalAction): ActionPayload | null {
@@ -26,21 +26,26 @@ export function parseFinalPayload(action: ApprovalAction): ActionPayload | null 
   return result.success ? result.data : null;
 }
 
-/** An event proposal that is still waiting for a click keeps the item open even after the reply was sent (ARCH section 7). */
+/** An event proposal (or [V2] a change of an event, B20) that is still waiting for a click keeps the item open even after the reply was
+ *  sent (ARCH section 7). */
 function eventPending(eventState: string): boolean {
-  return eventState === 'proposed' || eventState === 'incomplete';
+  return eventState === 'proposed' || eventState === 'incomplete' || eventState === 'change_proposed';
 }
 
-/** ARCH section 7: reply sent by approval and no event pending => the item closes as 'replied'. */
+/** ARCH section 7: "any OPEN item --reply sent by approval, no event pending--> closed 'replied'". [v2-fix editing-undo-9] An in_calendar
+ *  card (event created / updated / cancelled, ARCH-v2 5.1) is not open: when its reply is sent after its event it stays the chat's
+ *  editable event (B20, findExistingEvent) with its Undo / Cancel doors - closing it 'replied' turned it 'ignored'. */
 export function applySendSuccess(repos: Repos, action: ApprovalAction, _payload: SendReplyPayload, now: EpochMs): void {
   const item = repos.items.byId(action.itemId);
   if (!item) return;
+  const inCalendar = (CALENDAR_EVENT_STATES as readonly string[]).includes(item.eventState);
+  const closes = !inCalendar && !eventPending(item.eventState);
   repos.items.update(
     item.id,
     {
       replyState: 'sent',
       errorCode: null,
-      closedReason: item.closedReason ?? (eventPending(item.eventState) ? null : 'replied'),
+      closedReason: item.closedReason ?? (closes ? 'replied' : null),
     },
     now,
   );
@@ -207,8 +212,12 @@ export function commitUpdateDone(
   opts: { autoWriteId: string | null; extraReverts: readonly number[]; auditKind: 'action_done' | 'action_reconciled' },
   now: EpochMs,
 ): EventRevisionRecord {
+  // [v2-fix data-integrity-v4-5] computed BEFORE the new row reverts `revertOf` (that changes the span)
+  const extraReverts = opts.extraReverts.length > 0 ? opts.extraReverts : restoreSpanReverts(repos, p);
   const target = repos.items.byId(p.targetItemId);
-  const revision = Math.max(p.baseRevision, target?.eventRevision ?? p.baseRevision) + 1;
+  // [v2-fix data-integrity-v4-4 / editing-undo-8] the event's revision comes from its revision CHAIN: an applied change moves the event
+  // to the ACTING item and never bumps the source (`targetItemId`), so the source's own event_revision is stale after any delta.
+  const revision = Math.max(p.baseRevision, currentRevisionOf(repos, p.targetEventId, target)) + 1;
   repos.actions.markDone(a.id, { kind: 'update_event', eventId: p.targetEventId, revision, status: p.to.status }, now);
   const rev = applyUpdateSuccess(
     repos,
@@ -237,8 +246,8 @@ export function commitUpdateDone(
     });
   }
   if (p.change === 'undo' && p.revertOf !== undefined) {
-    for (const id of opts.extraReverts) repos.eventRevisions.markReverted(id, rev.id);
-    for (const id of [p.revertOf, ...opts.extraReverts]) {
+    for (const id of extraReverts) repos.eventRevisions.markReverted(id, rev.id);
+    for (const id of [p.revertOf, ...extraReverts]) {
       const w = autoWriteIdOfAction(repos, repos.eventRevisions.byId(id)!.actionId); // markReverted above threw for an unknown id
       if (w !== null) {
         repos.autoWrites.setUndo(w, { undoState: 'undone', undoActionId: a.id });
@@ -247,4 +256,30 @@ export function commitUpdateDone(
     }
   }
   return rev;
+}
+
+/** The CURRENT revision of an event: the newest event_revisions row, never below `item`'s own event_revision (a v1-created event has no
+ *  row). The revision chain is authoritative because every applied change moves the event to its acting item (F27) and leaves older
+ *  holders - a change card's `targetItemId` among them - at their old value. Used by the revision compare-and-set (approve), the
+ *  superseded guard (reconcile) and the next revision number (commitUpdateDone). */
+export function currentRevisionOf(repos: Repos, eventId: string, item: { eventRevision: number } | null): number {
+  return Math.max(item?.eventRevision ?? 0, repos.eventRevisions.newestFor(eventId)?.revision ?? 0);
+}
+
+/**
+ * [v2-fix data-integrity-v4-5] The OTHER automatic revisions a "Restore original" reverts, recomputed from the revision chain so a restore
+ * resolved by reconcile or by its "Apply again" clone (whose in-memory extras are gone) still reverts its whole span (v2-pipeline: every
+ * automatic revision of the span is marked reverted). An undo is a restore of the span when `revertOf` is the span's NEWEST revision and
+ * `to` is the span's restore target (the oldest revision's prev; the cancel of an automatic create when that prev is null) rather than
+ * `revertOf`'s own prev - the two always differ because no applied change is a no-op (`to == from` is refused at approve).
+ */
+export function restoreSpanReverts(repos: Repos, p: import('../../shared/schemas').UpdateEventPayload): number[] {
+  if (p.change !== 'undo' || p.revertOf === undefined) return [];
+  const span = repos.eventRevisions.unrevertedAutoSpan(p.targetEventId);
+  const newest = span[span.length - 1];
+  const oldest = span[0];
+  if (span.length < 2 || newest === undefined || oldest === undefined || newest.id !== p.revertOf) return [];
+  const restoresOldest = oldest.prev === null ? p.to.status === 'cancelled' : equalContent(oldest.prev, p.to);
+  const restoresNewest = newest.prev !== null && equalContent(newest.prev, p.to);
+  return restoresOldest && !restoresNewest ? span.slice(0, -1).map((r) => r.id) : [];
 }

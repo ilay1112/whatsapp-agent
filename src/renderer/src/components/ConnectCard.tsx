@@ -77,6 +77,8 @@ export function ConnectCard({ provider, size, status, selected, onUse }: Connect
 
   const [checking, setChecking] = useState(false);
   const [waiting, setWaiting] = useState(false);
+  /** ux-i18n-v2-11: main's refusal of the last Sign in click (CLI_NOT_INSTALLED, CLI_VERSION, ...), shown inline. */
+  const [signInError, setSignInError] = useState<ErrorCode | null>(null);
   const [copied, setCopied] = useState(false);
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<{ ok: true; ms: number } | { ok: false; code: ErrorCode } | null>(null);
@@ -167,8 +169,17 @@ export function ConnectCard({ provider, size, status, selected, onUse }: Connect
   }, [provider, status.state, t]);
 
   const signIn = useCallback(async () => {
+    setSignInError(null);
     const r = await api.cliSignIn(provider);
-    if (r.ok) setWaiting(true);
+    if (r.ok) {
+      setWaiting(true);
+      return;
+    }
+    // The cached status was out of date (the CLI was removed or downgraded) or main refused: say so, and re-read it so
+    // the state line and its action follow (ux-i18n-v2-11).
+    setSignInError(r.error.code);
+    await useCliStore.getState().refresh(provider);
+    setNow(Date.now());
   }, [provider]);
 
   const runTest = useCallback(async () => {
@@ -250,6 +261,18 @@ export function ConnectCard({ provider, size, status, selected, onUse }: Connect
       ) : null}
     </div>
   );
+
+  const signInErrorRow =
+    signInError !== null ? (
+      <p
+        role="alert"
+        className="m-0 note-amber text-sm"
+        data-testid={`connect-signin-error-${provider}`}
+        data-code={signInError}
+      >
+        {t(`errors.${signInError}.title`, { cli, vendor })}
+      </p>
+    ) : null;
 
   const commandField = commandKey ? (
     <div className="flex flex-wrap items-center gap-2">
@@ -367,6 +390,7 @@ export function ConnectCard({ provider, size, status, selected, onUse }: Connect
           {stateLine}
         </span>
         {action}
+        {signInErrorRow}
         {cardCode ? errorRow(cardCode) : null}
       </section>
     );
@@ -463,6 +487,7 @@ export function ConnectCard({ provider, size, status, selected, onUse }: Connect
         checkedLine
       ) : null}
 
+      {signInErrorRow}
       {overage ? errorRow('CLOUD_OVERAGE') : cardCode ? errorRow(cardCode) : null}
 
       {uiState === 'ready' ? (

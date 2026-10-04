@@ -4,14 +4,14 @@
 //   - Undo = one onUndo per activation, behind the focus-steal guard; Pause only while the policy is `on`, no guard;
 //   - collapsible (aria-expanded), default open while any row is undoable; > 5 rows => "Show all in Automatic activity".
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { render, screen, within } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { AutoState, AutoWriteView, EventContentView } from '@shared/types';
 import { AutoStrip, STRIP_MAX_ROWS } from './AutoStrip';
 import { useAutoStore } from '../store/auto';
 import { useDashboardStore } from '../store/dashboard';
 import { useFocusGuardStore } from '../store/health';
-import { i18next } from '../../../../tests/setup-renderer';
+import { i18next, invokeMocks } from '../../../../tests/setup-renderer';
 
 const NOW = Date.UTC(2026, 8, 28, 9, 0); // Mon 28 Sep 12:00 Asia/Jerusalem
 const ev = (patch: Partial<EventContentView> = {}): EventContentView => ({
@@ -158,6 +158,37 @@ describe('AutoStrip - rows', () => {
     render(<AutoStrip rows={[r]} policyState={policy('on')} onUndo={noop} onShow={onShow} onPause={noop} />);
     await user.click(screen.getByTestId(`autostrip-show-${r.autoWriteId}`));
     expect(onShow).toHaveBeenCalledWith(r.itemId);
+  });
+
+  // ux-i18n-v2-10: UX2 3.4 - "After two automatic edits of one event the card and the AutoStrip row also show Restore
+  // original"; the strip never offered it.
+  it('after two automatic edits of one event its newest row offers a guarded "Restore original" (item:restoreOriginal)', async () => {
+    vi.useRealTimers();
+    const user = userEvent.setup();
+    const first = row({ itemId: 90, kind: 'update', writtenAt: NOW - 3 * 3_600_000, undoState: 'blocked_changed' });
+    const second = row({ itemId: 90, kind: 'update', writtenAt: NOW - 3_600_000 });
+    const other = row({ itemId: 91, kind: 'update' });
+    render(
+      <AutoStrip rows={[first, second, other]} policyState={policy('on')} onUndo={noop} onShow={noop} onPause={noop} />,
+    );
+    expect(screen.queryByTestId(`autostrip-restore-${first.autoWriteId}`)).toBeNull();
+    expect(screen.queryByTestId(`autostrip-restore-${other.autoWriteId}`)).toBeNull();
+    useFocusGuardStore.setState({ activationBlockedUntil: Date.now() + 60_000 });
+    await user.click(screen.getByTestId(`autostrip-restore-${second.autoWriteId}`));
+    expect(invokeMocks['item:restoreOriginal']).not.toHaveBeenCalled();
+    useFocusGuardStore.setState({ activationBlockedUntil: 0 });
+    await user.click(screen.getByTestId(`autostrip-restore-${second.autoWriteId}`));
+    await waitFor(() => expect(invokeMocks['item:restoreOriginal']).toHaveBeenCalledExactlyOnceWith({ itemId: 90 }));
+  });
+
+  it('one automatic edit (or an undone newest write) offers no "Restore original"', () => {
+    const single = row({ itemId: 92, kind: 'update' });
+    const a = row({ itemId: 93, kind: 'update', writtenAt: NOW - 3_600_000 });
+    const undone = row({ itemId: 93, kind: 'update', undoState: 'undone' });
+    render(
+      <AutoStrip rows={[single, a, undone]} policyState={policy('on')} onUndo={noop} onShow={noop} onPause={noop} />,
+    );
+    expect(screen.queryByTestId(/autostrip-restore-/)).toBeNull();
   });
 
   it('every undo_state has its own trailing actions', () => {

@@ -447,7 +447,7 @@ export interface Repos {
  *  live on `Repos` itself. The alias keeps the C2 name importable. */
 export type ReposV2 = Repos;
 /** Assembles the repos over one open database. Pure wiring: every repo is stateless and prepares its statements lazily. */
-export function createRepos(db: Db): Repos {
+export function createRepos(db: Db, opts?: { queueTimers?: import('./repos/queue').QueueTimers }): Repos {
   return {
     db,
     meta: createMetaRepo(db),
@@ -459,7 +459,7 @@ export function createRepos(db: Db): Repos {
     retention: createRetentionRepo(db),
     proposals: createProposalsRepo(db),
     actions: createActionsRepo(db),
-    queue: createQueueRepo(db),
+    queue: createQueueRepo(db, opts?.queueTimers), // [v2-repair] WCA_TIMERS debounce seam (e2e only)
     runs: createRunsRepo(db),
     audit: createAuditRepo(db),
     rate: createRateRepo(db),

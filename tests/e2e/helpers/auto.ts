@@ -9,6 +9,7 @@
 // per-chat budget (`auto_budget`, which also pauses the policy). Each chat gets the user's own "hey" an hour earlier, because an
 // automatic write needs recent user participation in the chat (`no_user_participation`).
 import type { ElectronApplication, Page } from '@playwright/test';
+import { createHash } from 'node:crypto';
 import { attachBridge, dialogScript, mcpChild, type AttachedBridge, type McpChild } from './fakes.ts';
 import { expect, wca, type E2eContext } from './fixtures.ts';
 import { seedGoogleCredentials, seedProfile } from './seedProfile.ts';
@@ -234,7 +235,12 @@ export async function launchAutoWorld(
     settings: { provider: 'local', targetCalendarId: 'primary', timeZone: 'Asia/Jerusalem', language: 'en' },
     chats: CHATS.map((n) => ({ jid: jid(n), name: `Contact ${String(n)}` })),
     // The profile signed in through the Google wizard once, whose list-calendars recorded the roles (B7, googleAuth.persistRoles).
-    meta: { calendar_roles_json: JSON.stringify({ primary: 'owner' }) },
+    // [V2] auto-mode-6: that sign-in also persisted the account the automatic-mode snapshot binds to (8 hex of the fake's
+    // synthetic account, exactly as compose's persistGoogleAccount stores it - never the e-mail itself).
+    meta: {
+      calendar_roles_json: JSON.stringify({ primary: 'owner' }),
+      google_account_sha8: createHash('sha256').update('user@example.test').digest('hex').slice(0, 8),
+    },
   });
   // A connected calendar (ARCH 6.5: no "Add to calendar" without one); the "calendar" is WCA_MCP_CMD = the fake.
   seedGoogleCredentials(userDataDir);

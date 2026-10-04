@@ -63,7 +63,7 @@ const write = (patch: Partial<AutoWriteView> = {}): AutoWriteView => ({
 
 beforeEach(() => {
   useHealthStore.setState({ health: null, progress: null, hiddenSetupTasks: [], downloads: {}, queue: null });
-  useSettingsStore.setState({ settings: null, saveError: null, savedAt: 0 });
+  useSettingsStore.setState({ settings: null, saveError: null, savedAt: 0, voiceIntent: null });
   useDashboardStore.setState({ ignoredCount: 0, toast: null, arrivedItemIds: new Set() });
   useAutoStore.setState({ state: null, rows: [], fetchedAt: 0 });
   useCliStore.setState({ status: {}, checkedAt: {}, error: {} });
@@ -254,6 +254,80 @@ describe('App v2 - status-panel sub-lines navigate to their Settings group', () 
     const sub = await screen.findByTestId(`health-subline-${part}`);
     await userEvent.click(sub.querySelector('button') ?? sub);
     await waitFor(() => expect(screen.getByTestId('settings')).toHaveAttribute('data-group', group));
+  });
+});
+
+// ux-i18n-v2-1: a dashboard control's requestNavigation() must actually move the shell (AutoStrip "Show all", the
+// sheet's "See all automatic activity", the voice / picture raw cards' "Turn on in Settings" / "Choose an AI").
+describe('App v2 - dashboard navigation requests', () => {
+  it.each([
+    [{ view: 'activity' }, 'activity'],
+    [{ view: 'settings', section: 'voice' }, 'ai'],
+    [{ view: 'settings', section: 'pictures' }, 'ai'],
+    [{ view: 'settings', section: 'ai' }, 'ai'],
+    [{ view: 'settings', section: 'auto' }, 'auto'],
+  ] as const)('%o opens Settings > %s and is cleared', async (req, group) => {
+    useDashboardStore.setState({ navRequest: null });
+    await boot();
+    await waitFor(() => expect(screen.getByTestId('app')).toHaveAttribute('data-view', 'dashboard'));
+    act(() => useDashboardStore.getState().requestNavigation(req));
+    await waitFor(() => expect(screen.getByTestId('app')).toHaveAttribute('data-view', 'settings'));
+    if (group === 'activity') expect(screen.getByTestId('auto-activity')).toBeInTheDocument();
+    else expect(screen.getByTestId('settings')).toHaveAttribute('data-group', group);
+    expect(useDashboardStore.getState().navRequest).toBeNull();
+  });
+
+  it('{view:"dashboard", itemId} (Automatic activity "Show") returns to the dashboard with that item open', async () => {
+    useDashboardStore.setState({ navRequest: null, openItemId: null });
+    await boot();
+    act(() => useDashboardStore.getState().requestNavigation({ view: 'activity' }));
+    await waitFor(() => expect(screen.getByTestId('app')).toHaveAttribute('data-view', 'settings'));
+    act(() => useDashboardStore.getState().requestNavigation({ view: 'dashboard', itemId: 7 }));
+    await waitFor(() => expect(screen.getByTestId('app')).toHaveAttribute('data-view', 'dashboard'));
+    expect(useDashboardStore.getState().openItemId).toBe(7);
+    await waitFor(() => expect(invokeMocks['item:get']).toHaveBeenCalledWith({ itemId: 7 }));
+  });
+});
+
+// ux-i18n-v2-4: the onboarding opt-in / a Settings download stores only the tier; the shell turns voice on once ready.
+describe('App v2 - a requested voice tier is turned on once its files are ready', () => {
+  it('settles the intent on the dashboard (Settings > Voice notes closed)', async () => {
+    let status: 'none' | 'ready' = 'none';
+    mockInvoke('voice:getState', () => ({
+      ok: true,
+      value: {
+        ...IPC_DEFAULTS['voice:getState'],
+        enabled: false,
+        tier: 'voice-hebrew',
+        resolvedTier: 'voice-hebrew',
+        model: { id: 'voice-hebrew', sizeBytes: 10, status, bytesDone: 0 },
+        vad: { status },
+      },
+    }));
+    await boot();
+    await waitFor(() => expect(screen.getByTestId('app')).toHaveAttribute('data-view', 'dashboard'));
+    act(() => useSettingsStore.getState().setVoiceIntent('voice-hebrew'));
+    await waitFor(() => expect(invokeMocks['voice:getState']).toHaveBeenCalled());
+    expect(invokeMocks['settings:set']).not.toHaveBeenCalledWith({ voice: { enabled: true, tier: 'voice-hebrew' } });
+    const progress = (st: 'downloading' | 'ready') =>
+      act(() =>
+        useHealthStore.getState().setProgress({
+          tier: 'voice-hebrew',
+          status: st,
+          bytesDone: 10,
+          bytesTotal: 10,
+          bytesPerSec: 0,
+          etaSec: 0,
+          errorCode: null,
+        }),
+      );
+    progress('downloading');
+    status = 'ready';
+    progress('ready');
+    await waitFor(() =>
+      expect(invokeMocks['settings:set']).toHaveBeenCalledWith({ voice: { enabled: true, tier: 'voice-hebrew' } }),
+    );
+    expect(useSettingsStore.getState().voiceIntent).toBeNull();
   });
 });
 

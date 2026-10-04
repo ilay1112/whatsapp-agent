@@ -33,6 +33,9 @@ import {
 import { useSettingsStore } from '../store/settings';
 import { useDashboardStore } from '../store/dashboard';
 
+/** REQUEST 8: the raw card draws neither an EventChip nor a draft-scope badge row. */
+const RAW_ADOPTED_SCOPES = ['draft', 'event'] as const;
+
 export interface RawCardProps {
   item: ItemVM;
   onOpen(): void;
@@ -107,8 +110,11 @@ export function RawCard(props: RawCardProps) {
       />
 
       {/* The reason chip: hold reason ("New contact - not analysed") or the failure title. Enum -> locale key only. */}
+      {/* REQUEST 8: no EventChip and no draft-scope row here, so their codes join this row (a red badge is never hidden);
+          automatic / auto_shadow are drawn by the full card's AutoChip only. */}
       <Badges
-        codes={item.badges}
+        codes={item.badges.filter((code) => code !== 'automatic' && code !== 'auto_shadow')}
+        adoptScopes={RAW_ADOPTED_SCOPES}
         holdReason={item.holdReason ?? undefined}
         errorCode={item.errorCode ?? undefined}
         scope="card"

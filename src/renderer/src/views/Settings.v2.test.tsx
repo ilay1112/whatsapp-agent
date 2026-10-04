@@ -6,6 +6,7 @@ import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { AutoState, ChatView } from '@shared/types';
 import { DEFAULT_SETTINGS, applySettingsPatch } from '@shared/settings';
+import { DEFAULT_AUTO_SCOPE } from '@shared/schemas';
 import {
   IPC_DEFAULTS,
   defaultChat,
@@ -216,5 +217,85 @@ describe('Settings v2 - the remaining controls address their own channels', () =
     await userEvent.click(screen.getByTestId('settings-autostart'));
     await waitFor(() => expect(screen.getByTestId('settings-saved')).toBeInTheDocument());
     await waitFor(() => expect(screen.queryByTestId('settings-saved')).not.toBeInTheDocument(), { timeout: 3000 });
+  });
+});
+
+// REPAIR v2-renderer-defects (V2-W2-03 REQUEST 2): Settings > Automatic mode never shows a stale AutoState. The store
+// is re-read (a READ, never an enable) when Settings opens even if it already holds a state, when the Automatic mode
+// group is opened again, and while Settings is open on every push that can change it (auto:changed, dashboard:changed).
+describe('Settings v2 - Automatic mode is never stale (REQUEST 2)', () => {
+  const base: AutoState = IPC_DEFAULTS['auto:getState'];
+  const withCreates = (approvedCreates: number): AutoState => ({
+    ...base,
+    preconditions: { ...base.preconditions, approvedCreates },
+  });
+  const reason = () => screen.queryByTestId('auto-precondition')?.getAttribute('data-reason') ?? null;
+
+  it('re-reads on open although the store already holds a (stale) state', async () => {
+    useAutoStore.setState({ state: withCreates(2) });
+    mockInvoke('auto:getState', () => ({ ok: true, value: withCreates(3) }));
+    await paint('auto');
+    await waitFor(() => expect(screen.getByTestId('auto-enable-trial')).toBeInTheDocument());
+    expect(reason()).toBeNull();
+    expect(invokeMocks['auto:requestEnable']).not.toHaveBeenCalled();
+  });
+
+  it('auto:changed while open replaces the group state (shadow -> "End trial")', async () => {
+    const off = useAutoStore.getState().subscribe(); // App holds this subscription for the whole window
+    await paint('auto');
+    await waitFor(() => expect(reason()).toBe('trackRecord'));
+    emitPush('auto:changed', {
+      ...withCreates(3),
+      policy: {
+        id: 'p1',
+        state: 'shadow',
+        enabledAt: Date.now(),
+        expiresAt: Date.now() + 30 * 86_400_000,
+        shadowUntil: Date.now() + 86_400_000,
+        pausedReason: null,
+        scope: DEFAULT_AUTO_SCOPE,
+      },
+      shadowTally: { decisions: 3, wouldAuto: 3, approvedUnchanged: 3, edited: 0, dismissed: 0 },
+    });
+    await waitFor(() => expect(screen.getByTestId('auto-end-shadow')).toBeInTheDocument());
+    expect(invokeMocks['auto:requestEnable']).not.toHaveBeenCalled();
+    off();
+  });
+
+  it('dashboard:changed while open re-reads AutoState (a click-approved create can complete the track record)', async () => {
+    let creates = 2;
+    mockInvoke('auto:getState', () => ({ ok: true, value: withCreates(creates) }));
+    await paint('auto');
+    await waitFor(() => expect(reason()).toBe('trackRecord'));
+    creates = 3;
+    emitPush('dashboard:changed', { itemIds: [1] });
+    await waitFor(() => expect(screen.getByTestId('auto-enable-trial')).toBeInTheDocument());
+    expect(invokeMocks['auto:requestEnable']).not.toHaveBeenCalled();
+    expect(invokeMocks['settings:set']).not.toHaveBeenCalled();
+  });
+
+  it('opening the group again (nav button, back from Automatic activity) re-reads AutoState', async () => {
+    let creates = 2;
+    mockInvoke('auto:getState', () => ({ ok: true, value: withCreates(creates) }));
+    await paint('auto');
+    await waitFor(() => expect(reason()).toBe('trackRecord'));
+    creates = 3;
+    await userEvent.click(screen.getByTestId('settings-nav-auto'));
+    await waitFor(() => expect(screen.getByTestId('auto-enable-trial')).toBeInTheDocument());
+
+    creates = 1;
+    await userEvent.click(screen.getByTestId('auto-open-activity'));
+    await userEvent.click(screen.getByTestId('auto-activity-back'));
+    await waitFor(() => expect(reason()).toBe('trackRecord'));
+  });
+
+  it('after unmount a push re-reads nothing more from Settings', async () => {
+    const { unmount } = render(<Settings initialGroup="auto" />);
+    await waitFor(() => expect(invokeMocks['auto:getState']).toHaveBeenCalled());
+    unmount();
+    const calls = invokeMocks['auto:getState'].mock.calls.length;
+    emitPush('dashboard:changed', { itemIds: [1] });
+    await new Promise((r) => setTimeout(r, 10));
+    expect(invokeMocks['auto:getState'].mock.calls.length).toBe(calls);
   });
 });

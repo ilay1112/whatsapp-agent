@@ -68,3 +68,18 @@ describe('Badges v2', () => {
     expect(screen.getByTestId('badge-from_image')).toHaveTextContent('מתמונה');
   });
 });
+
+describe('Badges - adoptScopes (REQUEST 8)', () => {
+  it('a card row adopting the draft scope shows manipulation; without it the code stays out', () => {
+    const { rerender } = render(<Badges codes={['manipulation', 'older_message']} scope="card" />);
+    expect(screen.queryByTestId('badge-manipulation')).toBeNull();
+    rerender(<Badges codes={['manipulation', 'older_message']} scope="card" adoptScopes={['draft']} />);
+    expect(screen.getByTestId('badge-manipulation')).toBeInTheDocument();
+    expect(screen.getByTestId('badge-older_message')).toBeInTheDocument();
+  });
+
+  it('a row with only adopted codes is still drawn', () => {
+    render(<Badges codes={['conflict']} scope="card" adoptScopes={['event']} />);
+    expect(screen.getByTestId('badge-conflict')).toBeInTheDocument();
+  });
+});

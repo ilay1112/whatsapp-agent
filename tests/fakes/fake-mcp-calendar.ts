@@ -9,6 +9,9 @@
 // `update_on_foreign_event:<reason>`; ledger helpers for rules 8/9 (`neverDeleteProblems`, `neverForeignProblems`) that V2-W1-04 wires.
 // Spawnable-fake rules (TESTS 2.3): Node built-ins, @modelcontextprotocol/sdk, zod, tests/fakes only - never src/**.
 // In-process: createFakeCalendar(opts) + InMemoryTransport.createLinkedPair(); child: node tests/fakes/fake-mcp-calendar.{ts,mjs} [--seed] [--journal] [--scenario]
+// [REQUEST 12] child control channel: [--control-port <n|0> --control-secret <s> [--control-port-file <path>]] -> POST
+// http://127.0.0.1:<port>/__control/<verb> (X-Control-Secret); verbs = applyCalendarControl (userEditsInGoogle, drift, precondition_412, ...).
+// Client helpers: tests/fakes/fake-mcp-calendar-control.ts.
 // The child guard accepts the type-stripped `.mjs` copy too (TESTS 11 check 2 runs it through the packaged binary).
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
@@ -16,6 +19,8 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { z } from 'zod';
 import fs from 'node:fs';
+import { createServer } from 'node:http';
+import { timingSafeEqual } from 'node:crypto';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
@@ -628,6 +633,14 @@ export function createFakeCalendar(opts: FakeCalendarOptions): FakeCalendar {
   const appCreated: Array<{ eventId: string; priv: Record<string, string> }> = [];
   /** Events whose one-shot `drift` edit already happened. */
   const drifted = new Set<string>();
+  /** [REQUEST 12] on-demand one-shot Google-side drifts (next get-event) / 412s (next update-event), armed through the control
+   *  channel; each entry is consumed by the first matching call (`eventId: null` = any event), in arming order. */
+  const armedDrifts: Array<{ eventId: string | null; minutes: number }> = [];
+  const armedPreconditions: Array<{ eventId: string | null }> = [];
+  const takeArmed = <T extends { eventId: string | null }>(list: T[], eventId: string): T | undefined => {
+    const i = list.findIndex((a) => a.eventId === null || a.eventId === eventId);
+    return i < 0 ? undefined : list.splice(i, 1)[0];
+  };
   let etagCounter = 0;
   let lastUpdatedMs = 0;
 
@@ -952,6 +965,10 @@ export function createFakeCalendar(opts: FakeCalendarOptions): FakeCalendar {
         drifted.add(String(e.id));
         googleEdit(e, { start: shiftWall(e.start, 60), end: shiftWall(e.end, 60) });
       }
+      const armedDrift = takeArmed(armedDrifts, String(e.id));
+      if (armedDrift !== undefined) {
+        googleEdit(e, { start: shiftWall(e.start, armedDrift.minutes), end: shiftWall(e.end, armedDrift.minutes) });
+      }
       if (garbage) return { text: shapes.garbage(), isError: false };
       return { text: JSON.stringify({ event: masked(structured(e, calendarId), args.fields) }), isError: false };
     },
@@ -971,6 +988,10 @@ export function createFakeCalendar(opts: FakeCalendarOptions): FakeCalendar {
       if (v2.has('precondition_412')) {
         v2.delete('precondition_412');
         googleEdit(e, {}); // the user touched it in Google just before our PATCH: the etag moved
+        return { text: shapes.precondition(), isError: true };
+      }
+      if (takeArmed(armedPreconditions, String(e.id)) !== undefined) {
+        googleEdit(e, {}); // same as `precondition_412`, but armed on demand (control channel) and repeatable
         return { text: shapes.precondition(), isError: true };
       }
       if (typeof args.ifMatch === 'string' && args.ifMatch !== e.etag)
@@ -1119,6 +1140,24 @@ export function createFakeCalendar(opts: FakeCalendarOptions): FakeCalendar {
         if (ms > 0) delays.set(tool, ms);
         else delays.delete(tool);
       },
+      // [REQUEST 12] control-channel internals (see applyCalendarControl below)
+      __armDrift: (eventId: string | null, minutes: number) => {
+        armedDrifts.push({ eventId, minutes });
+      },
+      __armPrecondition: (eventId: string | null) => {
+        armedPreconditions.push({ eventId });
+      },
+      __clearScenario: (s: FakeCalendarV2Scenario) => {
+        v2.delete(s);
+        if (s === 'drift') drifted.clear(); // a later re-activation drifts every event once more
+      },
+      __controlState: () => ({
+        scenarios: [...v2],
+        armed: {
+          drift: armedDrifts.map((a) => ({ ...a })),
+          precondition_412: armedPreconditions.map((a) => ({ ...a })),
+        },
+      }),
     } as Record<string, unknown>),
   } as FakeCalendar;
   return fake;
@@ -1163,6 +1202,186 @@ export function neverForeignProblems(
     }
   }
   return problems;
+}
+
+// =====================================================================================================================
+// [REQUEST 12] control channel: verbs a test sends to a CHILD-mode fake (the app owns its stdio). The same dispatcher runs
+// in-process for unit tests; the child exposes it as POST http://127.0.0.1:<port>/__control/<verb> (header X-Control-Secret).
+// =====================================================================================================================
+
+export const CALENDAR_CONTROL_VERBS = [
+  'ping',
+  'state',
+  'userEditsInGoogle',
+  'drift',
+  'precondition_412',
+  'scenario',
+  'clearScenario',
+  'failNext',
+  'delay',
+  'setBusy',
+] as const;
+export type CalendarControlVerb = (typeof CALENDAR_CONTROL_VERBS)[number];
+/** A malformed control payload (the child answers 400 with the message). A plain Error (no class) so strip-mode type removal stays trivial. */
+export function calendarControlError(message: string): Error {
+  const err = new Error(message);
+  err.name = 'CalendarControlError';
+  return err;
+}
+/** What `state` answers. */
+export interface CalendarControlState {
+  storedEvents: FakeStoredEvent[];
+  violations: string[];
+  scenarios: string[];
+  armed: {
+    drift: Array<{ eventId: string | null; minutes: number }>;
+    precondition_412: Array<{ eventId: string | null }>;
+  };
+}
+
+/** Schema scenarios change tools/list, which the host verifies once per start: never accepted on a running server. */
+const SCHEMA_SCENARIOS: ReadonlySet<string> = new Set(['status_field_absent', 'ifmatch_absent']);
+const FAIL_KINDS = ['auth', 'duplicate', 'error', 'hang', 'crash_on_call'] as const;
+const EDIT_KEYS = ['summary', 'start', 'end', 'location', 'status'] as const;
+
+function isV2Scenario(s: string): s is FakeCalendarV2Scenario {
+  return (
+    [
+      'event_missing',
+      'gone_410',
+      'status_field_absent',
+      'ifmatch_absent',
+      'drift',
+      'precondition_412',
+      'timeout',
+      'crash_after_patch',
+      'restore_refused',
+      'readback_mismatch',
+      'private_map_replace',
+      'attendees',
+      'foreign_tags',
+      'precondition_412_always',
+    ].includes(s) || /^access_role:(owner|writer|reader|freeBusyReader|unknown|absent)$/.test(s)
+  );
+}
+
+const optEventId = (v: unknown): string | null => {
+  if (v === undefined || v === null) return null;
+  if (typeof v !== 'string' || v.length === 0) throw calendarControlError('eventId must be a non-empty string');
+  return v;
+};
+const count = (v: unknown): number => {
+  if (v === undefined) return 1;
+  if (typeof v !== 'number' || !Number.isInteger(v) || v < 1 || v > 100)
+    throw calendarControlError('count must be an integer 1..100');
+  return v;
+};
+
+/**
+ * Applies one control verb to a fake calendar and returns its JSON-safe answer.
+ * - `userEditsInGoogle {eventId, patch}`: the user edits the event in Google NOW (etag/updated/sequence move) - e.g. before an undo.
+ * - `drift {eventId?, minutes = 60, count = 1}`: the NEXT `count` get-event calls (of that event, or of any) first see it moved.
+ * - `precondition_412 {eventId?, count = 1}`: the NEXT `count` update-event calls answer 412 (etag bumped first).
+ * - `scenario {name}` / `clearScenario {name}`: add / remove a non-schema v2 scenario (clearing `drift` re-arms its first-get edit).
+ * - `failNext {tool, kind}`, `delay {tool, ms}`, `setBusy {blocks | null}`: the in-process wrapper's verbs.
+ * - `state`: stored events, violations, active scenarios and what is still armed (calls: the journal). `ping`: `{ok:true}`.
+ */
+export function applyCalendarControl(fake: FakeCalendar, verb: string, args: Record<string, unknown> = {}): unknown {
+  const internal = fake as unknown as {
+    __setBusy(b: Array<{ start: string; end: string }> | null): void;
+    __failNext(t: string, k: (typeof FAIL_KINDS)[number]): void;
+    __delay(t: string, ms: number): void;
+    __armDrift(eventId: string | null, minutes: number): void;
+    __armPrecondition(eventId: string | null): void;
+    __clearScenario(s: FakeCalendarV2Scenario): void;
+    __controlState(): Pick<CalendarControlState, 'scenarios' | 'armed'>;
+  };
+  switch (verb as CalendarControlVerb) {
+    case 'ping':
+      return { ok: true };
+    case 'state': {
+      const state: CalendarControlState = {
+        storedEvents: [...fake.storedEvents],
+        violations: [...fake.violations],
+        ...internal.__controlState(),
+      };
+      return state;
+    }
+    case 'userEditsInGoogle': {
+      const eventId = optEventId(args.eventId);
+      if (eventId === null) throw calendarControlError('userEditsInGoogle needs an eventId');
+      const raw = isRecord(args.patch) ? args.patch : {};
+      const patch: Partial<Pick<FakeStoredEvent, 'summary' | 'start' | 'end' | 'location' | 'status'>> = {};
+      for (const [k, v] of Object.entries(raw)) {
+        if (!(EDIT_KEYS as readonly string[]).includes(k)) throw calendarControlError(`patch key not editable: ${k}`);
+        if (typeof v !== 'string') throw calendarControlError(`patch.${k} must be a string`);
+        if (k === 'status') {
+          if (v !== 'confirmed' && v !== 'cancelled') throw calendarControlError('patch.status: confirmed|cancelled');
+          patch.status = v;
+        } else patch[k as 'summary' | 'start' | 'end' | 'location'] = v;
+      }
+      if (!fake.events.some((e) => e.id === eventId)) throw calendarControlError('userEditsInGoogle: unknown event');
+      fake.userEditsInGoogle(eventId, patch);
+      return fake.storedEvents.find((e) => e.eventId === eventId);
+    }
+    case 'drift': {
+      const eventId = optEventId(args.eventId);
+      const minutes = args.minutes === undefined ? 60 : args.minutes;
+      if (typeof minutes !== 'number' || !Number.isInteger(minutes) || minutes === 0)
+        throw calendarControlError('minutes must be a non-zero integer');
+      const n = count(args.count);
+      for (let i = 0; i < n; i += 1) internal.__armDrift(eventId, minutes);
+      return { armed: internal.__controlState().armed.drift.length };
+    }
+    case 'precondition_412': {
+      const eventId = optEventId(args.eventId);
+      const n = count(args.count);
+      for (let i = 0; i < n; i += 1) internal.__armPrecondition(eventId);
+      return { armed: internal.__controlState().armed.precondition_412.length };
+    }
+    case 'scenario':
+    case 'clearScenario': {
+      const name = String(args.name ?? '');
+      if (!isV2Scenario(name)) throw calendarControlError(`not a v2 scenario: ${name}`);
+      if (SCHEMA_SCENARIOS.has(name))
+        throw calendarControlError(`${name} is a schema scenario: set it at start (--seed v2Scenarios)`);
+      if (verb === 'scenario') fake.scenario(name);
+      else internal.__clearScenario(name);
+      return { scenarios: internal.__controlState().scenarios };
+    }
+    case 'failNext': {
+      const tool = String(args.tool ?? '');
+      const kind = String(args.kind ?? '');
+      if (tool === '') throw calendarControlError('failNext needs a tool');
+      if (!(FAIL_KINDS as readonly string[]).includes(kind))
+        throw calendarControlError(`failNext kind: ${FAIL_KINDS.join('|')}`);
+      internal.__failNext(tool, kind as (typeof FAIL_KINDS)[number]);
+      return { ok: true };
+    }
+    case 'delay': {
+      const tool = String(args.tool ?? '');
+      if (tool === '' || typeof args.ms !== 'number' || !Number.isFinite(args.ms))
+        throw calendarControlError('delay needs {tool, ms}');
+      internal.__delay(tool, args.ms);
+      return { ok: true };
+    }
+    case 'setBusy': {
+      const blocks = args.blocks;
+      if (blocks === null || blocks === undefined) {
+        internal.__setBusy(null);
+        return { ok: true };
+      }
+      if (
+        !Array.isArray(blocks) ||
+        !blocks.every((b) => isRecord(b) && typeof b.start === 'string' && typeof b.end === 'string')
+      )
+        throw calendarControlError('setBusy blocks: Array<{start, end}> | null');
+      internal.__setBusy(blocks.map((b) => ({ start: String(b.start), end: String(b.end) })));
+      return { ok: true };
+    }
+    default:
+      throw calendarControlError(`unknown control verb: ${verb}`);
+  }
 }
 
 // =====================================================================================================================
@@ -1326,19 +1545,108 @@ async function runChild(): Promise<void> {
     fs.appendFileSync(journalPath, `${JSON.stringify({ at: Date.now(), kind, detail })}\n`, 'utf8');
   };
   journal('env', childEnvSnapshot(process.env));
-  journal('argv', process.argv.slice(1));
+  // The control secret never lands in the journal.
+  const argvView = process.argv.slice(1);
+  const si = argvView.indexOf('--control-secret');
+  if (si >= 0 && si + 1 < argvView.length) argvView[si + 1] = '[REDACTED]';
+  journal('argv', argvView);
   const fake = createFakeCalendar({ ...seed, enabledTools: enabled, scenario });
   const original = fake.calls;
   const violationsSeen = { n: 0 };
-  const timer = setInterval(() => {
+  const flush = (): void => {
     while (original.length > 0) journal('call', original.shift());
     while (violationsSeen.n < fake.violations.length) {
       journal('violation', fake.violations[violationsSeen.n]);
       violationsSeen.n += 1;
     }
-  }, 50);
+  };
+  const timer = setInterval(flush, 50);
   timer.unref();
+  // [REQUEST 12 fix-up] the unref'd timer never fires after the last call when the host closes stdio within 50 ms, so the tail of
+  // the journal (the very calls the ledger checks) was lost; flush synchronously on a natural exit too.
+  process.on('exit', flush);
+  startControlServer(fake, journal);
   await fake.server.connect(new StdioServerTransport());
+}
+
+/** Constant-time string comparison (the control secret). */
+function sameSecret(a: string, b: string): boolean {
+  const x = Buffer.from(a, 'utf8');
+  const y = Buffer.from(b, 'utf8');
+  return x.length === y.length && timingSafeEqual(x, y);
+}
+
+/**
+ * [REQUEST 12] `--control-port <n>` (0 = an ephemeral port) + `--control-secret <s>`: a loopback-only HTTP control server for the
+ * verbs of `applyCalendarControl`. The bound port is journalled as `{kind:'control', detail:{port}}` (a test reads the LATEST one:
+ * the app may respawn the child) and, with `--control-port-file <path>`, written to that file. Never writes to stdout (MCP stdio).
+ * The listener is unref'd and answers `Connection: close`, so it never keeps the child alive after the app closes its stdio.
+ */
+function startControlServer(fake: FakeCalendar, journal: (kind: string, detail: unknown) => void): void {
+  const portArg = argValue('--control-port');
+  if (portArg === null) return;
+  const secret = argValue('--control-secret') ?? '';
+  const port = Number(portArg);
+  if (secret.length < 8 || !Number.isInteger(port) || port < 0 || port > 65_535) {
+    journal('control_error', 'needs --control-port <0..65535> and --control-secret <at least 8 chars>');
+    return;
+  }
+  const portFile = argValue('--control-port-file');
+  const control = createServer((req, res) => {
+    const answer = (status: number, body: unknown): void => {
+      res.writeHead(status, { 'Content-Type': 'application/json', Connection: 'close' });
+      res.end(JSON.stringify(body ?? {}));
+    };
+    const given = req.headers['x-control-secret'];
+    const url = req.url ?? '';
+    if (
+      req.method !== 'POST' ||
+      typeof given !== 'string' ||
+      !sameSecret(given, secret) ||
+      !url.startsWith('/__control/')
+    ) {
+      answer(404, {});
+      return;
+    }
+    const verb = url.slice('/__control/'.length).split('?')[0] ?? '';
+    const chunks: Buffer[] = [];
+    let size = 0;
+    req.on('data', (c: Buffer) => {
+      size += c.length;
+      if (size <= 1_000_000) chunks.push(c);
+    });
+    req.on('end', () => {
+      if (size > 1_000_000) {
+        answer(413, { error: 'control payload too large' });
+        return;
+      }
+      if (!(CALENDAR_CONTROL_VERBS as readonly string[]).includes(verb)) {
+        journal('control_verb', { verb, ok: false });
+        answer(404, { error: `unknown control verb: ${verb}` });
+        return;
+      }
+      try {
+        const raw = Buffer.concat(chunks).toString('utf8');
+        const parsed: unknown = raw.trim() === '' ? {} : JSON.parse(raw);
+        if (!isRecord(parsed)) throw calendarControlError('control payload must be a JSON object');
+        const result = applyCalendarControl(fake, verb, parsed);
+        journal('control_verb', { verb, ok: true });
+        answer(200, result);
+      } catch (err) {
+        // A malformed payload must fail the CALLING test with the reason, never hang it or kill the MCP child.
+        journal('control_verb', { verb, ok: false });
+        answer(400, { error: err instanceof Error ? err.message : String(err) });
+      }
+    });
+  });
+  control.on('error', (err) => journal('control_error', err.message));
+  control.listen({ host: '127.0.0.1', port, exclusive: true }, () => {
+    const address = control.address();
+    const bound = typeof address === 'object' && address !== null ? address.port : port;
+    journal('control', { port: bound });
+    if (portFile !== null) fs.writeFileSync(portFile, String(bound), 'utf8');
+  });
+  control.unref();
 }
 
 // The `(^|/)` anchor is load-bearing: the entry file must BE this fake, not merely end with its name. Without it a

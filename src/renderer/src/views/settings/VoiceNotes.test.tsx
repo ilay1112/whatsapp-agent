@@ -1,7 +1,7 @@
 // VoiceNotes - Settings > AI engine > Voice notes (UX2 4.2, 9, 13; B18, B23; owner V2-W1-12).
 // A missing model is never downloaded on a radio change; the app never switches tier by itself; sizes come from bytes.
 import { beforeEach, describe, expect, it } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { VoiceState } from '@shared/types';
 import { DEFAULT_SETTINGS, applySettingsPatch, type Settings } from '@shared/settings';
@@ -10,7 +10,7 @@ import { useHealthStore } from '../../store/health';
 import { useSettingsStore } from '../../store/settings';
 import { VoiceNotes, tierFact } from './VoiceNotes';
 
-const HEBREW_BYTES = 1_624_555_275; // 1.5 GB with the v1 size rule
+const HEBREW_BYTES = 1_624_555_275; // 1.6 GB with the F24 size rule
 const voice = (patch: Partial<VoiceState> = {}): VoiceState => ({
   enabled: false,
   tier: 'auto',
@@ -26,6 +26,7 @@ const withSettings = (patch: Partial<Settings['voice']> = {}) =>
 
 beforeEach(() => {
   withSettings();
+  useSettingsStore.setState({ voiceIntent: null });
   useHealthStore.setState({ downloads: {} });
   mockInvoke('settings:set', (patch) => ({
     ok: true,
@@ -51,7 +52,7 @@ describe('VoiceNotes', () => {
     mockInvoke('voice:getState', () => ({ ok: true, value: voice() }));
     render(<VoiceNotes />);
     expect(screen.getByTestId('settings-voice-off')).toBeChecked();
-    await waitFor(() => expect(screen.getByTestId('settings-voice')).toHaveTextContent('1.5 GB'));
+    await waitFor(() => expect(screen.getByTestId('settings-voice')).toHaveTextContent('1.6 GB'));
     expect(screen.getByTestId('settings-voice-status-voice-hebrew')).toHaveTextContent('not downloaded');
     expect(screen.getByTestId('settings-voice')).toHaveTextContent('Notes longer than 15 minutes are not transcribed.');
     expect(screen.getByTestId('settings-voice')).toHaveTextContent('Nothing is sent anywhere.');
@@ -62,7 +63,7 @@ describe('VoiceNotes', () => {
     render(<VoiceNotes />);
     await waitFor(() => expect(screen.getByTestId('settings-voice-status-voice-hebrew')).toBeInTheDocument());
     await userEvent.click(screen.getByTestId('settings-voice-voice-hebrew'));
-    expect(screen.getByTestId('settings-voice-confirm')).toHaveTextContent('Download the Hebrew voice model (1.5 GB)?');
+    expect(screen.getByTestId('settings-voice-confirm')).toHaveTextContent('Download the Hebrew voice model (1.6 GB)?');
     expect(invokeMocks['model:startDownload']).not.toHaveBeenCalled();
     await userEvent.click(screen.getByTestId('settings-voice-confirm-cancel'));
     expect(screen.queryByTestId('settings-voice-confirm')).not.toBeInTheDocument();
@@ -131,7 +132,7 @@ describe('VoiceNotes', () => {
     }));
     render(<VoiceNotes />);
     await userEvent.click(await screen.findByTestId('settings-voice-delete-voice-hebrew'));
-    expect(screen.getByTestId('settings-voice-delete-dialog')).toHaveTextContent('Delete the voice model (1.5 GB)?');
+    expect(screen.getByTestId('settings-voice-delete-dialog')).toHaveTextContent('Delete the voice model (1.6 GB)?');
     await userEvent.click(screen.getByTestId('settings-voice-delete-dialog-cancel'));
     expect(invokeMocks['model:delete']).not.toHaveBeenCalled();
     await userEvent.click(screen.getByTestId('settings-voice-delete-voice-hebrew'));
@@ -160,6 +161,76 @@ describe('VoiceNotes', () => {
     expect(invokeMocks['settings:set']).not.toHaveBeenCalled();
     await userEvent.click(screen.getByRole('button', { name: 'Use Lite' }));
     expect(screen.getByTestId('settings-voice-confirm')).toBeInTheDocument(); // same path as the radio: ask first
+  });
+
+  // ux-i18n-v2-4: the radio stayed on the downloaded tier while voice.enabled stayed false for ever.
+  it('a requested download that finishes turns voice notes ON (the checked radio and voice.enabled agree)', async () => {
+    let status: 'none' | 'ready' = 'none';
+    mockInvoke('voice:getState', () => ({
+      ok: true,
+      value: voice({
+        model: { id: 'voice-hebrew', sizeBytes: HEBREW_BYTES, status, bytesDone: 0 },
+        vad: { status },
+      }),
+    }));
+    // main refuses voice.enabled=true until the model + VAD are ready (C2 4), exactly like settings.ts
+    mockInvoke('settings:set', (patch) => {
+      const p = patch as Partial<Settings>;
+      if (p.voice?.enabled === true && status !== 'ready') return { ok: false, error: { code: 'VOICE_MODEL_MISSING' } };
+      return {
+        ok: true,
+        value: applySettingsPatch(useSettingsStore.getState().settings ?? DEFAULT_SETTINGS, p as never),
+      };
+    });
+    render(<VoiceNotes />);
+    await waitFor(() => expect(invokeMocks['voice:getState']).toHaveBeenCalled());
+    await userEvent.click(screen.getByTestId('settings-voice-voice-hebrew'));
+    await userEvent.click(await screen.findByTestId('settings-voice-confirm-download'));
+    await waitFor(() => expect(invokeMocks['model:startDownload']).toHaveBeenCalledOnce());
+    expect(useSettingsStore.getState().settings!.voice.enabled).toBe(false); // nothing enabled before the file is there
+    act(() =>
+      useHealthStore.setState({
+        downloads: {
+          'voice-hebrew': {
+            tier: 'voice-hebrew',
+            status: 'downloading',
+            bytesDone: 1,
+            bytesTotal: 2,
+            bytesPerSec: 1,
+            etaSec: 1,
+            errorCode: null,
+          },
+        },
+      }),
+    );
+    status = 'ready';
+    act(() => useHealthStore.setState({ downloads: {} }));
+    await waitFor(() => expect(useSettingsStore.getState().settings!.voice.enabled).toBe(true));
+    expect(useSettingsStore.getState().settings!.voice.tier).toBe('voice-hebrew');
+    expect(screen.getByTestId('settings-voice-voice-hebrew')).toBeChecked();
+    expect(useSettingsStore.getState().voiceIntent).toBeNull();
+  });
+
+  it('a requested tier whose enable main still refuses is not shown as on', async () => {
+    mockInvoke('voice:getState', () => ({
+      ok: true,
+      value: voice({
+        model: { id: 'voice-hebrew', sizeBytes: HEBREW_BYTES, status: 'ready', bytesDone: HEBREW_BYTES },
+        vad: { status: 'ready' },
+      }),
+    }));
+    mockInvoke('settings:set', (patch) => {
+      const p = patch as Partial<Settings>;
+      if (p.voice?.enabled === true) return { ok: false, error: { code: 'VOICE_MODEL_MISSING' } };
+      return {
+        ok: true,
+        value: applySettingsPatch(useSettingsStore.getState().settings ?? DEFAULT_SETTINGS, p as never),
+      };
+    });
+    useSettingsStore.setState({ voiceIntent: 'voice-hebrew' });
+    render(<VoiceNotes />);
+    await waitFor(() => expect(useSettingsStore.getState().voiceIntent).toBeNull());
+    await waitFor(() => expect(screen.getByTestId('settings-voice-off')).toBeChecked());
   });
 
   it('renders nothing without settings; Hebrew copy', async () => {

@@ -7,6 +7,7 @@ import { CALENDAR_NAME_MAX, createAutoDialog, isolateCalendarName, type DialogSc
 import { createMainI18n } from './i18n';
 import type { ShowMessageBoxFn } from '../deps';
 import type { TFn } from './tray';
+import { DEFAULT_AUTO_SCOPE } from '../../shared/schemas';
 
 const en = createMainI18n('en');
 const he = createMainI18n('he');
@@ -102,6 +103,66 @@ describe('confirmEnable', () => {
     expect(await d.confirmEnable({ id: 3 }, { calendarName: 'x', trial: true })).toBe(false);
     expect(dialog.messageBoxes).toEqual([]);
     expect(d.recorded().map((r) => r.parentFocused)).toEqual([false, false, false, false]);
+  });
+  it('auto-mode-7: a widened scope (cancels on, quiet hours off) is SHOWN in the dialog the user confirms; the default scope adds nothing', async () => {
+    const win = focusedWindow();
+    dialog.__script([
+      { response: 1, checkboxChecked: true },
+      { response: 1, checkboxChecked: true },
+      { response: 1, checkboxChecked: true },
+      { response: 1, checkboxChecked: true },
+    ]);
+    const d = createAutoDialog({ showMessageBox: mockBox, t: () => tEn });
+    // default scope: exactly the six bullets + end date, the standard checkbox
+    await d.confirmEnable(win, {
+      calendarName: 'x',
+      trial: true,
+      validityDays: 30,
+      endsOn: '2026-11-04',
+      scope: { ...DEFAULT_AUTO_SCOPE },
+    });
+    const plain = String(dialog.messageBoxes[0]!.opts.detail).split('\n');
+    expect(plain.filter((l) => l.startsWith('- '))).toHaveLength(6);
+    expect(dialog.messageBoxes[0]!.opts.checkboxLabel).toBe(
+      'I understand events can be added or moved without asking me',
+    );
+    // widened: both extra bullets, before the end date; the checkbox names cancelling
+    await d.confirmEnable(win, {
+      calendarName: 'x',
+      trial: true,
+      validityDays: 90,
+      endsOn: '2027-01-02',
+      scope: { ...DEFAULT_AUTO_SCOPE, cancels: true, quietHours: null, validityDays: 90 },
+    });
+    const wide = String(dialog.messageBoxes[1]!.opts.detail).split('\n');
+    expect(wide.filter((l) => l.startsWith('- '))).toHaveLength(8);
+    expect(wide).toContain('- also cancels events when the contact asks - Undo brings them back');
+    expect(wide).toContain('- at any hour, also at night - quiet hours are off');
+    expect(wide.at(-1)).toBe('Ends on 2027-01-02.');
+    expect(dialog.messageBoxes[1]!.opts.checkboxLabel).toBe(
+      'I understand events can be added, moved or cancelled without asking me',
+    );
+    // quiet hours narrower than the default are a widening too: the real window is shown
+    await d.confirmEnable(win, {
+      calendarName: 'x',
+      trial: true,
+      scope: { ...DEFAULT_AUTO_SCOPE, quietHours: { from: 3, to: 4 } },
+    });
+    expect(String(dialog.messageBoxes[2]!.opts.detail).split('\n')).toContain('- quiet hours only 03:00-04:00');
+    // Hebrew carries the same extra lines
+    const dh = createAutoDialog({ showMessageBox: mockBox, t: () => (k, o) => he.t(k, o) });
+    await dh.confirmEnable(win, {
+      calendarName: 'x',
+      trial: true,
+      scope: { ...DEFAULT_AUTO_SCOPE, cancels: true, quietHours: null },
+    });
+    const heLines = String(dialog.messageBoxes[3]!.opts.detail).split('\n');
+    expect(heLines.filter((l) => l.startsWith('- '))).toHaveLength(8);
+    expect(he.t('auto.dialog.cancels')).not.toBe('auto.dialog.cancels');
+    expect(he.t('auto.dialog.anyHour')).not.toBe('auto.dialog.anyHour');
+    expect(heLines).toContain(`- ${he.t('auto.dialog.cancels')}`);
+    expect(heLines).toContain(`- ${he.t('auto.dialog.anyHour')}`);
+    expect(dialog.messageBoxes[3]!.opts.checkboxLabel).toBe(he.t('auto.dialog.checkboxCancels'));
   });
   it('a throwing native box is a Cancel', async () => {
     const d = createAutoDialog({ showMessageBox: () => Promise.reject(new Error('x')), t: () => tEn });

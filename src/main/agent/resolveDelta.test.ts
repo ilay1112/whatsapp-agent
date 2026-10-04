@@ -283,6 +283,63 @@ describe('R8 cancel', () => {
     expect(d.kind).toBe('cancel');
   });
 
+  // [fix editing-undo-7] resolveWhen's "today counts / the coming one" weekday rule lands on THIS week's day; for a cancel the bare
+  // weekday of the event itself names the event, wherever in the calendar it is.
+  it("a cancel naming the event's own weekday when the event is a week or more ahead stays a cancel (today = that weekday)", () => {
+    const nextWed = { ...EXISTING, startLocal: '2026-09-30T15:00:00', endLocal: '2026-09-30T16:00:00' };
+    const wedMorning: WhenContext = { ...CTX, nowMs: Date.parse('2026-09-23T06:00:00.000Z') }; // Wed 2026-09-23 09:00
+    const d = delta(
+      run(
+        { intent: 'cancel', change: 'cancel', dateKind: 'weekday', weekday: 3, weekOffset: 0 },
+        'sorry, I have to cancel Wednesday',
+        {},
+        nextWed,
+        wedMorning,
+      ),
+    );
+    expect(d.kind).toBe('cancel');
+    expect(d.to).toEqual({ ...d.from, status: 'cancelled' });
+  });
+  it("a cancel naming the event's own weekday a week ahead stays a cancel (another weekday today)", () => {
+    const nextThu = { ...EXISTING, startLocal: '2026-10-01T15:00:00', endLocal: '2026-10-01T16:00:00' };
+    const d = delta(
+      run(
+        { intent: 'cancel', change: 'cancel', dateKind: 'weekday', weekday: 4, weekOffset: 0 },
+        'sorry, I have to cancel Thursday',
+        {},
+        nextThu,
+      ),
+    );
+    expect(d.kind).toBe('cancel');
+    expect(d.to.startLocal).toBe('2026-10-01T15:00:00');
+    expect(d.to.status).toBe('cancelled');
+  });
+  it("the event's own weekday with a DIFFERENT time is a reschedule on the event's own date, not on this week's day", () => {
+    const nextThu = { ...EXISTING, startLocal: '2026-10-01T15:00:00', endLocal: '2026-10-01T16:00:00' };
+    const d = delta(
+      run(
+        { intent: 'cancel', change: 'cancel', dateKind: 'weekday', weekday: 4, weekOffset: 0, time24h: '18:00' },
+        'cancel Thursday at 3, make it 6',
+        {},
+        nextThu,
+      ),
+    );
+    expect(d.kind).toBe('reschedule');
+    expect(d.to.startLocal).toBe('2026-10-01T18:00:00');
+  });
+  it('a cancel naming ANOTHER weekday, or the event weekday with an explicit week offset, keeps the R8 reschedule', () => {
+    const nextThu = { ...EXISTING, startLocal: '2026-10-01T15:00:00', endLocal: '2026-10-01T16:00:00' };
+    // "next next Thursday" (offset 1 from the coming one) = 2026-10-01 + 7 is a different slot
+    const d = delta(
+      run({ intent: 'cancel', change: 'cancel', dateKind: 'weekday', weekday: 4, weekOffset: 2 }, '', {}, nextThu),
+    );
+    expect(d.kind).toBe('reschedule');
+    expect(d.to.startLocal).toBe('2026-10-08T15:00:00');
+    const e = delta(run({ intent: 'cancel', change: 'cancel', dateKind: 'weekday', weekday: 5 }, ''));
+    expect(e.kind).toBe('reschedule');
+    expect(e.to.startLocal).toBe('2026-09-25T15:00:00');
+  });
+
   it('a cancel that names a DIFFERENT slot is a reschedule', () => {
     const d = delta(run({ intent: 'cancel', change: 'cancel', time24h: '18:00' }, 'cancel 3, make it 6'));
     expect(d.kind).toBe('reschedule');
@@ -354,6 +411,30 @@ describe('R10 weekday word check', () => {
   it('no weekday word => no check', () => {
     expect(run({ time24h: '17:00' }, 'can we do 5 instead of 3?').path).toBe('delta');
   });
+  // [fix editing-undo-6] naming the event's CURRENT day in a reschedule identifies the event; it does not contradict the new day.
+  it("a reschedule that names the event's own (old) day and the new day passes (en + he)", () => {
+    const tomorrow: Partial<Extraction> = { dateKind: 'relative_days', daysFromToday: 1 };
+    const en = delta(run(tomorrow, "can we move Wednesday's meeting to tomorrow?"));
+    expect(en.to.startLocal).toBe('2026-09-22T15:00:00');
+    expect(run(tomorrow, 'אפשר להזיז את הפגישה של רביעי למחר?').path).toBe('delta');
+    expect(run({ dateKind: 'weekday', weekday: 4 }, 'move it from Wednesday to Thursday').path).toBe('delta');
+  });
+  it('the old day does not excuse a THIRD day that contradicts the new one', () => {
+    expect(run({ dateKind: 'weekday', weekday: 4 }, 'move Wednesday to Friday')).toEqual({
+      path: 'unclear',
+      why: 'weekday_mismatch',
+    });
+  });
+  it('the greeting "שבת שלום" is not a weekday word; "בשבת" still is', () => {
+    const sunday = { ...EXISTING, startLocal: '2026-09-27T15:00:00', endLocal: '2026-09-27T16:00:00' };
+    const friday: WhenContext = { ...CTX, nowMs: Date.parse('2026-09-25T07:00:00.000Z') };
+    expect(run({ time24h: '17:00' }, 'אפשר להזיז ל-17:00? שבת שלום', {}, sunday, friday).path).toBe('delta');
+    expect(run({ time24h: '17:00' }, 'אפשר להזיז ל-17:00? ושבת שלום!', {}, sunday, friday).path).toBe('delta');
+    expect(run({ time24h: '17:00' }, 'אפשר להזיז ל-17:00 בשבת?', {}, sunday, friday)).toEqual({
+      path: 'unclear',
+      why: 'weekday_mismatch',
+    });
+  });
 });
 
 describe('R11 sanity of the NEW slot', () => {
@@ -407,6 +488,10 @@ describe('namedWeekdays', () => {
     ['וחמישי', [4]],
     ['בשבת', [6]],
     ['שבתאי', []], // not a weekday word
+    ['שבת שלום', []], // [fix editing-undo-6] the Friday greeting names no day
+    ['ושבת שלום!', []],
+    ['שבת  שלום ומבורך', []],
+    ['נתראה בשבת, שבת שלום', [6]], // the greeting is removed, the real "בשבת" stays
     ['the 3rd', []],
   ])('%s', (text, want) => {
     expect([...namedWeekdays(text)].sort()).toEqual(want);

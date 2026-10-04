@@ -1,13 +1,14 @@
 // src/main/llm/cli/{locator,runner,claudeCli,antigravityCli}.ts   [V2 ADD] (B12-B14, B26, I11)
 // llm/cli/** MUST NOT import mcp/host, bridge/**, exec/** (ESLint + import-graph). The tool server arrives through AgenticRunInput / startToolServer injection.
 // file 1 of 4 of the C2 9.2 block - owner V2-W1-06-claude-cli (the Wave-0 stub bodies are replaced below the frozen declarations).
+import nodeFs from 'node:fs';
 import path from 'node:path';
 import type { CliProviderId, CliState, CliStatus, EpochMs, LlmQuota } from '../../../shared/types';
 import { CLI_MIN_VERSION } from '../../../shared/types';
 import { ClaudeExePathSchema } from '../../../shared/settings';
 import type { LocateDeps } from '../../deps';
 import type { CliRunner } from './runner';
-import { buildAgyProbeEnv, buildClaudeEnv } from './claudeCli.env';
+import { AGY_WORKSPACE_DIR, buildAgyProbeEnv, buildClaudeEnv, planAgyHome } from './claudeCli.env';
 
 // ---------------- locator.ts ----------------
 /** Resolution order (claude_cli): settings.llm.cli.claudeExePath (set only by cli:pickExe; must end in \claude.exe) -> %USERPROFILE%\.local\bin\claude.exe
@@ -197,9 +198,33 @@ export function createCliLocator(
       antigravity_cli?: { command: string; args: string[] } | null;
     } | null;
     jobs: import('../../proc/jobRunner').JobRunner;
+    // ---- additive, optional (v2 fix wave, src/main/llm) ----
+    /** [cli-sandbox-3] <userData>: every agy probe runs under the isolated <userData>\agy-home profile with cwd = <userData>\agy-workspace
+     *  (F3/B14/I6'). Absent => no agy probe is ever spawned (version null, signedIn 'unknown') - never the user's real profile. */
+    userDataDir?: string;
+    /** writes the isolated agy profile before a probe (default node:fs). */
+    agyFs?: { mkdirSync(p: string, o: { recursive: true }): unknown; writeFileSync(p: string, text: string): void };
+    /** [cli-sandbox-6, B31] called with every exe path find() resolved, BEFORE the first job of that path spawns (compose records it in
+     *  meta.cli_exe_paths_json so the reaper can kill an orphan of a probe / cli:test). A throw fails closed: nothing is spawned. */
+    onExeResolved?: (provider: CliProviderId, exePath: string) => void;
   },
 ): CliLocator {
   const env = deps.env;
+  const agyFs = deps.agyFs ?? {
+    mkdirSync: (p: string, o: { recursive: true }) => nodeFs.mkdirSync(p, o),
+    writeFileSync: (p: string, t: string) => nodeFs.writeFileSync(p, t, { encoding: 'utf8', mode: 0o600 }),
+  };
+  /** [cli-sandbox-3] Writes the isolated profile (idempotent) + creates the app workspace; returns the probe cwd and env. */
+  const agyProbeSetup = (userDataDir: string): { cwd: string; env: Record<string, string> } => {
+    const cwd = path.win32.join(userDataDir, AGY_WORKSPACE_DIR);
+    const plan = planAgyHome(userDataDir, cwd);
+    agyFs.mkdirSync(cwd, { recursive: true });
+    for (const f of plan.files) {
+      agyFs.mkdirSync(path.win32.dirname(f.path), { recursive: true });
+      agyFs.writeFileSync(f.path, f.text);
+    }
+    return { cwd, env: buildAgyProbeEnv(env, cwd, plan.env) };
+  };
   const envOf = (name: string): string | undefined => {
     const key = Object.keys(env).find((k) => k.toLowerCase() === name.toLowerCase());
     const v = key === undefined ? undefined : env[key];
@@ -277,13 +302,18 @@ export function createCliLocator(
     exePath: string,
     args: readonly string[],
     signal: AbortSignal,
-  ): Promise<{ lines: string[]; exitCode: number | null }> => {
-    const cwd = path.win32.isAbsolute(exePath) || path.isAbsolute(exePath) ? path.dirname(exePath) : exePath;
-    const temp = envOf('TEMP') ?? cwd;
-    const jobEnv =
-      provider === 'claude_cli'
-        ? buildClaudeEnv({ processEnv: env, tempDir: temp, token: null })
-        : buildAgyProbeEnv(env, temp);
+  ): Promise<{ lines: string[]; exitCode: number | null; stderrMarkers: readonly string[] }> => {
+    let cwd: string;
+    let jobEnv: Record<string, string>;
+    if (provider === 'claude_cli') {
+      cwd = path.win32.isAbsolute(exePath) || path.isAbsolute(exePath) ? path.dirname(exePath) : exePath;
+      jobEnv = buildClaudeEnv({ processEnv: env, tempDir: envOf('TEMP') ?? cwd, token: null });
+    } else {
+      // [cli-sandbox-3] never the real profile and never the install folder: no userData => no agy probe at all (fail closed).
+      if (deps.userDataDir === undefined || deps.userDataDir.length === 0)
+        throw new Error('agy_probe_no_isolated_profile');
+      ({ cwd, env: jobEnv } = agyProbeSetup(deps.userDataDir));
+    }
     return deps.jobs.run(
       {
         kind: 'cli',
@@ -301,7 +331,7 @@ export function createCliLocator(
         const lines: string[] = [];
         for await (const l of job.lines()) if (lines.length < 64) lines.push(l);
         const d = await job.done;
-        return { lines, exitCode: d.exitCode };
+        return { lines, exitCode: d.exitCode, stderrMarkers: d.stderrMarkers };
       },
       signal,
     );
@@ -328,6 +358,7 @@ export function createCliLocator(
         exePath = await findOnDisk(provider);
       }
       if (exePath === null) return null;
+      deps.onExeResolved?.(provider, exePath); // [cli-sandbox-6, B31] recorded BEFORE the --version job below spawns
       const version = await locator
         .version(exePath, AbortSignal.timeout(PROBE_WALL_CLOCK_MS + 5_000))
         .catch(() => null);
@@ -354,9 +385,16 @@ export function createCliLocator(
         }
         return 'unknown';
       }
+      if (deps.userDataDir === undefined || deps.userDataDir.length === 0) return 'unknown'; // [cli-sandbox-3] fail closed, no spawn
       const out = await probeJob(provider, exePath, ['-p', '/usage', '--output-format', 'json'], signal);
       if (out.exitCode === 0) return true;
-      if (out.exitCode === 1 && /authentication required/i.test(out.lines.join('\n'))) return false;
+      // The isolated profile may not see the login (U-A7): agy then prints its auth prompt (on STDERR, research 5.6 - read only as
+      // the JobRunner's marker) and the answer is "not signed in", the same answer the runs under that profile would get.
+      if (
+        out.exitCode === 1 &&
+        (/authentication required/i.test(out.lines.join('\n')) || out.stderrMarkers.includes('auth_required'))
+      )
+        return false;
       return 'unknown';
     },
   };

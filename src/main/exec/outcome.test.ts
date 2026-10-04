@@ -129,6 +129,20 @@ describe('applySendSuccess', () => {
     expect(item.closedReason).toBeNull();
   });
 
+  // [v2-fix editing-undo-9] an in_calendar card is not open: sending its reply after the event keeps it the chat's editable event
+  it.each([['created'], ['updated'], ['cancelled'], ['change_proposed']] as const)(
+    'keeps the item open / in calendar while the event is %s',
+    (eventState) => {
+      const r = rig();
+      const a = seed(r, reply(r));
+      r.repos.items.update(r.itemId, { eventState }, NOW_0);
+      applySendSuccess(r.repos, a, reply(r), LATER);
+      const item = r.repos.items.byId(r.itemId)!;
+      expect(item.replyState).toBe('sent');
+      expect(item.closedReason).toBeNull();
+    },
+  );
+
   it('never overwrites a closed reason the item already carries', () => {
     const r = rig();
     const a = seed(r, reply(r));

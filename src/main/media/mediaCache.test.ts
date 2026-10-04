@@ -6,8 +6,9 @@ import { mkdtempSync, readdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import type { ChatRef, ItemId, MediaCacheRecord, Sha256Hex } from '../../shared/types';
+import type { ChatRef, EpochMs, ItemId, MediaCacheRecord, Sha256Hex } from '../../shared/types';
 import { LIMITS } from '../../shared/types';
+import { cleanup, JID_B, LID_JID, memRepos, seedChat, seedOpenItem, T0 } from '../db/__fixtures__/testDb';
 import type { Repos } from '../db/index';
 import { createMediaCache, type MediaCacheFs } from './mediaCache';
 import type { NormalizedImage } from './normalizeImage';
@@ -76,7 +77,8 @@ describe('createMediaCache', () => {
       bytes: 100,
     });
     const files = readdirSync(dir).sort();
-    const h = sha('7|3EB0FAKE000123');
+    // [fix data-integrity-v4-2] keyed on (waMsgId, content sha256) - never the chatRef, which an @lid merge re-keys
+    const h = sha(`3EB0FAKE000123|${rec.sha256}`);
     expect(files).toEqual([`${h}.jpg`, `${h}.thumb.jpg`]);
     for (const f of files) {
       expect(f).toMatch(/^[0-9a-f]{64}(\.thumb)?\.jpg$/);
@@ -131,7 +133,7 @@ describe('createMediaCache', () => {
     const keep = cache.put(7 as ChatRef, 'K9', img(5));
     repo.mediaCache.upsert({ ...keep, itemId: 5 as ItemId });
     expect(cache.deleteForItem(4 as ItemId)).toBe(1);
-    const h = sha('7|K9');
+    const h = sha(`K9|${keep.sha256}`);
     expect(readdirSync(dir).sort()).toEqual([`${h}.jpg`, `${h}.thumb.jpg`]);
     expect(cache.deleteForItem(4 as ItemId)).toBe(0);
   });
@@ -143,5 +145,73 @@ describe('createMediaCache', () => {
       TypeError,
     );
     expect(repo.rows).toHaveLength(0);
+  });
+});
+
+// [fix data-integrity-v4-2] mergeLidInto (db/repos/chats.ts) re-keys media_cache.chat_id to the surviving chat. A file name derived
+// from the chatRef at put() time is then looked up (thumb/dataUrl) and unlinked (deleteForItem) under the WRONG name: the card loses its
+// thumbnail and "View picture", and Dismiss leaves both files on disk with no row naming them. The name must survive the merge.
+describe('createMediaCache across an @lid merge (data-integrity-v4-2)', () => {
+  let root: string;
+  let dir: string;
+  beforeEach(() => {
+    root = mkdtempSync(join(tmpdir(), 'wca-mcache-merge-'));
+    dir = join(root, 'media-cache');
+  });
+  afterEach(() => {
+    rmSync(root, { recursive: true, force: true });
+    cleanup();
+  });
+
+  it('a row re-keyed to another chat keeps its thumbnail / picture, and deleteForItem still removes both files', () => {
+    const repo = memRepo();
+    const cache = createMediaCache({ dir, repos: repo, fs: realFs, hash: sha });
+    const rec = cache.put(7 as ChatRef, 'IMGMSG0002', img(64));
+    repo.mediaCache.upsert({ ...rec, itemId: 11 as ItemId });
+    const before = { thumb: cache.thumb(11 as ItemId), full: cache.dataUrl(11 as ItemId) };
+    expect(before.thumb).not.toBeNull();
+    // what chats.ts mergeLidInto does: UPDATE OR IGNORE media_cache SET chat_id = <target> WHERE chat_id = <lid>
+    repo.rows[0] = { ...repo.rows[0]!, chatId: 9 as ChatRef };
+    expect({ thumb: cache.thumb(11 as ItemId), full: cache.dataUrl(11 as ItemId) }).toEqual(before);
+    expect(cache.deleteForItem(11 as ItemId)).toBe(1);
+    expect(readdirSync(dir)).toEqual([]);
+  });
+
+  it('end to end over the real repos: an @lid chat with a picture card merges into an existing phone-JID chat', () => {
+    const { repos } = memRepos();
+    const lid = repos.chats.upsertFromBridge(LID_JID, null, true, T0 as EpochMs);
+    seedChat(repos, JID_B);
+    const item = seedOpenItem(repos, lid.id);
+    const cache = createMediaCache({ dir, repos, fs: realFs, hash: sha });
+    const rec = cache.put(lid.id, 'IMGMSG0002', img(64));
+    repos.mediaCache.upsert({ ...rec, itemId: item.id }); // compose.pickImage's link
+    expect(cache.thumb(item.id)).not.toBeNull();
+
+    repos.chats.mergeLidInto(lid.id, JID_B, (T0 + 100_000) as EpochMs);
+
+    expect(repos.mediaCache.forItem(item.id)[0]?.chatId).not.toBe(lid.id); // the row really was re-keyed
+    const thumbAfterMerge = cache.thumb(item.id) !== null;
+    const pictureAfterMerge = cache.dataUrl(item.id) !== null;
+    const deleted = cache.deleteForItem(item.id); // Dismiss
+    expect({ thumbAfterMerge, pictureAfterMerge, deleted, filesLeft: readdirSync(dir).length }).toEqual({
+      thumbAfterMerge: true,
+      pictureAfterMerge: true,
+      deleted: 1,
+      filesLeft: 0,
+    });
+  });
+
+  it('a re-put of the same message with different bytes leaves no superseded files behind', () => {
+    const repo = memRepo();
+    const cache = createMediaCache({ dir, repos: repo, fs: realFs, hash: sha });
+    const a = cache.put(7 as ChatRef, 'IMGMSG0003', img(64));
+    repo.mediaCache.upsert({ ...a, itemId: 12 as ItemId });
+    cache.put(7 as ChatRef, 'IMGMSG0003', img(65)); // e.g. a re-triage after the normaliser changed its output
+    expect(readdirSync(dir)).toHaveLength(2);
+    expect(cache.dataUrl(12 as ItemId)).toBe(
+      `data:image/jpeg;base64,${Buffer.from(new Uint8Array(65).fill(0x42)).toString('base64')}`,
+    );
+    expect(cache.deleteForItem(12 as ItemId)).toBe(1);
+    expect(readdirSync(dir)).toEqual([]);
   });
 });

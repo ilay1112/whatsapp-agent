@@ -120,7 +120,10 @@ describe('requestEnable (C2 8 order, I10)', () => {
     const res = await h.svc.requestEnable(REQ(true), WIN);
     expect(res.ok).toBe(true);
     expect(h.dialogCalls).toEqual([
-      { win: WIN, p: { calendarName: 'Personal', trial: true, validityDays: 30, endsOn: '2026-11-04' } },
+      {
+        win: WIN,
+        p: { calendarName: 'Personal', trial: true, validityDays: 30, endsOn: '2026-11-04', scope: DEFAULT_AUTO_SCOPE },
+      },
     ]);
     const live = h.r.repos.autoPolicies.live()!;
     expect(live).toMatchObject({
@@ -142,6 +145,13 @@ describe('requestEnable (C2 8 order, I10)', () => {
     expect(live.id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
     expect(h.audits.map((a) => a.kind)).toContain('auto_policy_enabled');
     expect(h.notified.at(-1)!.policy!.state).toBe('shadow');
+  });
+  it('auto-mode-7: the scope that becomes the grant is exactly the scope the dialog was shown (cancels / quiet hours)', async () => {
+    const h = await harness();
+    const wide = { cancels: true, quietHours: null, validityDays: 90 as const };
+    expect((await h.svc.requestEnable(REQ(true, wide), WIN)).ok).toBe(true);
+    expect(h.dialogCalls[0]!.p.scope).toEqual({ ...DEFAULT_AUTO_SCOPE, ...wide });
+    expect(h.r.repos.autoPolicies.live()!.scope).toEqual(h.dialogCalls[0]!.p.scope);
   });
   it('an unusable time zone in settings still shows an end date (UTC fallback)', async () => {
     const h = await harness();

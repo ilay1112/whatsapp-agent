@@ -64,3 +64,9 @@ Follow-up instruction (2026-09-21): keep all context, notes, progress, tickets a
 ## Remote repository (user, 2026-09-28)
 
 "I created a remote repo for this project, upload and work remotely with this repo: https://github.com/ilay1112/whatsapp-agent.git — it's empty right now, needs a git ignore and a readme with all the app's info, features and instructions." The repo is public (GitHub API answers unauthenticated).
+
+## Code signing request (user, 2026-10-04)
+
+"After all tests make sure the app is signed for a clean pass at windows defender." Option dialogs: licence **MIT**; certificate route first "self-signed, this PC only", then — after the orchestrator found **Smart App Control is ON (enforcing)** on this PC and confirmed from Microsoft docs that SAC does not accept self-signed/locally trusted certificates — **"Not now"**: ship unsigned, add an inactive signing pipeline + a Defender scan gate, ready for a Trusted Root Program certificate later.
+
+Environment facts (read-only check 2026-10-04): Smart App Control state 1 (enforce); Defender AV normal mode, real-time on, signatures current; MpCmdRun.exe present.

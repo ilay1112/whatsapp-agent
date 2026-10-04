@@ -7,6 +7,7 @@ import { AGY_ENV_KEYS, CLAUDE_ENV_KEYS, CLAUDE_S3_ENV_KEYS } from '../../proc/jo
 import { LlmError, type AgenticRunInput, type CallOpts } from '../types';
 import type { CliRunRequest, CliRunResult } from './runner';
 import type { CliLocator } from './locator';
+import { planAgyHome } from './claudeCli.env';
 import {
   CLAUDE_DISALLOWED_TOOLS,
   CLAUDE_ENV_FIXED,
@@ -283,10 +284,14 @@ describe('env builders', () => {
   });
 
   it('agy probe env = AGY_ENV_KEYS literally, AGY_CLI_DISABLE_AUTO_UPDATE=true, never GEMINI_API_KEY', () => {
-    const env = buildAgyProbeEnv(planted, 'C:\\t');
+    const home = planAgyHome('C:\\ud', 'C:\\ud\\agy-workspace');
+    const env = buildAgyProbeEnv(planted, 'C:\\t', home.env);
     expect(Object.keys(env).sort()).toEqual([...AGY_ENV_KEYS].sort());
     expect(env.AGY_CLI_DISABLE_AUTO_UPDATE).toBe('true');
-    expect(env.HOME).toBe(planted.USERPROFILE);
+    // [cli-sandbox-3] the isolated app-owned profile, never the real one (was: HOME = the real USERPROFILE)
+    expect(env).toMatchObject(home.env);
+    expect(env.HOME).not.toBe(planted.USERPROFILE);
+    expect(Object.values(env)).not.toContain(planted.USERPROFILE);
     expect(JSON.stringify(env)).not.toMatch(/TESTONLY|evil/);
   });
 });

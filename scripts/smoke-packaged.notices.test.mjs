@@ -183,3 +183,37 @@ describe('[V2] buildV2Sections / NOTICE_ANCHORS_V2', () => {
     expect(lic).toContain(NOTICE_ANCHORS_V2.libopusPatent);
   });
 });
+
+describe('[v2-repair] libopus licence text is pinned to an upstream copy (verified offline 2026-10-04)', () => {
+  // opus-decoder@0.7.12 ships no libopus licence file (README: "Based on libopus"; package.json: MIT; WASM carries no text).
+  // The upstream libopus COPYING that Chromium redistributes (third_party/opus) is in the installed Electron's
+  // LICENSES.chromium.html, so the committed text is compared with it - no network fetch.
+  const normalise = (s) => s.replace(/\r\n/g, '\n').trim();
+  const LIBOPUS_SHA256 = '1cff0ac6c1aa5ce584d59a460fbc1a87b4e9f6f61ea894364f4cbe48fe1d9f0e';
+
+  it('the committed text has the sha256 it had when it was verified', async () => {
+    const { createHash } = await import('node:crypto');
+    const sha = createHash('sha256')
+      .update(normalise(readFileSync(LIBOPUS_LICENSE_PATH, 'utf8')))
+      .digest('hex');
+    expect(sha).toBe(LIBOPUS_SHA256);
+  });
+
+  it('equals the opus section of the installed Electron LICENSES.chromium.html when that file is present', async () => {
+    const { existsSync } = await import('node:fs');
+    const chromium = new URL('../node_modules/electron/dist/LICENSES.chromium.html', import.meta.url);
+    if (!existsSync(chromium)) return; // electron's dist is a devDependency download; the sha256 test above still holds
+    const html = readFileSync(chromium, 'utf8');
+    const at = html.indexOf('<span class="title">opus</span>');
+    expect(at).toBeGreaterThan(0);
+    const start = html.indexOf('<pre>', at) + '<pre>'.length;
+    const upstream = html
+      .slice(start, html.indexOf('</pre>', start))
+      .replace(/&#x27;/g, "'")
+      .replace(/&quot;/g, '"')
+      .replace(/&lt;/g, '<')
+      .replace(/&gt;/g, '>')
+      .replace(/&amp;/g, '&');
+    expect(normalise(readFileSync(LIBOPUS_LICENSE_PATH, 'utf8'))).toBe(normalise(upstream));
+  });
+});

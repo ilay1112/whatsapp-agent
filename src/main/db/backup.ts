@@ -113,25 +113,52 @@ export type RecoveryOutcome = 'none' | 'restored' | 'fresh';
  * [W1-04 addition] The startup sequence of ARCHITECTURE section 10 in one place, so the composition root does not re-derive it:
  * open -> on `quick_check` failure / an unreadable file / a failed migration, restore the newest backup -> if there is none (or the
  * restored copy is broken too), move the file aside and start empty. `recovered !== 'none'` is what the caller surfaces as DB_RECOVERY.
+ *
+ * [v2-fix-src-main-db, data-integrity-v4-6] A MigrationError never ends in 'fresh'. A migration runs in one transaction, so the
+ * file it failed on is intact and readable; starting empty only hid every item, approval record and undo record from the app
+ * (and the daily backups then rotated the last good copies away). So:
+ *  - the restored copy failing with a MigrationError too (a deterministic failure fails the same way on the pre-migration copy
+ *    of the same file) => the restored copy is dropped (it is a copy of a backup that stays in `backupsDir`), the original file
+ *    is put back when it was intact (the first failure was a MigrationError as well), and the MigrationError is THROWN;
+ *  - a MigrationError with no backup to try => thrown, the file untouched.
+ * The thrown MigrationError is the blocking DB_RECOVERY the caller must surface; a fixed build then migrates the same file.
+ * A corrupt file whose backup is corrupt too still starts empty, exactly as before.
  */
 export function openDbWithRecovery(
   appDbPath: string,
   backupsDir: string,
   now: () => EpochMs = () => Date.now(),
 ): { db: Db; recovered: RecoveryOutcome; restoredFrom: string | null } {
+  let first: DbCorruptError | MigrationError;
   try {
     return { db: openDb(appDbPath), recovered: 'none', restoredFrom: null };
   } catch (e) {
     if (!(e instanceof DbCorruptError) && !(e instanceof MigrationError)) throw e;
+    first = e;
   }
-  const restored = restoreNewest(appDbPath, backupsDir, now);
+  const asideAt = now(); // one stamp, so the original can be found again under `<name>.corrupt-<asideAt>`
+  const restored = restoreNewest(appDbPath, backupsDir, () => asideAt);
+  if (restored === null && first instanceof MigrationError) throw first;
   if (restored !== null) {
     try {
       return { db: openDb(appDbPath), recovered: 'restored', restoredFrom: restored.restoredFrom };
     } catch (e) {
       if (!(e instanceof DbCorruptError) && !(e instanceof MigrationError)) throw e;
+      if (e instanceof MigrationError) {
+        if (first instanceof MigrationError) putBack(appDbPath, asideAt);
+        throw e;
+      }
     }
   }
   moveAside(appDbPath, now());
   return { db: openDb(appDbPath), recovered: 'fresh', restoredFrom: null };
+}
+
+/** Undoes restoreNewest's moveAside: drops the restored COPY (its backup stays in backupsDir) and renames the original back. */
+function putBack(appDbPath: string, asideAt: EpochMs): void {
+  for (const suffix of ['', '-wal', '-shm']) fs.rmSync(`${appDbPath}${suffix}`, { force: true });
+  for (const suffix of ['', '-wal', '-shm']) {
+    const aside = `${appDbPath}${suffix}.corrupt-${asideAt}`;
+    if (fs.existsSync(aside)) fs.renameSync(aside, `${appDbPath}${suffix}`);
+  }
 }

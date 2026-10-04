@@ -515,21 +515,66 @@ function closureOf(
 
 // ======================= [V2 ADD] C2 15 (exports added to the S4 module) =======================
 
-/** NFKC, invisible/bidi strip, whitespace collapse, case fold - the normal form both sides of the leak guard are compared in. */
+/**
+ * [fix injection-v2-1] Lower-case Cyrillic / Greek letters that render like a Latin letter (the UTS-39 confusables a model can be
+ * told to "write in Cyrillic"), folded to that Latin letter. NFKC does not fold them. Applied AFTER the case fold, so the capitals
+ * are covered too. A deliberately small, closed table: Hebrew and every other script pass through unchanged.
+ */
+// prettier-ignore
+const CONFUSABLE_TO_LATIN: Readonly<Record<string, string>> = {
+  // Cyrillic
+  'а': 'a', 'е': 'e', 'о': 'o', 'р': 'p', 'с': 'c', 'у': 'y', 'х': 'x', 'і': 'i',
+  'ј': 'j', 'ѕ': 's', 'ԁ': 'd', 'һ': 'h', 'ӏ': 'l', 'ѵ': 'v', 'ԛ': 'q', 'ԝ': 'w',
+  'в': 'b', 'к': 'k', 'м': 'm', 'н': 'h', 'т': 't', 'ї': 'i', 'ё': 'e',
+  // Greek
+  'α': 'a', 'ο': 'o', 'ε': 'e', 'ι': 'i', 'κ': 'k', 'ν': 'v', 'ρ': 'p', 'τ': 't',
+  'υ': 'u', 'χ': 'x', 'η': 'n', 'β': 'b', 'ω': 'w', 'γ': 'y',
+};
+const CONFUSABLE_RE = new RegExp(`[${Object.keys(CONFUSABLE_TO_LATIN).join('')}]`, 'g');
+/** NFKC, invisible/bidi strip, whitespace collapse, case fold, [fix injection-v2-1] confusable fold - the normal form both sides of the
+ *  leak guard are compared in. */
 function leakNormal(s: string): string {
-  return stripInvisible(s.normalize('NFKC')).replace(/\s+/g, ' ').trim().toLowerCase();
+  return stripInvisible(s.normalize('NFKC'))
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase()
+    .replace(CONFUSABLE_RE, (c) => CONFUSABLE_TO_LATIN[c] ?? c);
+}
+/** [fix injection-v2-1] A whole other-chat row shorter than the window is matched as one string once it has at least this many
+ *  normalised characters ("gate code 4242#"); shorter rows ("ok", "see you", "thanks!") are too common to prove anything. */
+const LEAK_WHOLE_ROW_MIN = 12;
+/** [fix injection-v2-1] Digit runs: any 4-digit window of a digit run of an other-chat row found inside a digit run of the draft is a
+ *  leak (a door code, a card's last four, a PIN quoted out of a longer row). A year (19xx / 20xx) is not treated as a secret. */
+const LEAK_DIGITS = 4;
+const YEAR_RE = /^(?:19|20)\d\d$/;
+function digitRuns(s: string): string[] {
+  return s.match(/\d+/g) ?? [];
 }
 // S4 cross-chat leak guard (I5'): any LIMITS.crossChatLeakWindow-char normalised window of a row served from another chat found in the draft
 // => reject the draft, badge 'manipulation', reason 'cross_chat_leak'. No-op in trigger_chat scope by construction.
+// [fix injection-v2-1] plus: a whole row shorter than the window (>= LEAK_WHOLE_ROW_MIN chars), any non-year 4-digit window of a digit
+// run, and homoglyph copies (confusable fold in leakNormal). Still a verbatim guard: a paraphrase ("four-two-four-two") is out of reach.
 export function crossChatLeak(draft: string, otherChatTexts: readonly string[], window: number): boolean {
   if (otherChatTexts.length === 0) return false;
   const w = Math.max(1, Math.trunc(window));
   const d = leakNormal(draft);
-  if (d.length < w) return false;
+  if (d === '') return false;
+  const draftDigits = digitRuns(d);
   for (const raw of otherChatTexts) {
     const t = leakNormal(raw);
-    for (let i = 0; i + w <= t.length; i++) {
-      if (d.includes(t.slice(i, i + w))) return true;
+    if (t === '') continue;
+    if (t.length < w) {
+      if (t.length >= Math.min(LEAK_WHOLE_ROW_MIN, w) && d.includes(t)) return true;
+    } else {
+      for (let i = 0; i + w <= t.length; i++) {
+        if (d.includes(t.slice(i, i + w))) return true;
+      }
+    }
+    for (const run of digitRuns(t)) {
+      for (let i = 0; i + LEAK_DIGITS <= run.length; i++) {
+        const four = run.slice(i, i + LEAK_DIGITS);
+        if (!YEAR_RE.test(four) && draftDigits.some((r) => r.includes(four))) return true;
+      }
     }
   }
   return false;

@@ -26,7 +26,7 @@ export interface AppPaths {
   iconsDir: string; // <resources>\icons | <appRoot>\resources\icons
   linksJson: string; // <resources>\links.json | <appRoot>\resources\links.json
   // ---- [V2 ADD] v2-build-plan section 3 seam (owner V2-W1-10-main-platform) ----
-  mediaCacheDir: string; // <userData>\media-cache  (<sha256(chatJid|waMsgId)>.jpg + .thumb.jpg)
+  mediaCacheDir: string; // <userData>\media-cache  (<sha256(waMsgId|sha256)>.jpg + .thumb.jpg, media/mediaCache.ts)
   voiceTmpDir: string; // <userData>\voice\tmp  (<uuid>.wav, deleted in finally)
   cliRunsDir: string; // <userData>\cli-runs  (fresh empty cwd per claude job)
   agyWorkspaceDir: string; // <userData>\agy-workspace  (runs\<runId>\ per agy job)

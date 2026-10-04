@@ -477,7 +477,11 @@ UPDATE settings SET value_json = json_insert(value_json,
     '$.whatsapp.readTools', json('{"enabled":true,"scope":"trigger_chat","windowDays":30}'),
     '$.voice',              json('{"enabled":false,"tier":"auto","maxMinutes":15,"threads":"auto"}'),
     '$.images',             json('{"enabled":true,"cloud":true}'))
-  WHERE key = 'settings';
+  WHERE key = 'settings'
+    -- [v2-fix-src-main-db, data-integrity-v4-6] a row that is not a JSON object is left as it is: the v1 settings repo already reads
+    -- such a row as DEFAULT_SETTINGS, and json_insert would raise a malformed-JSON error on it and abort the whole migration. CASE keeps
+    -- json_type() from ever seeing invalid text (SQLite does not promise AND short-circuits).
+    AND CASE WHEN json_valid(value_json) THEN json_type(value_json) = 'object' ELSE 0 END;
 `,
   },
 ] as const;

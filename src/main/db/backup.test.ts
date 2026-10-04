@@ -2,9 +2,11 @@
 // `quick_check` failure => restore newest => else start empty.
 import fs from 'node:fs';
 import path from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
 import { afterEach, describe, expect, it } from 'vitest';
 import { backupNow, DEFAULT_KEEP, moveAside, newestBackup, openDbWithRecovery, restoreNewest } from './backup';
 import { backupBeforeMigration, DbCorruptError, openDb, type Db } from './index';
+import { MigrationError, MIGRATIONS } from './migrations';
 import { cleanup, fileRepos, memDb, T0, tempDir, track } from './__fixtures__/testDb';
 
 afterEach(cleanup);
@@ -154,6 +156,70 @@ describe('restoreNewest / openDbWithRecovery', () => {
     expect(opened.db.prepare<{ value: string }>(`SELECT value FROM meta WHERE key='tray_hint_seen'`).get()!.value).toBe(
       '1',
     );
+  });
+
+  /**
+   * [v2-fix-src-main-db] data-integrity-v4-6: a migration that fails DETERMINISTICALLY fails the same way on the pre-migration
+   * backup (it is a copy of the same file), and the old fall-through then moved app.db aside and opened an EMPTY database - every
+   * item, approval record and undo record gone from the app. A MigrationError never ends in 'fresh': the call throws (the caller
+   * surfaces a blocking DB_RECOVERY) and app.db is the user's own, untouched v3 file again, ready for a fixed build.
+   */
+  describe('a migration that fails on the file AND on its backup', () => {
+    /** A v3 file with one item whose v4 migration fails at step 1 (the table name it creates is taken). */
+    function v3ThatCannotMigrate(dbPath: string): void {
+      const raw = new DatabaseSync(dbPath);
+      raw.exec('PRAGMA foreign_keys=ON');
+      for (const m of MIGRATIONS.filter((x) => x.version <= 3)) {
+        raw.exec(m.sql);
+        raw
+          .prepare('INSERT INTO schema_migrations(version, name, applied_at) VALUES (?, ?, ?)')
+          .run(m.version, m.name, 1);
+      }
+      raw.exec('PRAGMA user_version = 3');
+      raw.exec(`INSERT INTO chats (id, jid, created_at, updated_at) VALUES (1, '972550000001@s.whatsapp.net', 1, 1)`);
+      raw.exec(`INSERT INTO items (id, chat_id, state, trigger_msg_id, trigger_ts, created_at, updated_at)
+                VALUES (1, 1, 'needs_reply', 'MSG1', 1, 1, 1)`);
+      raw.exec('CREATE TABLE auto_policies (x INTEGER)');
+      raw.close();
+    }
+    const itemsIn = (dbPath: string): { version: number; items: number } => {
+      const raw = new DatabaseSync(dbPath);
+      try {
+        return {
+          version: (raw.prepare('PRAGMA user_version').get() as { user_version: number }).user_version,
+          items: (raw.prepare('SELECT COUNT(*) AS n FROM items').get() as { n: number }).n,
+        };
+      } finally {
+        raw.close();
+      }
+    };
+
+    it('throws the MigrationError instead of opening an empty database, and puts the original file back', () => {
+      const dir = tempDir();
+      const dbPath = path.join(dir, 'app.db');
+      const backups = path.join(dir, 'backups');
+      v3ThatCannotMigrate(dbPath);
+
+      let err: unknown;
+      try {
+        track(openDbWithRecovery(dbPath, backups, () => T0).db);
+      } catch (e) {
+        err = e;
+      }
+      expect(err).toBeInstanceOf(MigrationError);
+      expect(itemsIn(dbPath)).toEqual({ version: 3, items: 1 }); // the user's data, where the next start looks for it
+      expect(newestBackup(backups)).not.toBeNull(); // the pre-migration copy is kept too
+      expect(fs.readdirSync(dir).filter((n) => n.includes('.corrupt-'))).toEqual([]);
+    });
+
+    it('also throws (no fresh database) when there is no backup to try', () => {
+      const dir = tempDir();
+      const dbPath = path.join(dir, 'app.db');
+      v3ThatCannotMigrate(dbPath);
+      // the pre-migration copy lands in <dir>\backups; point recovery at an empty directory instead
+      expect(() => openDbWithRecovery(dbPath, path.join(dir, 'no-backups-here'), () => T0)).toThrow(MigrationError);
+      expect(itemsIn(dbPath)).toEqual({ version: 3, items: 1 });
+    });
   });
 
   it('restoreNewest answers null when the directory holds nothing', () => {

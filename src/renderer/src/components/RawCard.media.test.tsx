@@ -85,11 +85,11 @@ describe('voice raw card', () => {
     expect(screen.queryByTestId('analyse-1')).toBeNull();
   });
 
-  it('model missing + voice on: "Download (1.5 GB)" starts the resolved voice tier', async () => {
+  it('model missing + voice on: "Download (1.6 GB)" starts the resolved voice tier', async () => {
     const user = userEvent.setup();
     mockInvoke('voice:getState', () => ({ ok: true, value: voiceState() }));
     render(<RawCard item={voiceCard('VOICE_MODEL_MISSING')} onOpen={() => undefined} />);
-    const b = await screen.findByText('Download (1.5 GB)');
+    const b = await screen.findByText('Download (1.6 GB)');
     expect(b).toHaveAttribute('data-testid', 'voice-download-1');
     await user.click(b);
     await waitFor(() => expect(invokeMocks['model:startDownload']).toHaveBeenCalledWith({ tier: 'voice-hebrew' }));
@@ -103,7 +103,7 @@ describe('voice raw card', () => {
       }),
     }));
     render(<RawCard item={voiceCard('VOICE_MODEL_MISSING')} onOpen={() => undefined} />);
-    await screen.findByText('Download (1.5 GB)');
+    await screen.findByText('Download (1.6 GB)');
     expect(screen.getByTestId('voice-download-1')).toBeDisabled();
   });
 
@@ -183,14 +183,14 @@ describe('photo raw card', () => {
     expect(screen.getByTestId('analyse-1')).toBeInTheDocument();
   });
 
-  it('local reading not downloaded: "Download picture reading (0.2 GB)" -> model:startDownload {tier:"mmproj"}', async () => {
+  it('local reading not downloaded: "Download picture reading (0.18 GB)" -> model:startDownload {tier:"mmproj"}', async () => {
     const user = userEvent.setup();
     mockInvoke('model:getPlan', () => ({
       ok: true,
       value: plan({ id: 'mmproj-small' as never, sizeBytes: 175_115_840, status: 'none', bytesDone: 0 }),
     }));
     render(<RawCard item={photoCard()} onOpen={() => undefined} />);
-    const b = await screen.findByText('Download picture reading (0.2 GB)');
+    const b = await screen.findByText('Download picture reading (0.18 GB)');
     expect(b).toHaveAttribute('data-cause', 'no_local_reader');
     expect(screen.getByTestId('image-unread-cause-1')).toHaveTextContent(
       'Picture not read - picture reading is not downloaded',

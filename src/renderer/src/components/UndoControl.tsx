@@ -12,13 +12,14 @@
 import { useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { AutoUndoState, ItemId, Result, UndoView } from '@shared/types';
+import type { ErrorCode } from '@shared/errors';
 import { DEFAULT_TIME_ZONE } from '@shared/i18n/format';
 import { api } from '../api';
 import { isActivationBlocked } from '../store/health';
 import { useSettingsStore } from '../store/settings';
 import { useDashboardStore } from '../store/dashboard';
 import { SENTINEL, renderBdiTemplate } from './ItemCard.bdi';
-import { formatWhen } from './ChangeLine.format';
+import { formatWhen, formatWhenWithDay } from './ChangeLine.format';
 
 export interface UndoControlProps {
   undo: UndoView;
@@ -28,6 +29,8 @@ export interface UndoControlProps {
 }
 
 type Phase = 'undoing' | 'undone' | 'failed';
+/** Beyond this the Undo deadline also names its date (a weekday alone could be today's or yesterday's). */
+const BARE_WEEKDAY_MAX_MS = 5 * 86_400_000;
 /** What the control shows: the view model's state, or the in-window flow that overlays it until the next refresh. */
 export type UndoDisplayState = AutoUndoState | 'undoing';
 
@@ -69,7 +72,9 @@ function CheckIcon() {
 /**
  * An approval-class button that is not an `action:approve` ("Cancel event" F32, "Restore original" F1): one IPC per
  * activation (ref set before the first await, disabled synchronously), `event.detail > 1` ignored, the focus-steal guard
- * read at CLICK time. The dashboard is refreshed once the answer is in; the answer itself is main's verdict.
+ * read at CLICK time. The dashboard is refreshed once the answer is in; the answer itself is main's verdict, and anything
+ * but `outcome: 'done'` is shown next to the button with role=alert (ux-i18n-v2-6: a refusal persists nothing, so the
+ * refresh alone would bring back the same card with no word of what happened).
  */
 export function GuardedButton(props: {
   testId: string;
@@ -78,33 +83,60 @@ export function GuardedButton(props: {
   run(): Promise<unknown>;
   danger?: boolean;
 }) {
+  const { t } = useTranslation();
   const [busy, setBusy] = useState(false);
+  const [failure, setFailure] = useState<ErrorCode | null>(null);
   const busyRef = useRef(false);
   return (
-    <button
-      type="button"
-      className={`btn btn-outline${props.danger ? ' text-danger' : ''}`}
-      data-testid={props.testId}
-      disabled={busy}
-      onClick={(e) => {
-        if (activationRefused(e)) return;
-        if (busyRef.current) return;
-        busyRef.current = true;
-        setBusy(true);
-        void props
-          .run()
-          .catch(() => undefined)
-          .finally(() => {
-            busyRef.current = false;
-            setBusy(false);
-            void useDashboardStore.getState().refresh();
-          });
-      }}
-      onKeyDown={refuseBlockedKey}
-    >
-      {busy ? props.busyLabel : props.label}
-    </button>
+    <>
+      <button
+        type="button"
+        className={`btn btn-outline${props.danger ? ' text-danger' : ''}`}
+        data-testid={props.testId}
+        disabled={busy}
+        onClick={(e) => {
+          if (activationRefused(e)) return;
+          if (busyRef.current) return;
+          busyRef.current = true;
+          setBusy(true);
+          setFailure(null);
+          void props
+            .run()
+            .then(
+              (r) => setFailure(failureOf(r)),
+              () => setFailure('INTERNAL'),
+            )
+            .finally(() => {
+              busyRef.current = false;
+              setBusy(false);
+              void useDashboardStore.getState().refresh();
+            });
+        }}
+        onKeyDown={refuseBlockedKey}
+      >
+        {busy ? props.busyLabel : props.label}
+      </button>
+      {failure !== null ? (
+        <span role="alert" className="text-sm text-danger" data-testid={`${props.testId}-error`} data-code={failure}>
+          {t(`errors.${failure}.title`)}
+        </span>
+      ) : null}
+    </>
   );
+}
+
+/**
+ * The error a GuardedButton answer stands for: null for `outcome: 'done'` (and for a run that answers nothing, i.e. not
+ * an IPC Result); the Result's code; or, for any other outcome, the newest action error on the returned item.
+ */
+export function failureOf(r: unknown): ErrorCode | null {
+  if (r === undefined || r === null || typeof r !== 'object' || !('ok' in r)) return null;
+  const result = r as Result<unknown>;
+  if (!result.ok) return result.error.code;
+  if (undoSucceeded(result)) return null;
+  const item = (result.value as { item?: { actions?: readonly { lastError: ErrorCode | null }[] } } | null)?.item;
+  const codes = (item?.actions ?? []).map((a) => a.lastError).filter((c): c is ErrorCode => c !== null);
+  return codes.at(-1) ?? 'INTERNAL';
 }
 
 export function UndoControl({ undo, itemId, door, onUndo }: UndoControlProps) {
@@ -120,6 +152,13 @@ export function UndoControl({ undo, itemId, door, onUndo }: UndoControlProps) {
   const shown: UndoDisplayState = phase ?? undo.state;
   const compact = door !== 'card';
   const untilId = `undo-until-${itemId}-${door}`;
+  // ux-i18n-v2-9: a bare weekday is unambiguous only for the next 5 days; the 7-day manual window would otherwise read
+  // "until Wed 10:00" on that same Wednesday (or yesterday's weekday). The clock is sampled once, never during render.
+  const [now] = useState(() => Date.now());
+  const untilText =
+    undo.until - now > BARE_WEEKDAY_MAX_MS
+      ? formatWhenWithDay(undo.until, lang, timeZone)
+      : formatWhen(undo.until, lang, timeZone);
 
   const run = (e: React.MouseEvent<HTMLButtonElement>): void => {
     if (activationRefused(e)) return;
@@ -165,7 +204,7 @@ export function UndoControl({ undo, itemId, door, onUndo }: UndoControlProps) {
             className={compact ? 'sr-only' : 'text-xs text-text-muted'}
             data-testid={door === 'card' ? `undo-until-${itemId}` : `undo-until-${door}-${itemId}`}
           >
-            {renderBdiTemplate(t('undo.until', { when: SENTINEL(0) }), [formatWhen(undo.until, lang, timeZone)])}
+            {renderBdiTemplate(t('undo.until', { when: SENTINEL(0) }), [untilText])}
           </span>
         </>
       );

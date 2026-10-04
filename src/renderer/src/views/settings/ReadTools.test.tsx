@@ -103,7 +103,7 @@ describe('ReadTools', () => {
     expect(screen.getByTestId('settings-readtools-refused')).toBeInTheDocument();
   });
 
-  it('turning it back on from Off enables first (settings:set), then sets the scope (wa:setReadScope)', async () => {
+  it('turning it back on from Off settles the scope (wa:setReadScope), then enables (settings:set)', async () => {
     useSettingsStore.setState({ settings: withReadTools({ enabled: false, scope: 'all_chats' }) });
     render(<ReadTools />);
     expect(screen.getByTestId('settings-readtools-off')).toBeChecked();
@@ -113,6 +113,51 @@ describe('ReadTools', () => {
       expect(invokeMocks['settings:set']).toHaveBeenCalledWith({ whatsapp: { readTools: { enabled: true } } }),
     );
     await waitFor(() => expect(invokeMocks['wa:setReadScope']).toHaveBeenCalledWith({ scope: 'trigger_chat' }));
+  });
+
+  // ux-i18n-v2-5: enabled=true used to be written BEFORE the consent / scope checks.
+  it('Off -> "all my chats" without the current cloud consent writes NOTHING while it says "Not changed"', async () => {
+    useSettingsStore.setState({ settings: withReadTools({ enabled: false }) });
+    withProvider('claude');
+    mockInvoke('consent:get', () => ({
+      ok: true,
+      value: { kind: 'cloud_claude', currentVersion: 2, acceptedVersion: 1, acceptedAt: 1 },
+    }));
+    render(<ReadTools />);
+    await userEvent.click(screen.getByTestId('settings-readtools-all_chats'));
+    expect(await screen.findByTestId('settings-readtools-refused')).toHaveTextContent('Not changed');
+    expect(invokeMocks['settings:set']).not.toHaveBeenCalled();
+    expect(invokeMocks['wa:setReadScope']).not.toHaveBeenCalled();
+    expect(screen.getByTestId('settings-readtools-off')).toBeChecked();
+    await userEvent.click(screen.getByTestId('consent-cancel'));
+    expect(invokeMocks['settings:set']).not.toHaveBeenCalled();
+  });
+
+  it('Off -> "all my chats" with the stored scope already all_chats still goes through main\'s confirmation', async () => {
+    useSettingsStore.setState({ settings: withReadTools({ enabled: false, scope: 'all_chats' }) });
+    mockInvoke('wa:setReadScope', (req) => ({ ok: true, value: { scope: (req as { scope: string }).scope } }) as never);
+    render(<ReadTools />);
+    await userEvent.click(screen.getByTestId('settings-readtools-all_chats'));
+    await waitFor(() => expect(invokeMocks['settings:set']).toHaveBeenCalled());
+    // narrowed while off (no dialog, the safe direction), then widened through main's native confirmation
+    expect(invokeMocks['wa:setReadScope'].mock.calls.map((c) => c[0])).toEqual([
+      { scope: 'trigger_chat' },
+      { scope: 'all_chats' },
+    ]);
+    expect(invokeMocks['settings:set']).toHaveBeenCalledExactlyOnceWith({ whatsapp: { readTools: { enabled: true } } });
+    expect(invokeMocks['wa:setReadScope'].mock.invocationCallOrder[1]).toBeLessThan(
+      invokeMocks['settings:set'].mock.invocationCallOrder[0]!,
+    );
+  });
+
+  it('Off -> "all my chats" with a cancelled native confirmation stays Off (nothing enabled)', async () => {
+    useSettingsStore.setState({ settings: withReadTools({ enabled: false }) });
+    mockInvoke('wa:setReadScope', () => ({ ok: true, value: { scope: 'trigger_chat' } }));
+    render(<ReadTools />);
+    await userEvent.click(screen.getByTestId('settings-readtools-all_chats'));
+    await waitFor(() => expect(invokeMocks['wa:setReadScope']).toHaveBeenCalledWith({ scope: 'all_chats' }));
+    await waitFor(() => expect(invokeMocks['settings:get']).toHaveBeenCalled());
+    expect(invokeMocks['settings:set']).not.toHaveBeenCalled();
   });
 
   it('the days slider: 1..90, aria-valuetext in words, committed on release', async () => {

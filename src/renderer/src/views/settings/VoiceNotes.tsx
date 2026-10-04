@@ -2,12 +2,13 @@
 //
 // One radio group bound to `voice.enabled` + `voice.tier` (Off = enabled:false). Rules that are structural here:
 //   - a missing model is NEVER downloaded on a mere radio change: choosing it asks inline first ("Download the ... voice
-//     model (1.5 GB)?" [Download] [Cancel]) and only the Download click queues it (`model:startDownload`);
+//     model (1.6 GB)?" [Download] [Cancel]) and only the Download click queues it (`model:startDownload`);
 //   - the app NEVER switches tier by itself: the Lite suggestion is a sentence with a "Use Lite" button (same path as the
 //     radio);
 //   - sizes are interpolated from pinned bytes (`formatModelSize`, UX2 C1) - a size the renderer does not know is not shown;
 //   - `voice.enabled=true` is refused by main until the tier is ready (C2 4): choosing a missing tier stores the tier only,
-//     and the row says "Downloading N % - voice notes wait as plain cards" (UX2 C11 - see the notes file).
+//     and the row says "Downloading N % - voice notes wait as plain cards" (UX2 C11 - see the notes file). The choice is
+//     kept as the store's `voiceIntent` and turned into voice.enabled=true once the files are ready (ux-i18n-v2-4).
 import { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { VOICE_TIERS, type ModelFileStatus, type VoiceState, type VoiceTier } from '@shared/types';
@@ -67,8 +68,12 @@ export function VoiceNotes() {
   const downloads = useHealthStore((s) => s.downloads);
 
   const [voice, setVoice] = useState<VoiceState | null>(null);
-  /** The tier the user chose in this window while it is not ready yet (the radio stays on it). */
-  const [chosen, setChosen] = useState<VoiceTier | null>(null);
+  /**
+   * The tier the user chose while it is not ready yet (the radio stays on it). It lives in the settings store, not in
+   * this component: once its files are ready it is ENABLED (ux-i18n-v2-4), here or by App when this page is closed.
+   */
+  const chosen = useSettingsStore((s) => s.voiceIntent);
+  const setChosen = useSettingsStore((s) => s.setVoiceIntent);
   const [asking, setAsking] = useState<VoiceTier | null>(null);
   const [deleting, setDeleting] = useState<VoiceTier | null>(null);
   const [testing, setTesting] = useState(false);
@@ -76,7 +81,9 @@ export function VoiceNotes() {
 
   const reload = useCallback(async () => {
     const r = await api.getVoiceState();
-    if (r.ok) setVoice(r.value);
+    if (!r.ok) return;
+    setVoice(r.value);
+    await useSettingsStore.getState().settleVoiceIntent(r.value);
   }, []);
 
   // Re-read on mount and whenever a voice file's download state changes (a finished download flips "ready").

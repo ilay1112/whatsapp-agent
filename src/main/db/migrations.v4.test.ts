@@ -6,9 +6,9 @@
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { afterEach, describe, expect, it } from 'vitest';
-import { SettingsSchema } from '../../shared/settings';
+import { DEFAULT_SETTINGS, SettingsSchema } from '../../shared/settings';
 import { MIGRATIONS, SCHEMA_VERSION } from './migrations';
-import { MEMORY_DB, openDb, type Db } from './index';
+import { createRepos, MEMORY_DB, openDb, type Db } from './index';
 import { cleanup, tempDir, track } from './__fixtures__/testDb';
 
 afterEach(cleanup);
@@ -195,4 +195,30 @@ describe('v3 -> v4 smoke (one row per v3 table)', () => {
     );
     expect(db.prepare("SELECT approved_by FROM actions WHERE id = 'a2'").get()).toEqual({ approved_by: 'user' });
   });
+
+  // [v2-fix-src-main-db] data-integrity-v4-6: v1's settings repo tolerates a row that does not parse (it falls back to
+  // DEFAULT_SETTINGS), so a v3 file can carry one and run fine. Step 11's json_insert used to raise 'malformed JSON' on it, which
+  // aborted the whole migration and - through openDbWithRecovery - ended in an EMPTY database.
+  it.each([
+    ['not JSON at all', '{"general":'],
+    ['a JSON array', '[1,2]'],
+    ['a JSON string', '"settings"'],
+  ])(
+    'a v3 settings row that is %s does not abort v4: rows kept, the row left as is, the repo reads defaults',
+    (_l, value) => {
+      const file = path.join(tempDir(), 'app.db');
+      buildV3(file);
+      const raw = new DatabaseSync(file);
+      raw.prepare(`UPDATE settings SET value_json = ? WHERE key = 'settings'`).run(value);
+      raw.close();
+
+      const db = track(openDb(file));
+      expect(db.userVersion()).toBe(4);
+      for (const t of V3_TABLES) expect(count(db, t), t).toBe(1);
+      expect(
+        db.prepare<{ value_json: string }>("SELECT value_json FROM settings WHERE key = 'settings'").get()!.value_json,
+      ).toBe(value);
+      expect(createRepos(db).settings.get()).toEqual(DEFAULT_SETTINGS);
+    },
+  );
 });

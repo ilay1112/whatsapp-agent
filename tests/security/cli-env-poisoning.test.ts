@@ -13,6 +13,7 @@ import {
   envKeysAllowed,
 } from '../../src/main/proc/jobRunner.ts';
 import { buildAgyProbeEnv, buildClaudeEnv } from '../../src/main/llm/cli/claudeCli.ts';
+import { planAgyHome } from '../../src/main/llm/cli/antigravityCli.ts';
 import {
   createClaudeFakeWorld,
   S1_MESSAGES,
@@ -67,9 +68,12 @@ describe('a CLI child never sees a poisoned parent env', () => {
       USERPROFILE: 'C:\\Users\\wca-fake-home',
     };
     const claude = buildClaudeEnv({ processEnv: src, tempDir: 'C:\\r', token: null });
-    const agy = buildAgyProbeEnv(src, 'C:\\t');
+    // [cli-sandbox-3] the agy probe profile is the isolated app-owned one, never the (poisoned) process profile
+    const agy = buildAgyProbeEnv(src, 'C:\\t', planAgyHome('C:\\ud', 'C:\\ud\\agy-workspace').env);
     expect(Object.keys(claude).sort()).toEqual([...CLAUDE_ENV_KEYS].sort());
     expect(Object.keys(agy).sort()).toEqual([...AGY_ENV_KEYS].sort());
+    expect(agy.USERPROFILE).toBe('C:\\ud\\agy-home');
+    expect(Object.values(agy)).not.toContain('C:\\Users\\wca-fake-home');
     expect(JSON.stringify({ claude, agy })).not.toMatch(/poison|TESTONLY/i);
   });
 

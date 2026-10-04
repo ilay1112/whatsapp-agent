@@ -33,6 +33,7 @@ import type { Clock, Logger, RandomSource } from '../deps';
 import type { Repos } from '../db/index';
 import {
   ConsentRequiredError,
+  LlmError,
   type LlmMessage,
   type LlmProvider,
   type LlmUsage,
@@ -203,15 +204,18 @@ export function selfTriggerRow(
   return newest;
 }
 
-/** P2 2: `trigger_kind` per proposal version - 'voice' if the model saw an inbound transcript, else 'image' if it saw picture text or the
- *  run had a picture trigger that could not be read, else 'text'. Conservative on purpose (media-derived is never automatic, B8). */
+/** P2 2: `trigger_kind` per proposal version - 'voice' if the model saw an inbound transcript, else 'image' if it saw picture text, the
+ *  run had a picture trigger that could not be read, or [fix injection-v2-3] the picture's digits shaped the slot (S2 image branch,
+ *  `imageMerge.used`) even though V1 returned no picture text; else 'text'. Conservative on purpose (media-derived is never automatic, B8). */
 export function triggerKindOfRun(p: {
   voiceInWindow: boolean;
   imageInWindow: boolean;
   imageTriggerUnread: boolean;
+  /** [fix injection-v2-3] resolveExtractionWithImage() filled the date and/or time from V1's digits. */
+  imageShapedSlot?: boolean;
 }): TriggerKind {
   if (p.voiceInWindow) return 'voice';
-  if (p.imageInWindow || p.imageTriggerUnread) return 'image';
+  if (p.imageInWindow || p.imageTriggerUnread || p.imageShapedSlot === true) return 'image';
   return 'text';
 }
 
@@ -300,6 +304,18 @@ export function createOrchestrator(deps: OrchestratorDepsIn): Orchestrator {
       try {
         provider = await providers.get();
       } catch (e) {
+        // [v2-repair REQUEST 7] B13 / P2 9: an exhausted subscription window (the provider-start smoke hit USAGE_LIMIT) holds the
+        // chat as budget with CLOUD_QUOTA; compose releases it by itself once the window has reset (releaseQuotaHeldItems).
+        if (e instanceof LlmError && e.code === 'usage_limit') {
+          repos.items.update(
+            item.id,
+            { analysis: 'held', holdReason: 'budget', errorCode: 'CLOUD_QUOTA' },
+            clock.now(),
+          );
+          notifyChanged([item.id]);
+          log.info('triage_no_provider', { chatId, code: 'CLOUD_QUOTA' });
+          return;
+        }
         const code: ErrorCode = e instanceof ConsentRequiredError ? 'CONSENT_REQUIRED' : 'LLM_NOT_READY';
         repos.items.update(item.id, { analysis: 'held', holdReason: 'waiting_llm', errorCode: code }, clock.now());
         notifyChanged([item.id]);
@@ -329,6 +345,17 @@ export function createOrchestrator(deps: OrchestratorDepsIn): Orchestrator {
         if (reason === 'aborted') {
           repos.items.update(item.id, { analysis: 'queued' }, clock.now());
           notifyChanged([item.id]);
+          throw new RunAborted();
+        }
+        if (reason === 'usage_limit') {
+          // [v2-repair REQUEST 7] USAGE_LIMIT -> held/budget until resetsAt (never 'failed': nothing is wrong with the chat)
+          repos.items.update(
+            item.id,
+            { analysis: 'held', holdReason: 'budget', errorCode: 'CLOUD_QUOTA' },
+            clock.now(),
+          );
+          notifyChanged([item.id]);
+          log.info('triage_held_quota', { chatId, itemId: item.id });
           throw new RunAborted();
         }
         const code = providerErrorToErrorCode(provider.id, reason);
@@ -426,7 +453,13 @@ export function createOrchestrator(deps: OrchestratorDepsIn): Orchestrator {
         const usable = triggers.some((m) => isUsableTrigger(m, m.waMsgId === pictureRow?.waMsgId));
         if (!usable) {
           const now = clock.now();
-          const failedVoice = triggers
+          // [v2-repair REQUEST 4] `contextFor` admits an audio row only with a DONE transcript, so a note whose V0 failed is not in
+          // `messages` at all: look for it among the trigger rows of the raw media window (the rows V0 itself read), or the item would
+          // close not_needed and the raw "Voice message" card with its VOICE_* action (P2 3.4 / 3.5) would never be shown.
+          const audioTriggers = selfRun
+            ? triggers
+            : triggerRowsOf(deps.audioWindow?.(chatId) ?? rawWindow, item.triggerMsgId, item.triggerTs);
+          const failedVoice = audioTriggers
             .filter((m) => m.mediaType === 'audio')
             .map((m) => repos.transcripts.get(chat.jid, m.waMsgId))
             .find((t) => t !== null && (t.status === 'failed' || t.status === 'aborted'));
@@ -769,6 +802,7 @@ export function createOrchestrator(deps: OrchestratorDepsIn): Orchestrator {
               voiceInWindow: extractCtx.voiceInWindow || (selfRun && selfRow.mediaType === 'audio'),
               imageInWindow: extractCtx.imageInWindow,
               imageTriggerUnread: pictureIsTrigger && imageOutcome !== null && !imageOutcome.ok,
+              imageShapedSlot: imageMerge?.used === true,
             }),
             imageRead,
             imageBadges,

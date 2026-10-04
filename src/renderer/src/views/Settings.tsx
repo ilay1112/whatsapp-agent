@@ -108,8 +108,11 @@ export function Settings({ initialGroup = 'general' }: SettingsProps) {
   const autoState = useAutoStore((s) => s.state);
 
   useEffect(() => {
-    // [V2] the Automatic mode group needs AutoState; App hydrates the store at boot, this covers a direct open.
-    if (useAutoStore.getState().state === null) void useAutoStore.getState().hydrate();
+    // [V2] the Automatic mode group needs AutoState. App hydrates the store at boot and applies every `auto:changed`
+    // push; Settings RE-READS it on every open as well, even when the store already holds a state (REQUEST 2: a stale
+    // "needs three events you approved" / missing "End trial" must not survive until the dashboard re-mounts). A read
+    // only - nothing here can enable.
+    void useAutoStore.getState().hydrate();
     void api.getGoogleWizard().then((r) => r.ok && setGoogle(r.value));
     // Always re-read here (not the store's fetch-once path): the user may have just connected Google or added a
     // calendar, and this is the screen that shows the list.
@@ -118,9 +121,13 @@ export function Settings({ initialGroup = 'general' }: SettingsProps) {
     void api.getModelPlan().then((r) => r.ok && setPlan(r.value));
     const offGoogle = on('google:changed', (next) => setGoogle(next));
     const offPairing = on('pairing:changed', (next) => setPairing(next));
+    // [V2] REQUEST 2: an item change can move AutoState without an `auto:changed` (a click-approved create completes the
+    // track record; a shadow decision is recorded): while Settings is open, every dashboard change re-reads it.
+    const offDashboard = on('dashboard:changed', () => void useAutoStore.getState().hydrate());
     return () => {
       offGoogle();
       offPairing();
+      offDashboard();
     };
   }, []);
 
@@ -227,6 +234,7 @@ export function Settings({ initialGroup = 'general' }: SettingsProps) {
         onBack={() => {
           setFocusGroup('auto');
           setSub('page');
+          void useAutoStore.getState().hydrate(); // REQUEST 2: the group opens again - re-read it
         }}
       />
     );
@@ -285,7 +293,10 @@ export function Settings({ initialGroup = 'general' }: SettingsProps) {
                 type="button"
                 className="btn btn-quiet"
                 data-testid={`settings-nav-${group}`}
-                onClick={() => document.getElementById(`settings-group-${group}`)?.scrollIntoView?.({ block: 'start' })}
+                onClick={() => {
+                  document.getElementById(`settings-group-${group}`)?.scrollIntoView?.({ block: 'start' });
+                  if (group === 'auto') void useAutoStore.getState().hydrate(); // REQUEST 2: opening the group re-reads it
+                }}
               >
                 {t(`settings.group.${group}`)}
               </button>

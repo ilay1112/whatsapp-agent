@@ -23,6 +23,7 @@ import {
   fuseProblems,
   manifestNames,
   rootDeclaredPackage,
+  spawnFailure,
   toolListProblems,
   // [V2-W2-04]
   CRT_DLLS,
@@ -228,6 +229,40 @@ describe('classifyMcpFailure', () => {
     });
     expect(r.mode).toBe('fixture');
     expect(r.message).toMatch(/boom/);
+  });
+});
+
+describe('[v2-repair] spawnFailure - a refused start is a FAILED check, never a crash and never a pass', () => {
+  it('names Smart App Control / WDAC for spawn UNKNOWN on Windows and says the check did not run', () => {
+    const err = Object.assign(new Error('spawn UNKNOWN'), { code: 'UNKNOWN', errno: -4094 });
+    const r = spawnFailure(err, 'win32');
+    expect(r.mode).toBe('spawn');
+    expect(r.message).toMatch(/spawn UNKNOWN/);
+    expect(r.message).toMatch(/did NOT run/);
+    expect(r.message).toMatch(/Smart App Control/);
+    expect(r.message).toMatch(/never count this as a pass/);
+  });
+
+  it('EPERM / EACCES on Windows get the same hint; ENOENT and other platforms do not', () => {
+    for (const code of ['EPERM', 'EACCES']) {
+      expect(spawnFailure(Object.assign(new Error('x'), { code }), 'win32').message).toMatch(/Smart App Control/);
+    }
+    expect(spawnFailure(Object.assign(new Error('x'), { code: 'ENOENT' }), 'win32').message).not.toMatch(
+      /Smart App Control/,
+    );
+    expect(spawnFailure(Object.assign(new Error('x'), { code: 'UNKNOWN' }), 'linux').message).not.toMatch(
+      /Smart App Control/,
+    );
+  });
+
+  it('tolerates a non-Error throw', () => {
+    expect(spawnFailure('boom', 'win32').message).toMatch(/spawn boom/);
+  });
+
+  it('mcpSession turns a synchronous spawn throw and an async spawn error into a failure result (checks 2-12 still run)', () => {
+    expect(SOURCE).toMatch(/try \{\s*child = spawnAsNode\(exePath, args, env\);\s*\} catch \(err\) \{/);
+    expect(SOURCE).toMatch(/return \{ ok: false, failure: spawnFailure\(err, process\.platform\) \};/);
+    expect(SOURCE).toMatch(/child\.on\('error', \(err\) => \{\s*spawnError = err;/);
   });
 });
 

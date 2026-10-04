@@ -2,7 +2,6 @@
 // races between a click / a reject and the executor's own awaits, read failures at every read, retention-nulled revisions, the
 // dedupe of "Add as new event" / "Add it back", injected AutoGate doubles). Same rig as the other exec suites.
 import { afterEach, describe, expect, it } from 'vitest';
-import { LIMITS } from '../../shared/types';
 import { CTX, RIG_NOW, makeExecRig } from '../../../tests/helpers/ledger.execRig';
 import type { Rig, RigOptions } from '../../../tests/helpers/ledger.execRig';
 import type { ApprovalAction, EpochMs } from '../../shared/types';
@@ -212,11 +211,29 @@ describe('tryAuto edges', () => {
   it('an undo payload is never evaluated; a superseded proposal version is not either', async () => {
     const r = await onRig();
     const source = await r.createByClick({ slot: WED });
-    // leave an undo pending: the create_global bucket is exhausted so the approve refuses after inserting it
-    for (let i = 0; i < LIMITS.createPerHour; i++)
-      r.repos.rate.record('create_global', 'global', r.clock.now() as EpochMs);
-    await r.exec.undoChange(source.id, r.repos.eventRevisions.undoCandidate(source.calendarEventId!)!.id, 'user', CTX);
-    const undo = r.repos.actions.forItem(source.id).find((a) => a.kind === 'update_event' && a.state === 'pending')!;
+    // a pending undo payload (a refused undo no longer stays pending - v2-fix editing-undo-4 - so it is inserted directly)
+    const cand = r.repos.eventRevisions.undoCandidate(source.calendarEventId!)!;
+    const current = r.repos.proposals.current(source.id)!;
+    const undo = r.repos.actions.insertPending({
+      itemId: source.id,
+      proposalId: current.id,
+      chatId: source.chatId,
+      payload: {
+        v: 1,
+        kind: 'update_event',
+        itemId: source.id,
+        chatRef: source.chatId,
+        proposalVersion: current.version,
+        targetEventId: source.calendarEventId!,
+        targetItemId: source.id,
+        baseRevision: 1,
+        change: 'undo',
+        from: cand.next!,
+        to: { ...cand.next!, status: 'cancelled' },
+        revertOf: cand.id,
+      },
+      now: r.clock.now() as EpochMs,
+    });
     expect(await r.exec.tryAuto(undo.id)).toEqual({ verdict: 'none', reason: 'no_policy' });
     const c = r.seedCreate({ chatN: 4, slot: THU });
     r.repos.proposals.insertNext({
@@ -286,7 +303,9 @@ describe('tryAuto edges', () => {
     expect(await r.exec.tryAuto(c.action.id)).toEqual({ verdict: 'none', reason: 'no_policy' });
     expect(r.repos.autoDecisions.forAction(c.action.id as never)).toBeNull();
   });
-  it('an automatic create without a readback records null post_* (and its undo then fails closed: blocked_changed)', async () => {
+  // [v2-fix auto-mode-2] null post_* no longer makes the write un-undoable when Google's copy is provably the app's own, untouched
+  // write (its chain tag + the recorded content); the changed-in-Google variant stays blocked_changed (actionExecutor.v2fix.test.ts).
+  it('an automatic create without a readback records null post_* (and its untouched event can still be undone)', async () => {
     let failGet = false;
     const r = await onRig({
       wrapRead: (real): McpReadClient => ({
@@ -300,11 +319,11 @@ describe('tryAuto edges', () => {
     if (out.verdict !== 'auto') throw new Error('not auto');
     expect(r.repos.autoWrites.byId(out.autoWriteId!)).toMatchObject({ postEtag: null, postUpdated: null });
     failGet = false;
-    expect(await r.exec.undoAuto(out.autoWriteId!, 'user', CTX)).toEqual({
-      ok: false,
-      error: { code: 'ACTION_STALE' },
+    expect(await r.exec.undoAuto(out.autoWriteId!, 'user', CTX)).toMatchObject({
+      ok: true,
+      value: { outcome: 'done' },
     });
-    expect(r.repos.autoWrites.byId(out.autoWriteId!)!.undoState).toBe('blocked_changed');
+    expect(r.repos.autoWrites.byId(out.autoWriteId!)!.undoState).toBe('undone');
   });
   it('startup recovery of an automatic write with the policy already paused / already gone changes nothing more', async () => {
     let release: () => void = () => undefined;
@@ -366,7 +385,9 @@ describe('undo edges', () => {
       value: { outcome: 'failed' },
     });
   });
-  it('an undo that is still unknown blocks a second one (idempotent)', async () => {
+  // [v2-fix editing-undo-3] the second click no longer answers ACTION_STALE forever: it approves the unknown undo's own retry clone
+  // (the same undo chain, attempt 2) - never a second, independent undo of the revision.
+  it('an undo that is still unknown is retried through its own clone, never a second undo chain (idempotent)', async () => {
     let timeout = false;
     const r = await rig({
       wrapWrite: (real): McpWriteClient => ({
@@ -378,10 +399,15 @@ describe('undo edges', () => {
     const cand = r.repos.eventRevisions.undoCandidate(source.calendarEventId!)!;
     timeout = true;
     await r.exec.undoChange(source.id, cand.id, 'user', CTX);
-    expect(await r.exec.undoChange(source.id, cand.id, 'user', CTX)).toEqual({
-      ok: false,
-      error: { code: 'ACTION_STALE' },
+    expect(await r.exec.undoChange(source.id, cand.id, 'user', CTX)).toMatchObject({
+      ok: true,
+      value: { outcome: 'failed' }, // the retry timed out as well: unknown again, with its own clone
     });
+    const undos = r.repos.actions
+      .forItem(source.id)
+      .filter((a) => a.kind === 'update_event' && a.state !== 'superseded' && a.state !== 'pending');
+    expect(undos.map((a) => a.attempt)).toEqual([1, 2]);
+    expect(new Set(undos.map((a) => r.repos.actions.chainRoot(a.id).id)).size).toBe(1);
   });
   it('a retention-nulled revision cannot be undone (nothing to restore from)', async () => {
     const r = await rig();

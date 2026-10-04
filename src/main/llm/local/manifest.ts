@@ -59,14 +59,11 @@ export interface MediaModelManifestEntry extends Omit<ModelManifestEntry, 'tier'
   magic: 'GGUF' | 'GGML'; // first 4 bytes: 'GGUF' / 6c 6d 67 67 ('lmgg', the legacy whisper.cpp ggml header)
 }
 
-/** B18 URLs not yet commit-pinned: the research pinned size + sha256 (LFS oid) but not the commit. The sha256 check makes the
- *  download content-addressed anyway; `scripts/pin-models.mjs` resolves these to `resolve/<commit>/` (V2-W2-04 runs it). */
-export const UNPINNED_MEDIA_IDS: readonly MediaModelFileId[] = [
-  'voice-hebrew',
-  'voice-multilingual',
-  'voice-lite',
-  'voice-vad',
-];
+/** Media URLs not yet commit-pinned. Empty since v2-repair-v2-packaging-pins (2026-10-04): the four B18 voice URLs were copied
+ *  verbatim from `vendor/models.pin.json` (written by `scripts/pin-models.mjs`, sizes + sha256 unchanged), so every media URL is
+ *  `resolve/<40-hex commit>/` and an upstream re-upload cannot change what users download (packaged smoke check 8). Kept as an
+ *  export so `manifest.media.test.ts` keeps one rule for both states; a new entry here must also fail smoke check 8. */
+export const UNPINNED_MEDIA_IDS: readonly MediaModelFileId[] = [];
 
 export const MEDIA_MODEL_MANIFEST: Readonly<Record<MediaModelFileId, MediaModelManifestEntry>> = {
   'mmproj-tiny': {
@@ -103,7 +100,7 @@ export const MEDIA_MODEL_MANIFEST: Readonly<Record<MediaModelFileId, MediaModelM
     tier: 'voice-hebrew',
     label: 'ivrit-ai-whisper-large-v3-turbo-ggml',
     fileName: 'ggml-model.bin',
-    url: 'https://huggingface.co/ivrit-ai/whisper-large-v3-turbo-ggml/resolve/main/ggml-model.bin',
+    url: 'https://huggingface.co/ivrit-ai/whisper-large-v3-turbo-ggml/resolve/2130c78e4a9cb4914cc4df91a1c3031407789705/ggml-model.bin',
     size: 1_624_555_275,
     sha256: 'c8090411113357097bfafc2b8e228ec1639fa7f5fe4ecb5d054ac0ccef8641b1',
     kind: 'asr',
@@ -113,7 +110,7 @@ export const MEDIA_MODEL_MANIFEST: Readonly<Record<MediaModelFileId, MediaModelM
     tier: 'voice-multilingual',
     label: 'ggml-large-v3-turbo-q8_0',
     fileName: 'ggml-large-v3-turbo-q8_0.bin',
-    url: 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3-turbo-q8_0.bin',
+    url: 'https://huggingface.co/ggerganov/whisper.cpp/resolve/5359861c739e955e79d9a303bcbc70fb988958b1/ggml-large-v3-turbo-q8_0.bin',
     size: 874_188_075,
     sha256: '317eb69c11673c9de1e1f0d459b253999804ec71ac4c23c17ecf5fbe24e259a1',
     kind: 'asr',
@@ -123,7 +120,7 @@ export const MEDIA_MODEL_MANIFEST: Readonly<Record<MediaModelFileId, MediaModelM
     tier: 'voice-lite',
     label: 'ggml-small-q8_0',
     fileName: 'ggml-small-q8_0.bin',
-    url: 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small-q8_0.bin',
+    url: 'https://huggingface.co/ggerganov/whisper.cpp/resolve/5359861c739e955e79d9a303bcbc70fb988958b1/ggml-small-q8_0.bin',
     size: 264_464_607,
     sha256: '49c8fb02b65e6049d5fa6c04f81f53b867b5ec9540406812c643f177317f779f',
     kind: 'asr',
@@ -133,7 +130,7 @@ export const MEDIA_MODEL_MANIFEST: Readonly<Record<MediaModelFileId, MediaModelM
     tier: 'voice-vad',
     label: 'ggml-silero-v6.2.0',
     fileName: 'ggml-silero-v6.2.0.bin',
-    url: 'https://huggingface.co/ggml-org/whisper-vad/resolve/main/ggml-silero-v6.2.0.bin',
+    url: 'https://huggingface.co/ggml-org/whisper-vad/resolve/9ffd54a1e1ee413ddf265af9913beaf518d1639b/ggml-silero-v6.2.0.bin',
     size: 885_098,
     sha256: '2aa269b785eeb53a82983a20501ddf7c1d9c48e33ab63a41391ac6c9f7fb6987',
     kind: 'vad',

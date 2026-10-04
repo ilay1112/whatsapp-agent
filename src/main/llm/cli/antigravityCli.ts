@@ -17,6 +17,7 @@ import type { AgyRunningFn, HomeDirFn } from '../../deps';
 import type { JobRunner } from '../../proc/jobRunner';
 import { AGY_ENV_KEYS } from '../../proc/jobRunner';
 import { CLI_SMOKE_SCHEMA, CLI_SMOKE_SYSTEM, CLI_SMOKE_USER } from './claudeCli';
+import { AGY_HOME_DIR, AGY_WORKSPACE_DIR, planAgyHome } from './claudeCli.env';
 
 // ---------------- antigravityCli.ts (lane L10, built last, release-gated on M-AGY-1) ----------------
 export const AGY_MIN_VERSION = '1.2.11';
@@ -55,31 +56,9 @@ export function buildAgyStdinLine(text: string): string {
   // JSON.stringify escapes \n / \r and lone surrogates, so the envelope is always exactly ONE line (the runner appends the '\n').
   return JSON.stringify({ event: 'user', message: { content: text } });
 }
-/** [F3] Isolated profile (default): creates <userData>\agy-home\ with ONLY .gemini\antigravity-cli\settings.json = {trustedWorkspaces:[workspaceDir]}
- *  (app-written, idempotent) and returns the env overrides (USERPROFILE, HOME, and APPDATA/LOCALAPPDATA per U-A7). Nothing of the user's profile is read. */
-export function planAgyHome(
-  userDataDir: string,
-  workspaceDir: string,
-): { homeDir: string; files: Array<{ path: string; text: string }>; env: Record<string, string> } {
-  const homeDir = path.win32.join(userDataDir, AGY_HOME_DIR);
-  return {
-    homeDir,
-    files: [
-      {
-        path: path.win32.join(homeDir, '.gemini', 'antigravity-cli', 'settings.json'),
-        text: `${JSON.stringify({ trustedWorkspaces: [workspaceDir] }, null, 2)}\n`,
-      },
-    ],
-    // U-A7 (M-AGY-1): APPDATA / LOCALAPPDATA point under the app-owned home as well, so no user-level agy/Gemini state is found there
-    // either. The sign-in lives in Windows Credential Manager and is expected to survive the redirect (UNVERIFIED until M-AGY-1).
-    env: {
-      USERPROFILE: homeDir,
-      HOME: homeDir,
-      APPDATA: path.win32.join(homeDir, 'AppData', 'Roaming'),
-      LOCALAPPDATA: path.win32.join(homeDir, 'AppData', 'Local'),
-    },
-  };
-}
+/** [F3] Isolated profile (default): planAgyHome lives in claudeCli.env.ts since cli-sandbox-3 (the locator's probes use the same profile
+ *  and must not import this file - import cycle); re-exported here unchanged for every existing importer. */
+export { planAgyHome };
 /** [F3] Global-profile FALLBACK mode only (chosen by M-AGY-1 if isolation breaks auth): run before EVERY job. Any enabled server in
  *  ~/.gemini/config/mcp_config.json, any hook in hooks.json, or an unparsable file => 'unsafe' (provider not_ready, CLI_UNSAFE_CONFIG, no spawn). */
 export function preflightAgyGlobalConfig(mcpConfigText: string | null, hooksText: string | null): 'safe' | 'unsafe' {
@@ -477,9 +456,9 @@ export interface AgyProviderInfo {
 }
 export type AgyProvider = LlmProvider & AgyProviderInfo;
 
-/** Folder names under <userData> (paths.ts owns the absolute paths; these match AppPaths.agyWorkspaceDir and the runner's run dirs). */
-export const AGY_WORKSPACE_DIR = 'agy-workspace';
-export const AGY_HOME_DIR = 'agy-home';
+/** Folder names under <userData> (paths.ts owns the absolute paths; these match AppPaths.agyWorkspaceDir and the runner's run dirs).
+ *  AGY_WORKSPACE_DIR / AGY_HOME_DIR are defined in claudeCli.env.ts (cli-sandbox-3) and re-exported. */
+export { AGY_WORKSPACE_DIR, AGY_HOME_DIR };
 export const AGY_SCHEMA_FILE = 'schema.json';
 /** The agy job env key set (= AGY_ENV_KEYS of proc/jobRunner.ts). */
 export const AGY_ENV_KEY_SET: readonly string[] = AGY_ENV_KEYS;

@@ -25,6 +25,8 @@
 | R9 | Second bridge instance could leak messages to the user's other webhook receiver (default `localhost:8769`) or collide on port 8080 | Host refuses to spawn unless port/token/webhook/media-roots/cwd are all set by us (see workflow-1-summary) |
 | R10 | The exe is a locally modified, unsigned build that nobody here can rebuild (no Go) — will break when WhatsApp's protocol moves | Disclose in README; later: CI build of the vendored source |
 
+| R11 | **Smart App Control is enforcing on the user's PC**: the unsigned packaged app and its unsigned bundled executables (bridge, llama-server, whisper-cli) may be blocked at the first real launch (M9) unless Microsoft's cloud already knows a binary | D-078: inactive signing pipeline ready; a Trusted Root Program certificate (e.g. Certum Open Source) is the clean fix; never turn SAC off on the user's behalf |
+
 ## Open questions for the user (none blocking the design; all have a default)
 
 | # | Question | Default being used |

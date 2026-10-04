@@ -1,0 +1,9 @@
+start 2026-10-04T22:04:07+03:00
+lint exit=0 secs=9
+typecheck exit=0 secs=13
+format exit=0 secs=7
+vitest exit=1 secs=107
+e2e exit=1 secs=399
+smoke exit=1 secs=36
+audit exit=0 secs=1
+end 2026-10-04T22:13:39+03:00

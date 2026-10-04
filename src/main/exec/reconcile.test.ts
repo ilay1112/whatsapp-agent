@@ -411,9 +411,12 @@ describe('reconcileUnknown: atomicity', () => {
   it('send_reply: a failed item consequence leaves the action unknown_outcome, never a half-done row', async () => {
     const r = rig();
     const a = seedUnknown(r, reply(r));
+    // [v2-fix editing-undo-8 / data-integrity-v4-4] a row that throws no longer aborts the whole pass: it is counted as still unknown
+    // (the one-transaction resolution rolled back) and audited db_recovery; the torn-row invariant below is unchanged.
     await expect(
       reconcileUnknown(deps(r, { bridgeDb: fakeBridgeDb([outboundRow()]).db, repos: brokenItemUpdate(r) })),
-    ).rejects.toThrow('items.update exploded');
+    ).resolves.toEqual({ checked: 1, resolvedDone: 0, stillUnknown: 1 });
+    expect(auditKinds(r, a.id)).toContain('db_recovery');
 
     // 'done' + reply_state 'draft' is exactly the torn state no later pass ever revisits.
     expect(r.repos.actions.byId(a.id)?.state).toBe('unknown_outcome');
@@ -434,7 +437,7 @@ describe('reconcileUnknown: atomicity', () => {
           repos: brokenItemUpdate(r),
         }),
       ),
-    ).rejects.toThrow('items.update exploded');
+    ).resolves.toEqual({ checked: 1, resolvedDone: 0, stillUnknown: 1 });
 
     expect(r.repos.actions.byId(a.id)?.state).toBe('unknown_outcome');
     expect(r.repos.items.byId(r.itemId)?.eventState).not.toBe('created');

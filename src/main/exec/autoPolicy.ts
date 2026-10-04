@@ -199,6 +199,7 @@ export function createAutoPolicyService(deps: AutoPolicyServiceDeps): AutoPolicy
         trial: req.trial,
         validityDays: scope.data.validityDays,
         endsOn: isoDateIn(expiresAt, s.general.timeZone),
+        scope: scope.data, // [auto-mode-7] the dialog shows exactly what becomes the grant
       });
       if (!confirmed) {
         deps.audit('ipc_rejected', null, { channel: 'auto:requestEnable', reason: 'not_confirmed' });

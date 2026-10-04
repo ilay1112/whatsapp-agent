@@ -37,6 +37,11 @@ export interface ProviderFactoryDeps {
   jobs?: import('../proc/jobRunner').JobRunner;
   /** [V2-W1-06, additive] clock for the 24 h smoke freshness (B12); default Date.now. */
   now?: () => EpochMs;
+  /** [v2-repair REQUEST 7, additive] the shared CliRunner's own pause (breaker / overage / usage window, CliRunner.health()). usable()
+   *  reports it for a CLI id even before a provider is cached (a provider-start smoke that hit the limit is never cached). */
+  cliRunnerHealth?: () => { code: ErrorCode } | null;
+  /** [v2-repair REQUEST 7, additive] called after the CLI readiness changed (a smoke passed or failed) - compose refreshes AppHealth.llm. */
+  onReadiness?: () => void;
 }
 
 /** The secret each API-key provider reads. [V2 CHANGE] keyed by ApiKeyProviderId (C2 9: the CLI providers hold no secret). */
@@ -81,6 +86,8 @@ interface CliReadiness {
   okAt: EpochMs | null;
   /** The ErrorCode of a failed build/smoke that must hold items until the user acts (not_installed, version, not signed in, sandbox ...). */
   stickyCode: ErrorCode | null;
+  /** [v2-repair REQUEST 7] the sticky code is the runner's own pause (usage window / overage): it ends when that pause ends. */
+  clearsWithRunner?: boolean;
 }
 
 export function createProviderFactory(deps: ProviderFactoryDeps): ProviderFactory {
@@ -109,7 +116,10 @@ export function createProviderFactory(deps: ProviderFactoryDeps): ProviderFactor
     try {
       fresh = await make({ model });
     } catch (e) {
-      if (e instanceof LlmError) readiness.set(id, { okAt: null, stickyCode: providerErrorToErrorCode(id, e.code) });
+      if (e instanceof LlmError) {
+        readiness.set(id, { okAt: null, stickyCode: providerErrorToErrorCode(id, e.code) });
+        deps.onReadiness?.();
+      }
       throw e;
     }
     const key = cliCacheKey(id, model, fresh);
@@ -120,7 +130,10 @@ export function createProviderFactory(deps: ProviderFactoryDeps): ProviderFactor
     const v = await fresh.validate(AbortSignal.timeout(LIMITS.cliTestWallClockMs + 10_000));
     if (!v.ok) {
       const code = providerErrorToErrorCode(id, v.reason);
-      readiness.set(id, { okAt: null, stickyCode: NO_RETRY_PROVIDER_ERRORS.includes(v.reason) ? code : null });
+      const sticky = NO_RETRY_PROVIDER_ERRORS.includes(v.reason) ? code : null;
+      const runnerCode = deps.cliRunnerHealth?.()?.code ?? null;
+      readiness.set(id, { okAt: null, stickyCode: sticky, clearsWithRunner: sticky !== null && runnerCode === sticky });
+      deps.onReadiness?.();
       await fresh.dispose().catch(() => undefined);
       log.info('provider.cli_smoke_failed', { provider: id, code });
       throw new LlmError(v.reason);
@@ -129,6 +142,7 @@ export function createProviderFactory(deps: ProviderFactoryDeps): ProviderFactor
     const at = now();
     cached = { key, provider: fresh, smokeAt: at };
     readiness.set(id, { okAt: at, stickyCode: null });
+    deps.onReadiness?.();
     log.info('provider.created', { provider: id, seam: false });
     return fresh;
   };
@@ -196,8 +210,15 @@ export function createProviderFactory(deps: ProviderFactoryDeps): ProviderFactor
           const h = cliHealthOf(cached.provider);
           if (h !== null) return { ok: false, code: h.code };
         }
+        // [v2-repair REQUEST 7] the runner's pause holds for a provider that is not cached yet (its smoke hit the limit)
+        const runnerHealth = deps.cliRunnerHealth?.() ?? null;
+        if (runnerHealth !== null) return { ok: false, code: runnerHealth.code };
         const r = readiness.get(id);
-        if (r !== undefined && r.stickyCode !== null) return { ok: false, code: r.stickyCode };
+        if (r !== undefined && r.stickyCode !== null) {
+          // the usage window / overage pause that made the smoke fail has ended: the next get() re-proves the smoke
+          if (r.clearsWithRunner === true) readiness.delete(id);
+          else return { ok: false, code: r.stickyCode };
+        }
         return { ok: true };
       }
       if (id !== 'local' && !deps.secrets.has(SECRET_FOR[id]).present) return { ok: false, code: 'KEY_MISSING' };

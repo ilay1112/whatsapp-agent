@@ -7,7 +7,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import type { ChildProcess } from 'node:child_process';
-import type { JobProcessDeps } from '../deps';
+import type { JobProcessDeps, SpawnFn } from '../deps';
 import { LIMITS } from '../../shared/types';
 import { createTaskkillOnlyQuery } from './supervisor';
 
@@ -214,6 +214,150 @@ export interface JobRunnerDeps {
   fs?: JobFs;
   timers?: JobTimers;
   randomId?: () => string;
+  /**
+   * [cli-sandbox-4] The process table the post-exit orphan sweep reads. Default: `createWindowsProcessTable()` on win32 with the
+   * production spawn; `null` (no sweep) when `proc.spawn` is injected - a fake spawn hands out fake pids, and sweeping the REAL
+   * table for children of a fake pid could kill an unrelated process. `null` disables the sweep explicitly.
+   */
+  processTable?: JobProcessTable | null;
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
+// [cli-sandbox-4] post-exit orphan sweep. `kill()` tree-kills only on the kill paths; a job that EXITS NORMALLY can leave a
+// helper behind (a vendor CLI's daemon), which `taskkill /T` can no longer find once its parent is dead and which no pid file
+// names. Windows never reparents an orphan, so after every job exit the runner reads Win32_Process once and tree-kills BY PID
+// every process whose ParentProcessId is the dead job's pid and whose CreationDate lies inside the job's lifetime.
+// Residual (documented): a grandchild whose own parent ALSO exited cannot be linked to the job any more and is not found.
+// ---------------------------------------------------------------------------------------------------------------------
+
+/** One Win32_Process row - only the three fields the sweep needs (never a name, a path or a command line). */
+export interface JobProcRow {
+  pid: number;
+  ppid: number;
+  createdAt: EpochMs;
+}
+export type JobProcessTable = () => Promise<readonly JobProcRow[]>;
+/**
+ * The kinds swept after exit: the opaque vendor CLIs (claude.exe / agy.exe), which are known to start helpers and whose env can
+ * carry the per-run WCA_MCP_TOKEN. NOT 'voice': whisper-cli.exe is our own SHA-pinned single-process binary with a secret-free
+ * env, and a ~1 s process-table query after every voice note would serialise behind the voice mutex for nothing.
+ */
+export const JOB_SWEEP_KINDS: readonly JobKind[] = ['cli'];
+/** A hung process-table query is killed and the sweep gives up (kills nothing) after this long. */
+export const JOB_SWEEP_QUERY_TIMEOUT_MS = 5_000;
+const JOB_SWEEP_MAX_OUTPUT = 8 * 1024 * 1024;
+/**
+ * A CONSTANT command: nothing (no pid, no path) is ever interpolated or appended. Note `powershell -Command <text> -- <arg>` does NOT
+ * pass `<arg>` as `$args[0]` - every token after -Command is joined into the script text - so the whole table is read and filtered here.
+ */
+export const JOB_SWEEP_PS_ARGS: readonly string[] = [
+  '-NoProfile',
+  '-NonInteractive',
+  '-Command',
+  'Get-CimInstance Win32_Process | Select-Object ProcessId,ParentProcessId,CreationDate | ConvertTo-Json -Compress',
+];
+
+function parseCimDate(value: unknown): EpochMs | null {
+  if (typeof value !== 'string') return null;
+  const dotNet = /^\/Date\((-?\d+)\)\/$/.exec(value); // Windows PowerShell 5.1
+  if (dotNet?.[1] !== undefined) return Number(dotNet[1]);
+  const iso = Date.parse(value); // PowerShell 7
+  return Number.isFinite(iso) ? iso : null;
+}
+
+/** Parses the `ConvertTo-Json` table; malformed rows are skipped; null when the text is not a process table at all. */
+export function parseProcessTableJson(text: string): JobProcRow[] | null {
+  if (text.trim() === '') return null;
+  let raw: unknown;
+  try {
+    raw = JSON.parse(text);
+  } catch {
+    return null;
+  }
+  const list: unknown[] = Array.isArray(raw) ? raw : [raw];
+  if (list.length === 0 || (list.length === 1 && (list[0] === null || typeof list[0] !== 'object'))) return null;
+  const rows: JobProcRow[] = [];
+  for (const r of list) {
+    if (r === null || typeof r !== 'object') continue;
+    const o = r as Record<string, unknown>;
+    const pid = o.ProcessId;
+    const ppid = o.ParentProcessId;
+    const createdAt = parseCimDate(o.CreationDate);
+    if (!Number.isSafeInteger(pid) || !Number.isSafeInteger(ppid) || (pid as number) < 0 || (ppid as number) < 0)
+      continue;
+    if (createdAt === null) continue;
+    rows.push({ pid: pid as number, ppid: ppid as number, createdAt });
+  }
+  return rows;
+}
+
+/**
+ * The pids to tree-kill: children of `jobPid` created inside `[sinceMs, untilMs]` (the pid-reuse guard - a row whose
+ * ParentProcessId names the pid but that was created before the job started belongs to an EARLIER holder of the pid; one created
+ * after the exit was seen belongs to a LATER one). Never the job pid itself, never `selfPid` (the app).
+ */
+export function selectJobOrphans(
+  rows: readonly JobProcRow[],
+  jobPid: number,
+  sinceMs: EpochMs,
+  untilMs: EpochMs,
+  selfPid: number = process.pid,
+): number[] {
+  const out = new Set<number>();
+  for (const r of rows) {
+    if (r.ppid !== jobPid || r.pid === jobPid || r.pid === selfPid || r.pid <= 0) continue;
+    if (r.createdAt < sinceMs || r.createdAt > untilMs) continue;
+    out.add(r.pid);
+  }
+  return [...out].sort((a, b) => a - b);
+}
+
+/** Production process table: one `powershell.exe` (shell:false, hidden) with the constant JOB_SWEEP_PS_ARGS. Rejects on any failure. */
+export function createWindowsProcessTable(deps: { spawn?: SpawnFn; timers?: JobTimers } = {}): JobProcessTable {
+  const spawnFn: SpawnFn = deps.spawn ?? ((command, args, options) => cp.spawn(command, [...args], options));
+  const timers: JobTimers = deps.timers ?? {
+    setTimeout: (fn, ms) => globalThis.setTimeout(fn, ms),
+    clearTimeout: (h) => globalThis.clearTimeout(h as ReturnType<typeof globalThis.setTimeout>),
+  };
+  return () =>
+    new Promise<readonly JobProcRow[]>((resolve, reject) => {
+      const child = spawnFn('powershell.exe', [...JOB_SWEEP_PS_ARGS], {
+        shell: false,
+        windowsHide: true,
+        stdio: ['ignore', 'pipe', 'ignore'],
+      });
+      const chunks: Buffer[] = [];
+      let size = 0;
+      let settled = false;
+      const settle = (fn: () => void): void => {
+        if (settled) return;
+        settled = true;
+        timers.clearTimeout(timer);
+        fn();
+      };
+      const timer = timers.setTimeout(() => {
+        settle(() => reject(new Error('process_table_timeout')));
+        try {
+          child.kill();
+        } catch {
+          /* already gone */
+        }
+      }, JOB_SWEEP_QUERY_TIMEOUT_MS);
+      child.stdout?.on('data', (c: Buffer | string) => {
+        const b = Buffer.isBuffer(c) ? c : Buffer.from(c);
+        size += b.length;
+        if (size <= JOB_SWEEP_MAX_OUTPUT) chunks.push(b);
+      });
+      child.once('error', () => settle(() => reject(new Error('process_table_spawn'))));
+      child.once('close', () =>
+        settle(() => {
+          const rows =
+            size > JOB_SWEEP_MAX_OUTPUT ? null : parseProcessTableJson(Buffer.concat(chunks).toString('utf8'));
+          if (rows === null) reject(new Error('process_table_unparsable'));
+          else resolve(rows);
+        }),
+      );
+    });
 }
 
 interface RunningJob {
@@ -221,6 +365,8 @@ interface RunningJob {
   pid: number;
   kill: () => void;
   exited: Promise<void>;
+  /** [v2-repair REQUEST 10] removed by killAll() as soon as the job exited (the quit path does not wait for runOnce's finally). */
+  pidFile: string;
 }
 
 /** Splits a byte stream into NDJSON lines with the two caps. An over-long line is dropped whole; past the total cap `onOverflow` fires once. */
@@ -338,6 +484,35 @@ export function createJobRunner(deps: JobRunnerDeps): JobRunner {
     clearTimeout: (h) => globalThis.clearTimeout(h as ReturnType<typeof globalThis.setTimeout>),
   };
   const newId = deps.randomId ?? ((): string => randomUUID());
+  const processTable: JobProcessTable | null =
+    deps.processTable !== undefined
+      ? deps.processTable
+      : deps.proc?.spawn === undefined && process.platform === 'win32'
+        ? createWindowsProcessTable()
+        : null;
+  /** In-flight orphan sweeps; killAll() (the quit path) waits for them so no query or orphan outlives the app. */
+  const sweeps = new Set<Promise<void>>();
+  /** Never rejects. `sinceMs` / `untilMs` are wall-clock (Date.now) like Win32_Process.CreationDate, never the injected `now`. */
+  const sweepOrphans = (kind: JobKind, jobPid: number, sinceMs: EpochMs, untilMs: EpochMs): Promise<void> => {
+    if (processTable === null || !JOB_SWEEP_KINDS.includes(kind)) return Promise.resolve();
+    const run = (async (): Promise<void> => {
+      let orphans: number[];
+      try {
+        orphans = selectJobOrphans(await processTable(), jobPid, sinceMs, untilMs);
+      } catch {
+        deps.log('job_orphan_sweep_failed', { kind });
+        return;
+      }
+      if (orphans.length === 0) return;
+      deps.log('job_orphans_killed', { kind, count: orphans.length });
+      // By PID with /T (the orphan is alive, so its own subtree is still enumerable) - never by image name: the user may run the
+      // same vendor CLI interactively on this PC.
+      await Promise.all(orphans.map((p) => killPid(p, true).catch(() => undefined)));
+    })();
+    sweeps.add(run);
+    void run.finally(() => sweeps.delete(run));
+    return run;
+  };
 
   const mutex: Record<JobKind, Promise<void>> = { cli: Promise.resolve(), voice: Promise.resolve() };
   const failures: Record<JobKind, EpochMs[]> = { cli: [], voice: [] };
@@ -382,6 +557,7 @@ export function createJobRunner(deps: JobRunnerDeps): JobRunner {
     if (signal.aborted) throw new JobAbortedError();
 
     const startedAt = deps.now();
+    const sweepSince = Date.now(); // [cli-sandbox-4] taken BEFORE spawn: every descendant's CreationDate is >= this
     let child: ChildProcess;
     try {
       child = spawnFn(spec.exePath, [...spec.args], {
@@ -435,10 +611,13 @@ export function createJobRunner(deps: JobRunnerDeps): JobRunner {
       let exited = false;
       let graceTimer: unknown = null;
       let killing: Promise<void> = Promise.resolve(); // the tree kill in flight: `done` waits for it (no taskkill outlives the run)
+      let sweep: Promise<void> = Promise.resolve(); // [cli-sandbox-4] the post-exit orphan sweep: `done` waits for it too
 
       const exitPromise = new Promise<number | null>((resolve) => {
         child.once('exit', (code: number | null) => {
           exited = true;
+          // Started on 'exit' only (the process is gone; an 'error' alone does not prove that), on every path - normal or killed.
+          sweep = sweepOrphans(spec.kind, pid, sweepSince, Date.now());
           resolve(code);
         });
         child.once('error', () => {
@@ -492,7 +671,7 @@ export function createJobRunner(deps: JobRunnerDeps): JobRunner {
       const onAbort = (): void => kill();
       signal.addEventListener('abort', onAbort);
 
-      const entry: RunningJob = { kind: spec.kind, pid, kill, exited: exitPromise.then(() => undefined) };
+      const entry: RunningJob = { kind: spec.kind, pid, kill, exited: exitPromise.then(() => undefined), pidFile };
       running.add(entry);
 
       const done = exitPromise.then(async (code) => {
@@ -501,6 +680,7 @@ export function createJobRunner(deps: JobRunnerDeps): JobRunner {
         signal.removeEventListener('abort', onAbort);
         await closed;
         await killing;
+        await sweep;
         return { exitCode: code, killed, timedOut, stderrMarkers: stderr.markers(), ms: deps.now() - startedAt };
       });
       const handle: JobHandle = {
@@ -555,6 +735,14 @@ export function createJobRunner(deps: JobRunnerDeps): JobRunner {
       const jobs = [...running];
       for (const j of jobs) j.kill();
       await Promise.all(jobs.map((j) => j.exited));
+      // [v2-repair REQUEST 10] app.exit() follows at once: runOnce's finally (after the stdio close wait and the tree kill) may never
+      // run, so the dead jobs leave the live set and their pid files go NOW (idempotent - the finally removes them again if it runs).
+      for (const j of jobs) {
+        running.delete(j);
+        removePidFile(j.pidFile);
+      }
+      // [cli-sandbox-4] the exits above started their orphan sweeps (bounded by JOB_SWEEP_QUERY_TIMEOUT_MS; they never reject).
+      await Promise.all([...sweeps]);
     },
     jobPids() {
       const out: Record<'cli' | 'voice', number[]> = { cli: [], voice: [] };

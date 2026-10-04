@@ -189,6 +189,24 @@ describe('UndoControl - view-model states', () => {
   });
 });
 
+// ux-i18n-v2-9: the 7-day manual window read "until Wed 10:00" on that same Wednesday - it looked already over.
+describe('UndoControl - the deadline names its date when a bare weekday would be ambiguous', () => {
+  const DAY = 86_400_000;
+  it.each([6, 7])('a deadline %i days away spells out the day of the month', (days) => {
+    const until = Date.now() + days * DAY;
+    render(<UndoControl undo={undo({ until })} itemId={7} door="card" onUndo={vi.fn()} />);
+    const day = new Intl.DateTimeFormat('en-GB', { day: 'numeric', timeZone: 'Asia/Jerusalem' }).format(until);
+    // "Wed 23 Sept 10:00": the day number followed by the month name (not a digit of the time)
+    expect(screen.getByTestId('undo-until-7').textContent).toMatch(new RegExp(` ${day} \\p{L}`, 'u'));
+  });
+
+  it('a deadline within 3 days (the automatic window) keeps the short "Wed 17:00" form', () => {
+    const until = Date.now() + 2 * DAY;
+    render(<UndoControl undo={undo({ until, automatic: true })} itemId={7} door="card" onUndo={vi.fn()} />);
+    expect(screen.getByTestId('undo-until-7').textContent).toMatch(/until \w{3} \d{2}:\d{2}$/);
+  });
+});
+
 describe('GuardedButton', () => {
   it('one IPC per activation, guard at click time, busy label while in flight', async () => {
     let resolve!: () => void;
@@ -225,5 +243,44 @@ describe('GuardedButton', () => {
     render(<GuardedButton testId="g" label="x" busyLabel="y" run={() => Promise.reject(new Error('no'))} />);
     await user.click(screen.getByTestId('g'));
     await waitFor(() => expect(screen.getByTestId('g')).not.toBeDisabled());
+  });
+
+  // ux-i18n-v2-6: main's refusal used to be swallowed - the button just came back with no message.
+  it.each([
+    ['CAL_UNAVAILABLE', { ok: false, error: { code: 'CAL_UNAVAILABLE' } }, 'The calendar connection stopped'],
+    ['WINDOW_NOT_FOCUSED', { ok: false, error: { code: 'WINDOW_NOT_FOCUSED' } }, 'Bring the window to the front first'],
+  ] as const)('a refused item:cancelEvent (%s) is shown inline with role=alert', async (code, answer, title) => {
+    mockInvoke('item:cancelEvent', () => answer as never);
+    render(
+      <UndoControl
+        undo={undo({ state: 'blocked_started', automatic: true })}
+        itemId={7}
+        door="card"
+        onUndo={vi.fn()}
+      />,
+    );
+    await userEvent.click(screen.getByTestId('undo-cancel-event-7'));
+    await waitFor(() => expect(invokeMocks['item:cancelEvent']).toHaveBeenCalledOnce());
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveAttribute('data-testid', 'undo-cancel-event-7-error');
+    expect(alert).toHaveAttribute('data-code', code);
+    expect(alert).toHaveTextContent(title);
+  });
+
+  it('an outcome other than "done" is a failure too (the failed action\'s own error); a success shows nothing', async () => {
+    const failedItem = {
+      ...defaultDetail,
+      actions: [{ ...(defaultDetail.actions[0] ?? {}), lastError: 'CAL_EVENT_GONE' }],
+    };
+    const run = vi
+      .fn()
+      .mockResolvedValueOnce({ ok: true, value: { outcome: 'failed', item: failedItem } })
+      .mockResolvedValueOnce(done);
+    render(<GuardedButton testId="g" label="Restore original" busyLabel="..." run={run} />);
+    await userEvent.click(screen.getByTestId('g'));
+    expect(await screen.findByRole('alert')).toHaveAttribute('data-code', 'CAL_EVENT_GONE');
+    await userEvent.click(screen.getByTestId('g'));
+    await waitFor(() => expect(run).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(screen.queryByRole('alert')).toBeNull());
   });
 });

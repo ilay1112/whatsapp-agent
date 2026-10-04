@@ -6,6 +6,7 @@
 // wrapped in FSI ... PDI because a native box has no <bdi> (UX2 4.5.1).
 import type { MessageBoxOptionsLike, ShowMessageBoxFn } from '../deps';
 import type { TFn } from './tray';
+import { DEFAULT_AUTO_SCOPE, type AutoScope } from '../../shared/schemas';
 
 /** One scripted answer (v2-tests 4.1 `WCA_DIALOG_SCRIPT`); an exhausted script answers Cancel. */
 export interface DialogScriptEntry {
@@ -28,10 +29,19 @@ export interface DialogRecord {
 }
 export interface AutoDialog {
   /** auto:requestEnable: accepted only with response === 1 && checkboxChecked (the caller builds AutoPolicyConfirm from it).
-   *  [V2-W1-04] `validityDays` / `endsOn` (YYYY-MM-DD) are optional additions for the "ends after {{days}} days" / "Ends on {{date}}." lines. */
+   *  [V2-W1-04] `validityDays` / `endsOn` (YYYY-MM-DD) are optional additions for the "ends after {{days}} days" / "Ends on {{date}}." lines.
+   *  [auto-mode-7] `scope` is the scope that becomes the grant: any part of it WIDER than the six fixed bullets say (cancels on, quiet hours
+   *  off or different from the default) adds a line, so nothing the user did not see can be stored as what they confirmed. */
   confirmEnable(
     win: unknown,
-    p: { calendarName: string; trial: boolean; validityDays?: number; endsOn?: string; renew?: boolean },
+    p: {
+      calendarName: string;
+      trial: boolean;
+      validityDays?: number;
+      endsOn?: string;
+      renew?: boolean;
+      scope?: AutoScope;
+    },
   ): Promise<boolean>;
   /** cli:allowWorkspace: shows the app-built one-line diff. */
   confirmWorkspaceTrust(win: unknown, diffLine: string): Promise<boolean>;
@@ -51,6 +61,24 @@ const UNSAFE_CHARS = /[\u0000-\u001f\u007f-\u009f\u200B-\u200F\u202A-\u202E\u206
 export function isolateCalendarName(name: string): string {
   const clean = name.replace(UNSAFE_CHARS, '').replace(/\s+/g, ' ').trim();
   return `${FSI}${Array.from(clean).slice(0, CALENDAR_NAME_MAX).join('')}${PDI}`;
+}
+
+const hh = (h: number): string => `${String(h).padStart(2, '0')}:00`;
+
+/** [auto-mode-7] The dialog lines for the parts of a scope the six fixed bullets do not cover. Every other scope field is capped by
+ *  AutoScopeSchema at exactly the default the fixed bullets state (30 days, 4 hours, 3 / 15 a day; edits are in "added to and changed in"),
+ *  so it can only be NARROWER than what the dialog says. `cancels` and `quietHours` are the two that can be wider: each gets its own line. */
+export function scopeWideningLines(t: TFn, scope: AutoScope | undefined): string[] {
+  if (scope === undefined) return [];
+  const lines: string[] = [];
+  if (scope.cancels) lines.push(t('auto.dialog.cancels'));
+  const q = scope.quietHours;
+  const dq = DEFAULT_AUTO_SCOPE.quietHours;
+  if (q === null) lines.push(t('auto.dialog.anyHour'));
+  else if (dq === null || q.from !== dq.from || q.to !== dq.to) {
+    lines.push(t('auto.dialog.quietCustom', { from: hh(q.from), to: hh(q.to) }));
+  }
+  return lines;
 }
 
 /** Electron's BrowserWindow shape the dialog needs (tests pass the electron mock's window). */
@@ -115,6 +143,7 @@ export function createAutoDialog(deps: {
         t('auto.happens.notify'),
         t('auto.happens.replies'),
         t('auto.happens.ends', { days }),
+        ...scopeWideningLines(t, p.scope),
       ].map((line) => `- ${line}`);
       const detail =
         p.endsOn === undefined
@@ -132,7 +161,7 @@ export function createAutoDialog(deps: {
         defaultId: 0,
         cancelId: 0,
         noLink: true,
-        checkboxLabel: t('auto.dialog.checkbox'),
+        checkboxLabel: t(p.scope?.cancels === true ? 'auto.dialog.checkboxCancels' : 'auto.dialog.checkbox'),
         checkboxChecked: false,
       };
       const r = await ask('auto_enable', win, opts);

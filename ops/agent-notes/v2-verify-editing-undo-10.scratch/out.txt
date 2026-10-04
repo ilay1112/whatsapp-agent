@@ -1,0 +1,8 @@
+click {"ok":true,"value":{"outcome":"failed","item":{"itemId":1,"chat":{"chatRef":1,"displayName":"","phoneDisplay":"","sendable":true,"isKnown":true,"policy":"default","autoPolicy":"inherit"},"status":"nee
+actions [{"kind":"create_event","state":"done","attempt":1},{"kind":"create_event","state":"pending","attempt":2}]
+item {"state":"in_calendar","eventState":"created","hasCal":true}
+detail {"status":"in_calendar","eventState":"created","actions":[{"kind":"create_event","state":"pending","attempt":2,"dis":null}]}
+clone click {"ok":true,"value":{"outcome":"needs_confirm_conflict","busy":[{"startLocal":"2026-10-07T15:00:00","endLocal":"2026-10-07T16:00:00"}],"item":{"itemId":1,"chat":{"chatRef":1,"displayName":"","phoneDisplay":"","sendable":true,"isKnown":true,"policy":"default","autoPolicy":"inherit"},"status":"in_calen
+events before/after 1 1
+clone confirm {"ok":true,"value":{"outcome":"done","item":{"itemId":1,"chat":{"chatRef":1,"displayName":"","phoneDisplay":"","sendable
+events after confirm 1 [{"kind":"create_event","state":"done","attempt":1},{"kind":"create_event","state":"done","attempt":2}]

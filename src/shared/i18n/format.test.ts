@@ -18,6 +18,7 @@ import {
   formatTimeRange,
   makeFormatters,
 } from './format';
+import { MEDIA_MODEL_MANIFEST, formatModelSize as manifestFormatModelSize } from '../../main/llm/local/manifest';
 
 const TZ = DEFAULT_TIME_ZONE;
 /** 2026-09-24T17:00 Asia/Jerusalem - the instant the i18n-rtl.md 8.1 table was measured with. */
@@ -214,11 +215,32 @@ describe('v2 helpers', () => {
     expect(formatClockDuration(-3)).toBe('0:00');
   });
 
-  it('formatModelSize: pinned bytes / 2^30, one decimal (UX2 C1)', () => {
-    expect(formatModelSize(1_624_555_275, 'en')).toBe('1.5 GB');
-    expect(formatModelSize(985_654_080, 'he')).toBe('0.9 GB');
-    expect(formatModelSize(175_115_840, 'en')).toBe('0.2 GB');
-    expect(formatModelSize(-1, 'en')).toBe('0.0 GB');
+  it('formatModelSize: the F24 rule (decimal GB; 1 decimal >= 1 GB, 2 decimals >= 0.1 GB, else whole MB)', () => {
+    expect(formatModelSize(1_624_555_275, 'en')).toBe('1.6 GB');
+    expect(formatModelSize(1_624_555_275, 'he')).toBe('1.6 GB');
+    expect(formatModelSize(985_654_080, 'he')).toBe('0.99 GB');
+    expect(formatModelSize(175_115_840, 'en')).toBe('0.18 GB');
+    expect(formatModelSize(885_098, 'en')).toBe('1 MB');
+    expect(formatModelSize(50_000_000, 'he')).toBe('50 MB');
+    expect(formatModelSize(-1, 'en')).toBe('1 MB');
+    expect(formatModelSize(Number.NaN, 'en')).toBe('1 MB');
+  });
+
+  it('formatModelSize is THE one size formatter: equal to the manifest formatter (F24) for every media entry and a sweep', () => {
+    for (const entry of Object.values(MEDIA_MODEL_MANIFEST)) {
+      for (const lng of ['he', 'en'] as const) {
+        expect(formatModelSize(entry.size, lng)).toBe(manifestFormatModelSize(entry));
+      }
+    }
+    for (let size = 0; size <= 12e9; size += 7_654_321) {
+      expect(formatModelSize(size, 'en')).toBe(manifestFormatModelSize({ size }));
+      expect(formatModelSize(size, 'he')).toBe(manifestFormatModelSize({ size }));
+    }
+    for (const size of [
+      99_999_999, 100_000_000, 994_999_999, 995_000_000, 999_999_999, 1e9, 1_049_999_999, 1_050_000_000,
+    ]) {
+      expect(formatModelSize(size, 'en')).toBe(manifestFormatModelSize({ size }));
+    }
   });
 
   it('formatDate: medium date in the explicit zone', () => {

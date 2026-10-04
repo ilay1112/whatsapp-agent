@@ -378,6 +378,11 @@ export function createIngest(deps: IngestDeps): Ingest {
         now,
       );
     }
+    // [v2-repair REQUEST 7] a hold with a reason code (CLOUD_QUOTA) carries it on the item: the raw card says why, and compose
+    // releases exactly these holds once the subscription window has reset.
+    if (!older && verdict.kind === 'held' && verdict.code !== undefined) {
+      item = repos.items.update(item.id, { errorCode: verdict.code }, now);
+    }
     touched.push(item.id);
 
     if (older) return; // no queue row => no LLM run

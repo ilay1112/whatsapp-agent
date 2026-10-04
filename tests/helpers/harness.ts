@@ -9,7 +9,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname } from 'node:path';
 
 import type { AppRuntime, AppRuntimeHandle } from '../../src/main/compose.ts';
-import { compose } from '../../src/main/compose.ts';
+import { compose, persistGoogleAccount } from '../../src/main/compose.ts';
 import type { AppHealth } from '../../src/shared/health.ts';
 import { IPC_CHANNELS, type IpcChannel, type IpcReq, type IpcRes, type IpcContext } from '../../src/shared/ipc.ts';
 import type { Result, EpochMs, ProviderId, SecretName } from '../../src/shared/types.ts';
@@ -124,6 +124,12 @@ export interface HarnessOptions {
   waWorld?: boolean;
   /** `/api/media` answers of the fake bridge (V2-W1-07). */
   media?: HarnessMediaEntry[];
+  // ---- [v2-repair-v2-main-defects] ------------------------------------------------------------------------------------
+  /** The WCA_TIMERS seam as compose() receives it (delays only). Default: none (production delays). */
+  timers?: import('../../src/main/testSeams.ts').SeamTimers;
+  /** The WCA_MODEL_MANIFEST seam (path to the extended manifest JSON). Default: none - every download URL is then the app's
+   *  unreachable loopback placeholder, and the harness fetch refuses anything that is not loopback (T1/T2: no real network). */
+  modelManifest?: string;
   // NOTE: no `autoPolicy` option by design - a policy is reached only through auto:requestEnable + the scripted dialog.
 }
 
@@ -175,6 +181,11 @@ export interface Harness {
   readonly toolServers: Array<{ name: string; listening: boolean }>;
   /** Live job pids per kind (JobRunner.jobPids()). */
   jobs(): Record<'cli' | 'voice', number[]>;
+  // ---- [v2-repair-v2-main-defects] ------------------------------------------------------------------------------------
+  /** Every URL the app handed to `fetch`, in order (loopback or not). */
+  readonly fetched: string[];
+  /** Every NON-loopback URL the app tried to fetch - refused by the harness (it never reaches the network). */
+  readonly blockedFetches: string[];
 }
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -413,6 +424,8 @@ export async function createHarness(opts: HarnessOptions = {}): Promise<Harness>
     }
     // [V2] B7: a connected calendar profile has listed its calendars once - the target calendar is owned
     if (calendarMode === 'connected') repos.meta.set('calendar_roles_json', JSON.stringify({ primary: 'owner' }));
+    // [V2] auto-mode-6: ... and has signed in once - the fake's account is persisted (as its hash) like a real sign-in does
+    if (calendarMode === 'connected') persistGoogleAccount(repos.meta)('user@example.test');
     // [V2] whisper option: the default voice tier + VAD are downloaded and verified (GGML magic, as the fake checks it)
     if (opts.whisper !== undefined) {
       for (const [id, kind] of [
@@ -513,6 +526,26 @@ export async function createHarness(opts: HarnessOptions = {}): Promise<Harness>
     n.show();
   };
 
+  // [v2-repair-v2-main-defects] T1/T2: an L3 test never reaches the network. Loopback (the fake bridge, a fake model host) passes;
+  // anything else is recorded and refused, so a wiring gap (e.g. a media download on a real Hugging Face URL) is a visible failure.
+  const fetched: string[] = [];
+  const blockedFetches: string[] = [];
+  const guardedFetch: typeof globalThis.fetch = (input, init) => {
+    const raw = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+    fetched.push(raw);
+    let host = '';
+    try {
+      host = new URL(raw).hostname;
+    } catch {
+      /* unparsable => refused below */
+    }
+    if (host === '127.0.0.1' || host === 'localhost' || host === '[::1]' || host === '::1') {
+      return globalThis.fetch(input, init);
+    }
+    blockedFetches.push(raw);
+    return Promise.reject(new TypeError('harness: network access refused (non-loopback URL)'));
+  };
+
   // The seams object is MUTATED after compose(): the fake bridge cannot start until the doorbell is listening.
   const seams = {
     userDataDir: userData,
@@ -522,9 +555,9 @@ export async function createHarness(opts: HarnessOptions = {}): Promise<Harness>
     llm: (opts.llm ?? 'stub') as 'stub' | 'attacker',
     llmScript: undefined,
     llamaCmd: undefined,
-    modelManifest: undefined,
+    modelManifest: opts.modelManifest,
     hardware: { ramGiB: 32, freeDiskGiB: 200, gpus: [{ name: 'NVIDIA GeForce RTX 4070', vramGiB: 12 }] },
-    timers: undefined,
+    timers: opts.timers,
     now: nowMs,
     focusCheck: undefined,
     // [V2] the CLI / whisper fakes in the exact validated seam shape (node.exe + tests/fakes/<fake>.mjs ... --fake-end)
@@ -539,7 +572,7 @@ export async function createHarness(opts: HarnessOptions = {}): Promise<Harness>
     random,
     logger,
     spawn: refusingSpawn,
-    fetch: globalThis.fetch,
+    fetch: guardedFetch,
     processQuery: noProcesses,
     electron,
     seams,
@@ -788,6 +821,8 @@ export async function createHarness(opts: HarnessOptions = {}): Promise<Harness>
       return toolServers.map((l) => ({ name: l.name, listening: l.listening }));
     },
     jobs: () => app.jobPids(),
+    fetched,
+    blockedFetches,
     advance,
     setWindowState: (s) => {
       if (s.focused !== undefined) windowState.focused = s.focused;

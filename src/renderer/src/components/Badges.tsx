@@ -16,6 +16,16 @@ export interface BadgesProps {
   onBadgeAction?(code: Badge): void;
   /** [V2, F28] The run was triggered by the user's own message: one muted line "You changed this in the chat". */
   selfTriggered?: boolean;
+  /**
+   * REQUEST 8: scopes whose own row is NOT drawn on this card (no draft box, no EventChip). Their codes are shown in this
+   * row instead, so no badge - above all a red one such as `manipulation` - is ever hidden by a missing host row.
+   */
+  adoptScopes?: readonly BadgesProps['scope'][];
+}
+
+/** The scope a code is drawn in (UX 6.5). */
+export function scopeOf(code: Badge): BadgesProps['scope'] {
+  return SCOPE_OF[code];
 }
 
 /** Which chip belongs under the date tab, which under the draft box and which on the card itself (UX 6.5). */
@@ -109,7 +119,8 @@ function BadgeIcon({ code }: { code: Badge }): JSX.Element {
 
 export function Badges(props: BadgesProps) {
   const { t } = useTranslation();
-  const codes = props.codes.filter((c) => SCOPE_OF[c] === props.scope);
+  const adopted = props.adoptScopes ?? [];
+  const codes = props.codes.filter((c) => SCOPE_OF[c] === props.scope || adopted.includes(SCOPE_OF[c]));
   const showHold = props.scope === 'card' && props.holdReason !== undefined;
   const showError = props.scope === 'card' && props.errorCode !== undefined;
   const showSelf = props.scope === 'card' && props.selfTriggered === true;

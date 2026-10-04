@@ -17,6 +17,7 @@ import { localToEpochMs } from '@shared/when';
 import { formatDate, formatTime, formatTimeRange, formatWeekdayTime, makeFormatters } from '@shared/i18n/format';
 import { api } from '../api';
 import { useAutoStore } from '../store/auto';
+import { useDashboardStore } from '../store/dashboard';
 import { useSettingsStore } from '../store/settings';
 import { UndoControl } from '../components/UndoControl';
 
@@ -227,6 +228,17 @@ export function AutoActivity({ onBack }: AutoActivityProps) {
                     door="activity"
                     onUndo={() => api.undoAuto(row.autoWriteId)}
                   />
+                  {/* ux-i18n-v2-10 (UX2 4.6 "[Undo] [Show]"): back to the dashboard with the item behind the write open. */}
+                  <button
+                    type="button"
+                    className="btn btn-quiet"
+                    data-testid={`activity-show-${row.autoWriteId}`}
+                    onClick={() =>
+                      useDashboardStore.getState().requestNavigation({ view: 'dashboard', itemId: row.itemId })
+                    }
+                  >
+                    {t('card.show')}
+                  </button>
                 </li>
               );
             })}

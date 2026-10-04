@@ -1125,6 +1125,14 @@ export function ItemCard(props: ItemCardProps) {
   const reason = visibleAutoReason(item, live, eventAction !== null || changeButtons !== null);
   const reasonId = `auto-reason-${item.itemId}`;
   const imageUnclear = item.badges.includes('image_unclear');
+  // REQUEST 8: a badge row that is not drawn must not take its badges with it (S3 aborted for `manipulation` leaves no
+  // draft, so the draft-scope row is gone; a card without an event has no EventChip). The card row adopts them.
+  const draftRowShown = item.draft !== null || raw;
+  const eventRowShown = expanded || eventVm !== null;
+  const adoptScopes: Array<'draft' | 'event'> = [
+    ...(draftRowShown ? [] : ['draft' as const]),
+    ...(eventRowShown ? [] : ['event' as const]),
+  ];
   // UX2 3.3.4 after a refresh: a change that ended GONE / FOREIGN has no retry clone; the card keeps saying so.
   const endedUpdate = controller.result === null ? failedUpdateCode(item) : null;
   const gone = endedUpdate === 'CAL_EVENT_GONE' && eventAction !== null;
@@ -1313,7 +1321,8 @@ export function ItemCard(props: ItemCardProps) {
       ) : null}
 
       <Badges
-        codes={item.badges}
+        codes={eventBadges /* the card row never carries automatic / auto_shadow: AutoChip draws them */}
+        adoptScopes={adoptScopes}
         holdReason={item.holdReason ?? undefined}
         errorCode={item.errorCode ?? undefined}
         scope="card"
@@ -1389,7 +1398,7 @@ export function ItemCard(props: ItemCardProps) {
         </section>
       ) : null}
 
-      {item.draft !== null || raw ? (
+      {draftRowShown ? (
         <div ref={draftWrapRef}>
           <DraftBox
             value={controller.draft}

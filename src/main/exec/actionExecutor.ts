@@ -24,13 +24,22 @@ import { buildSendArgs } from './buildSendArgs';
 import { buildCreateEventArgs, chainRootOf } from './buildCreateEventArgs';
 import { buildUpdateEventArgs } from './buildUpdateEventArgs';
 import { createRateLimiter } from './rateLimiter';
-import { applyCreateSuccess, applyFailure, applySendSuccess, commitUpdateDone, parseFinalPayload } from './outcome';
-import { reconcileUnknown } from './reconcile';
+import {
+  applyCreateSuccess,
+  applyFailure,
+  applySendSuccess,
+  autoWriteIdOfAction,
+  commitUpdateDone,
+  currentRevisionOf,
+  parseFinalPayload,
+} from './outcome';
+import { reconcileUnknown, resolveLandedCreate } from './reconcile';
 import { evaluateAutoGate, evaluateAutoGatePhaseA } from './autoGate';
 import {
   busyOverlapping,
   contentOfProjection,
   equalContent,
+  normaliseField,
   sameContent,
   snapshotOfProjection,
   viewOf,
@@ -498,6 +507,238 @@ export function createActionExecutor(deps: ActionExecutorInput): ActionExecutorH
   };
 
   // -------------------------------------------------------------------------------------------------------------------
+  // [v2-fix] retry chains whose earlier attempt landed (T-401 / B24 in-session, editing-undo-1 / -2 / -3)
+  // -------------------------------------------------------------------------------------------------------------------
+  /** The content an approved create stands for, cleaned exactly like the builder cleans it (= Google's copy of it). */
+  const createdContentOf = (p: CreateEventPayload): EventContentWithStatus => ({
+    title: normaliseField(p.title, LIMITS.titleChars),
+    startLocal: p.startLocal,
+    endLocal: p.endLocal,
+    timeZone: p.timeZone,
+    location: normaliseField(p.location, LIMITS.locationChars),
+    status: 'confirmed',
+  });
+  /** The same event as far as the user can tell: title, slot, location, status (the zone is not compared - Google may echo its own). */
+  const sameEvent = (x: EventContentWithStatus, y: EventContentWithStatus): boolean =>
+    x.title === y.title &&
+    x.startLocal === y.startLocal &&
+    x.endLocal === y.endLocal &&
+    x.location === y.location &&
+    x.status === y.status;
+
+  /** The nearest EARLIER attempt (same kind) of `a`'s retry chain whose side effect may have happened: `done` or `unknown_outcome`. */
+  const earlierAttemptOf = (a: ApprovalAction): ApprovalAction | null => {
+    const seen = new Set<ActionId>([a.id]);
+    let cur = a.retryOf === null ? null : repos.actions.byId(a.retryOf);
+    while (cur !== null && !seen.has(cur.id)) {
+      seen.add(cur.id);
+      if (cur.kind === a.kind && (cur.state === 'done' || cur.state === 'unknown_outcome')) return cur;
+      cur = cur.retryOf === null ? null : repos.actions.byId(cur.retryOf);
+    }
+    return null;
+  };
+
+  const supersedeIfPending = (id: ActionId): void => {
+    repos.db.prepare(`UPDATE actions SET state = 'superseded' WHERE id = ? AND state = 'pending'`).run(id);
+  };
+
+  /** The item that CURRENTLY holds an event (F27 chain): every applied change moves the event to its acting item, so after a chain of
+   *  changes older items (closed 'superseded') still carry the id with a stale event_revision. The holder is the one with the highest
+   *  event_revision; the revision compare-and-set of the undo / cancel payload is taken from it. */
+  const holderOf = (door: Item & { calendarEventId: string }): Item =>
+    repos.items
+      .byCalendarEventId(door.calendarEventId)
+      .reduce((best, x) => (x.eventRevision > best.eventRevision ? x : best), door);
+
+  /** "Done, nothing left to write": the clicked retry clone is closed and the card re-read. */
+  const doneWithoutWrite = (clone: ApprovalAction): Result<ApproveOutcome> => {
+    supersedeIfPending(clone.id);
+    driftShown.delete(clone.id);
+    deps.notifyChanged([clone.itemId]);
+    return { ok: true, value: { outcome: 'done', item: detailOf(clone.itemId) } };
+  };
+
+  /**
+   * The edit the user asked for with a retry click, as an update_event of the event an earlier attempt of the chain already wrote
+   * (research 4.4 / v2-pipeline 11.4: "approved by the same click that asked for the retry"). The new action is inserted as the next
+   * attempt of the SAME chain (a fresh idempotency key; its waUpdate tag is the chain root, so reconcile can recognise it) and goes
+   * through every update gate. When it does not reach the write-ahead (a gate refused it, or a conflict / drift question) it is dropped
+   * and the clicked clone stays the card's pending action, so the follow-up confirm click lands on the same clone again.
+   */
+  const approveConverted = async (
+    clone: ApprovalAction,
+    payload: UpdateEventPayload,
+    req: ApproveReq,
+    by: Approver,
+  ): Promise<Result<ApproveOutcome>> => {
+    const root = repos.actions.chainRoot(clone.id).id;
+    const tip = repos.actions
+      .forItem(clone.itemId)
+      .filter((x) => repos.actions.chainRoot(x.id).id === root)
+      .reduce((best, x) => (x.attempt > best.attempt ? x : best), clone);
+    const conv = repos.actions.insertPending({
+      itemId: clone.itemId,
+      proposalId: clone.proposalId,
+      chatId: clone.chatId,
+      payload,
+      now: deps.now(),
+      retryOf: tip.id,
+    });
+    if (req.confirmDrift === true && driftShown.has(clone.id)) driftShown.add(conv.id);
+    let res: Result<ApproveOutcome>;
+    try {
+      res = await approveUpdate(
+        conv,
+        payload,
+        {
+          actionId: conv.id,
+          kind: 'update_event',
+          shownHash: conv.contentSha256,
+          ...(req.confirmConflict === true ? { confirmConflict: true as const } : {}),
+          ...(req.confirmDrift === true ? { confirmDrift: true as const } : {}),
+        },
+        by,
+        true,
+      );
+    } finally {
+      if (repos.actions.byId(conv.id)?.state === 'pending') {
+        supersedeIfPending(conv.id);
+        if (driftShown.delete(conv.id)) driftShown.add(clone.id);
+      } else {
+        supersedeIfPending(clone.id);
+        driftShown.delete(clone.id);
+      }
+    }
+    deps.notifyChanged([clone.itemId]);
+    return res.ok ? { ok: true, value: { ...res.value, item: detailOf(clone.itemId) } } : res;
+  };
+
+  /**
+   * [v2-fix editing-undo-1, T-401 / B24 in-session] "Add again" on the retry clone of a create whose earlier attempt may have landed.
+   * An unknown_outcome attempt is first resolved read-only exactly as the startup reconcile does (findAppEvent on the chain root). When
+   * the event exists: an UNEDITED retry is done without a write; an EDITED one becomes an update_event from the event's recorded
+   * content to the edited content, approved by this same click. Not found => null (the ordinary create; an unedited retry reuses the
+   * chain's deterministic eventId). Lookup failed => an edited retry is refused CAL_UNAVAILABLE (it could duplicate the event).
+   */
+  const retryOfLandedCreate = async (
+    a: ApprovalAction,
+    payload: CreateEventPayload,
+    req: ApproveReq,
+    by: Approver,
+  ): Promise<Result<ApproveOutcome> | null> => {
+    const earlier = earlierAttemptOf(a);
+    const ep = earlier === null ? null : parseFinalPayload(earlier);
+    if (earlier === null || ep === null || ep.kind !== 'create_event') return null;
+    const want = createdContentOf(payload);
+    const edited = !sameEvent(want, createdContentOf(ep));
+    if (earlier.state === 'unknown_outcome') {
+      const found = await resolveLandedCreate(
+        {
+          repos,
+          bridgeDb: null,
+          read: deps.read,
+          now: deps.now,
+          timeZone: () => deps.settings().general.timeZone,
+        },
+        earlier,
+        { offerCorrection: !edited, keepPending: a.id },
+      );
+      if (found === 'not_found') return null;
+      if (found === 'unavailable') return edited ? fail('CAL_UNAVAILABLE') : null;
+    }
+    const item = repos.items.byId(a.itemId);
+    if (item === null || item.calendarEventId === null) return null;
+    const eventId = item.calendarEventId;
+    const holder = holderOf({ ...item, calendarEventId: eventId });
+    const current = repos.eventRevisions.newestFor(eventId)?.next ?? null;
+    if (!edited) return doneWithoutWrite(a); // found + unedited => done (B24 offered its correction card if Google's copy differs)
+    if (holder.id !== item.id || current === null || current.status === 'cancelled') {
+      supersedeIfPending(a.id);
+      return fail('ACTION_STALE'); // the event moved on since: this retry no longer describes it
+    }
+    if (sameEvent(current, want)) return doneWithoutWrite(a);
+    const update: UpdateEventPayload = {
+      v: 1,
+      kind: 'update_event',
+      itemId: item.id,
+      chatRef: payload.chatRef,
+      proposalVersion: payload.proposalVersion,
+      targetEventId: eventId,
+      targetItemId: item.id,
+      baseRevision: currentRevisionOf(repos, eventId, item),
+      change: current.startLocal !== want.startLocal || current.endLocal !== want.endLocal ? 'reschedule' : 'move',
+      from: current,
+      to: want,
+    };
+    return approveConverted(a, update, req, by);
+  };
+
+  /**
+   * [v2-fix editing-undo-2 / -3] "Apply again" on the retry clone of an update whose earlier attempt may have landed. Google carries
+   * the chain root as waUpdate and the earlier attempt's `to`: the earlier attempt is resolved done right here, exactly as reconcile
+   * would (its revision keeps the ORIGINAL approved `from`, so Undo restores it), instead of being shown as "changed in Google". Then
+   * an unedited retry is done without a write, and an edited one becomes a fresh update of the event from what is now recorded.
+   * Anything else (not landed, unreadable, changed since) => null: the ordinary gates decide.
+   */
+  const retryOfLandedUpdate = async (
+    a: ApprovalAction,
+    p: UpdateEventPayload,
+    req: ApproveReq,
+    by: Approver,
+  ): Promise<Result<ApproveOutcome> | null> => {
+    const earlier = earlierAttemptOf(a);
+    const ep = earlier === null ? null : parseFinalPayload(earlier);
+    if (earlier === null || ep === null || ep.kind !== 'update_event' || ep.targetEventId !== p.targetEventId)
+      return null;
+    if (earlier.state === 'unknown_outcome') {
+      const source = repos.items.byId(ep.targetItemId);
+      if (currentRevisionOf(repos, ep.targetEventId, source) !== ep.baseRevision) return null;
+      const pre = await getEvent(ep.targetEventId);
+      if (!pre.ok) return null;
+      const root = repos.actions.chainRoot(a.id).id;
+      if (pre.value.priv.waUpdate !== root || !readbackMatches(pre.value, ep)) return null;
+      const now = deps.now();
+      auditedSuccess(earlier.id, () => {
+        commitUpdateDone(
+          repos,
+          earlier,
+          ep,
+          pre.value,
+          {
+            autoWriteId: autoWriteIdOfAction(repos, earlier.id),
+            extraReverts: undoExtras.get(earlier.id)?.extraReverts ?? [],
+            auditKind: 'action_reconciled',
+          },
+          now,
+        );
+      });
+      undoExtras.delete(earlier.id);
+    }
+    const item = repos.items.byId(a.itemId);
+    const current = repos.eventRevisions.newestFor(p.targetEventId)?.next ?? null;
+    if (item === null || current === null) return null;
+    if (sameEvent(current, p.to)) return doneWithoutWrite(a);
+    const holder = holderOf({ ...item, calendarEventId: p.targetEventId });
+    // only a reschedule / move can carry an edit; an undo / cancel whose earlier attempt landed and was changed since is outdated
+    if ((p.change !== 'reschedule' && p.change !== 'move') || holder.id !== item.id || current.status === 'cancelled') {
+      supersedeIfPending(a.id);
+      deps.notifyChanged([a.itemId]);
+      return fail('ACTION_STALE');
+    }
+    return approveConverted(
+      a,
+      {
+        ...p,
+        targetItemId: item.id,
+        baseRevision: currentRevisionOf(repos, p.targetEventId, item),
+        from: current,
+      },
+      req,
+      by,
+    );
+  };
+
+  // -------------------------------------------------------------------------------------------------------------------
   // automatic-mode policy side effects (the policy SERVICE owns the lifecycle; the executor only pauses / expires, B7)
   // -------------------------------------------------------------------------------------------------------------------
   const pausePolicy = (policy: AutoPolicyRecord, reason: AutoPausedReason, now: EpochMs): boolean => {
@@ -774,6 +1015,8 @@ export function createActionExecutor(deps: ActionExecutorInput): ActionExecutorH
     stored: UpdateEventPayload,
     req: ApproveReq,
     by: Approver,
+    /** true for approveConverted's own action: it IS the resolution of its chain, never re-examined as a retry */
+    converted = false,
   ): Promise<Result<ApproveOutcome>> => {
     const now = deps.now();
     const edited = applyEdit(stored, req.edit);
@@ -786,9 +1029,20 @@ export function createActionExecutor(deps: ActionExecutorInput): ActionExecutorH
       const bad = eventSanity(p.to, now);
       if (bad !== null) return fail(bad);
     }
+    // [v2-fix editing-undo-2 / -3] a retry clone whose earlier attempt landed: resolved here, never re-written / shown as drift
+    if (a.retryOf !== null && !converted) {
+      const handled = await retryOfLandedUpdate(a, p, req, by);
+      if (handled !== null) return handled;
+    }
     if (equalContent(p.to, p.from)) return fail('ACTION_STALE');
     const target = repos.items.byId(p.targetItemId);
-    if (target === null || target.eventRevision !== p.baseRevision || target.calendarEventId !== p.targetEventId) {
+    // [v2-fix data-integrity-v4-4 / editing-undo-8] the revision CAS reads the event's revision CHAIN: the target (a change card's
+    // linked source) is never bumped when another item applies a change, so its own event_revision would let a stale card through.
+    if (
+      target === null ||
+      currentRevisionOf(repos, p.targetEventId, target) !== p.baseRevision ||
+      target.calendarEventId !== p.targetEventId
+    ) {
       return fail('ACTION_STALE');
     }
 
@@ -819,6 +1073,8 @@ export function createActionExecutor(deps: ActionExecutorInput): ActionExecutorH
       // so the approved `from` becomes Google's current copy and the undo restores exactly that.
       // contentOfProjection() yields cleaned, capped single-line content of the same shape: the re-validation cannot fail
       p = UpdateEventPayloadSchema.parse({ ...p, from: contentOfProjection(pf) });
+      // [v2-fix editing-undo-2] Google already holds `to`: a PATCH would be a no-op whose revision has prev == next (Undo never restores)
+      if (equalContent(p.to, p.from) || sameContent(pf, p.to)) return fail('ACTION_STALE');
     }
 
     // ---- fresh free/busy for the new slot minus the event's own current block ----
@@ -847,6 +1103,16 @@ export function createActionExecutor(deps: ActionExecutorInput): ActionExecutorH
       writeAheadAt,
     );
     rate.recordCreate();
+    // [v2-fix auto-mode-4] B9 / G31 / C2 rate rules: creates + edits + UNDOS of automatic writes count together in the auto buckets
+    // (an "Apply again" clone of such an undo is the same undo). tryAuto records its own writes; the undo is recorded here, after its
+    // write-ahead - a refused undo wrote nothing and counts nothing.
+    if (p.change === 'undo' && p.revertOf !== undefined) {
+      const reverted = repos.eventRevisions.byId(p.revertOf);
+      if (reverted !== null && autoWriteOfAction(reverted.actionId) !== null) {
+        repos.rate.record('auto_chat', String(a.chatId), writeAheadAt);
+        repos.rate.record('auto_global', 'global', writeAheadAt);
+      }
+    }
     const executing = repos.actions.byId(a.id)!;
     const outcome = await runUpdate(executing, p, args, null);
     deps.notifyChanged([a.itemId]);
@@ -903,6 +1169,11 @@ export function createActionExecutor(deps: ActionExecutorInput): ActionExecutorH
         if (!deps.bridgeOnline()) return fail('SEND_NOT_CONNECTED');
       } else {
         if (!deps.calendarConnected()) return fail('CAL_UNAVAILABLE');
+        // [v2-fix editing-undo-1, T-401] a retry clone whose earlier attempt may have landed never writes a second event
+        if (a.retryOf !== null) {
+          const handled = await retryOfLandedCreate(a, payload, req, by);
+          if (handled !== null) return handled;
+        }
         const bad = eventSanity(payload, now);
         if (bad !== null) return fail(bad);
         const busy = await freshBusy(payload);
@@ -936,6 +1207,9 @@ export function createActionExecutor(deps: ActionExecutorInput): ActionExecutorH
       const executing = repos.actions.byId(a.id)!;
       const outcome = await runPrepared(executing, prepared, null);
       deps.notifyChanged([a.itemId]);
+      // [v2-repair REQUEST 2] a completed click-approved create moves the B7 track record (AutoState.trackRecord / the enable
+      // buttons): auto:changed must follow, or Settings > Automatic mode stays stale until the dashboard re-mounts.
+      if (payload.kind === 'create_event' && outcome.outcome === 'done') notifyAuto({ kind: 'policy' });
       return { ok: true, value: outcome };
     } finally {
       inFlight.delete(req.actionId);
@@ -963,7 +1237,6 @@ export function createActionExecutor(deps: ActionExecutorInput): ActionExecutorH
     now: EpochMs,
   ): AutoDecisionOutcome => {
     const decisionId = randomUuid();
-    let policyChanged = false;
     repos.db.transaction(() => {
       repos.autoDecisions.insert({
         id: decisionId,
@@ -986,12 +1259,13 @@ export function createActionExecutor(deps: ActionExecutorInput): ActionExecutorH
       if (result.reason === 'policy_expired') {
         repos.autoPolicies.setState(policy.id, { state: 'expired' });
         repos.audit.append('auto_policy_expired', policy.id, {}, now);
-        policyChanged = true;
       } else if (result.pausePolicy !== null) {
-        policyChanged = pausePolicy(policy, result.pausePolicy, now);
+        pausePolicy(policy, result.pausePolicy, now);
       }
     });
-    if (policyChanged) notifyAuto({ kind: 'policy' });
+    // [v2-repair REQUEST 2] EVERY recorded decision moves AutoState (shadow tally -> "End trial", the recent decisions), not only a
+    // policy change: one auto:changed per decision (main reads the CURRENT state, never a payload).
+    notifyAuto({ kind: 'policy' });
     return { verdict: result.verdict, reason: result.reason, decisionId, autoWriteId: null, result: null };
   };
 
@@ -1009,63 +1283,71 @@ export function createActionExecutor(deps: ActionExecutorInput): ActionExecutorH
         CreateEventPayload | UpdateEventPayload;
       // An undo is always a click or the toast (C2 14): never evaluated.
       if (payload.kind === 'update_event' && payload.change === 'undo') return NONE;
-      const policy = repos.autoPolicies.live();
-      if (policy === null) return NONE;
-      const item = repos.items.byId(a.itemId);
-      const chat = repos.chats.byId(a.chatId);
-      const proposal = repos.proposals.current(a.itemId);
-      if (item === null || chat === null || proposal === null || proposal.id !== a.proposalId) return NONE;
-
       const settings = deps.settings();
       const kind: AutoWriteKind =
         payload.kind === 'create_event' ? 'create' : payload.change === 'cancel' ? 'cancel' : 'update';
-      // The source must be the one the change card is LINKED to, and its chain root (the origin item = the Google waItem tag, F27)
-      // must belong to THIS chat; otherwise AutoGate sees no source => 'wrong_item'.
-      const linkedSource =
-        payload.kind === 'update_event' && linkedTo(payload) ? repos.items.byId(payload.targetItemId) : null;
-      const originOf =
-        linkedSource?.eventOriginItemId == null ? null : repos.items.byId(linkedSource.eventOriginItemId);
-      const sourceItem =
-        linkedSource !== null && originOf !== null && originOf.chatId === a.chatId ? linkedSource : null;
-      const gates = proposal.provider === 'user' ? null : featureGates(proposal.provider as ProviderId);
-      const chatKey = String(chat.id);
-      const input: AutoGateInput = {
-        policy,
-        snapshotSha: snapshotSha(),
-        calendarConnected: deps.calendarConnected(),
-        updateSurfaceAvailable: updateSurfaceAvailable(),
-        targetAccessRole: calendarRoles()[settings.calendar.targetCalendarId] ?? 'unknown',
-        approvedCreates: repos.actions.countUserApprovedCreates(),
-        editsGatePassed: gates?.editsPassed === true,
-        action: a,
-        payload,
-        item,
-        chat,
-        proposal,
-        sourceItem,
-        preflight: null,
-        lastRecordedWrite:
-          payload.kind === 'update_event' ? lastRecordedWriteOf(payload.targetEventId, sourceItem) : null,
-        editableEventsInChat: repos.items.countEditableEvents(chat.id, (now - LIMITS.eventEditGraceMs) as EpochMs),
-        triggerAuthor: proposal.triggerAuthor,
-        autoEditsOfEvent:
-          payload.kind === 'update_event' ? repos.autoWrites.countEditsOfEvent(payload.targetEventId) : 0,
-        freshBusy: null,
-        budget: {
-          chatLast30Min: repos.rate.countSince('auto_chat', chatKey, (now - LIMITS.autoChatMinGapMs) as EpochMs),
-          chatLastHour: repos.rate.countSince('auto_chat', chatKey, (now - HOUR_MS) as EpochMs),
-          chatToday: repos.rate.countSince('auto_chat', chatKey, (now - DAY_MS) as EpochMs),
-          globalLastHour: repos.rate.countSince('auto_global', 'global', (now - HOUR_MS) as EpochMs),
-          globalToday: repos.rate.countSince('auto_global', 'global', (now - DAY_MS) as EpochMs),
-        },
-        now,
-        timeZone: settings.general.timeZone,
-        mediaGates: { voicePassed: gates?.voicePassed === true, imagesPassed: gates?.imagesPassed === true },
+      const chatKey = String(a.chatId);
+
+      /** Every PERSISTED fact AutoGate judges (policy, chat opt-out / taint, item, proposal, budgets, snapshot ...), read synchronously.
+       *  [v2-fix auto-mode-3] It is read twice: for Phase A, and again AFTER the Google reads, right before the decision transaction
+       *  with no await in between - a per-chat opt-out, a taint, a budget or a policy change that landed while the reads were in
+       *  flight is judged (B8 / B9 "re-checked by the executor with fresh reads"), never the stale copy. null = nothing to decide. */
+      const gateInputAt = (now: EpochMs): (AutoGateInput & { policy: AutoPolicyRecord }) | null => {
+        const policy = repos.autoPolicies.live();
+        if (policy === null) return null;
+        const item = repos.items.byId(a.itemId);
+        const chat = repos.chats.byId(a.chatId);
+        const proposal = repos.proposals.current(a.itemId);
+        if (item === null || chat === null || proposal === null || proposal.id !== a.proposalId) return null;
+        // The source must be the one the change card is LINKED to, and its chain root (the origin item = the Google waItem tag, F27)
+        // must belong to THIS chat; otherwise AutoGate sees no source => 'wrong_item'.
+        const linkedSource =
+          payload.kind === 'update_event' && linkedTo(payload) ? repos.items.byId(payload.targetItemId) : null;
+        const originOf =
+          linkedSource?.eventOriginItemId == null ? null : repos.items.byId(linkedSource.eventOriginItemId);
+        const sourceItem =
+          linkedSource !== null && originOf !== null && originOf.chatId === a.chatId ? linkedSource : null;
+        const gates = proposal.provider === 'user' ? null : featureGates(proposal.provider as ProviderId);
+        return {
+          policy,
+          snapshotSha: snapshotSha(),
+          calendarConnected: deps.calendarConnected(),
+          updateSurfaceAvailable: updateSurfaceAvailable(),
+          targetAccessRole: calendarRoles()[settings.calendar.targetCalendarId] ?? 'unknown',
+          approvedCreates: repos.actions.countUserApprovedCreates(),
+          editsGatePassed: gates?.editsPassed === true,
+          action: a,
+          payload,
+          item,
+          chat,
+          proposal,
+          sourceItem,
+          preflight: null,
+          lastRecordedWrite:
+            payload.kind === 'update_event' ? lastRecordedWriteOf(payload.targetEventId, sourceItem) : null,
+          editableEventsInChat: repos.items.countEditableEvents(chat.id, (now - LIMITS.eventEditGraceMs) as EpochMs),
+          triggerAuthor: proposal.triggerAuthor,
+          autoEditsOfEvent:
+            payload.kind === 'update_event' ? repos.autoWrites.countEditsOfEvent(payload.targetEventId) : 0,
+          freshBusy: null,
+          budget: {
+            chatLast30Min: repos.rate.countSince('auto_chat', chatKey, (now - LIMITS.autoChatMinGapMs) as EpochMs),
+            chatLastHour: repos.rate.countSince('auto_chat', chatKey, (now - HOUR_MS) as EpochMs),
+            chatToday: repos.rate.countSince('auto_chat', chatKey, (now - DAY_MS) as EpochMs),
+            globalLastHour: repos.rate.countSince('auto_global', 'global', (now - HOUR_MS) as EpochMs),
+            globalToday: repos.rate.countSince('auto_global', 'global', (now - DAY_MS) as EpochMs),
+          },
+          now,
+          timeZone: settings.general.timeZone,
+          mediaGates: { voicePassed: gates?.voicePassed === true, imagesPassed: gates?.imagesPassed === true },
+        };
       };
+      const input = gateInputAt(now);
+      if (input === null) return NONE;
 
       // Phase A (P2 10.3): no Google read for a proposal that fails a pure check (a paused / expired policy never reads the calendar).
       const phaseA = evaluateAutoGatePhaseA(input);
-      if (phaseA !== null) return recordDecision(a, policy, kind, phaseA, now);
+      if (phaseA !== null) return recordDecision(a, input.policy, kind, phaseA, now);
 
       // Phase B reads: the pre-flight get-event (update) - its snapshot becomes pre_json - and the fresh free/busy.
       let preflight: (OwnedEventProjection & { etag: string }) | null = null;
@@ -1088,14 +1370,17 @@ export function createActionExecutor(deps: ActionExecutorInput): ActionExecutorH
             ? null
             : busyOverlapping(raw, payload.to, { startLocal: own.startLocal, endLocal: own.endLocal });
       }
+      // [v2-fix auto-mode-3] fresh persisted facts after the awaits (see gateInputAt); from here to the decision transaction no await
+      const fresh = gateInputAt(deps.now());
+      if (fresh === null) return NONE;
+      const policy = fresh.policy;
       const full = autoGate({
-        ...input,
+        ...fresh,
         preflight,
         freshBusy: busy,
-        now: deps.now(),
         updateSurfaceAvailable: updateSurfaceAvailable(),
       });
-      if (full.verdict !== 'auto') return recordDecision(a, policy, kind, full, deps.now());
+      if (full.verdict !== 'auto') return recordDecision(a, policy, kind, full, fresh.now);
 
       // ---- verdict auto: same whitelist builders as the click path, the general rate limit, then ONE transaction ----
       let prepared:
@@ -1209,6 +1494,7 @@ export function createActionExecutor(deps: ActionExecutorInput): ActionExecutorH
       // An unknown outcome pauses the policy (B7); a failed automatic write is an ordinary card (its retry clone is a click).
       if (result === 'unknown_outcome') pauseLivePolicy('circuit_breaker_unknown');
       if (result === 'done') notifyAuto({ kind: 'write', autoWriteId });
+      else notifyAuto({ kind: 'policy' }); // [v2-repair REQUEST 2] the recorded decision / failed write still moved AutoState
       deps.notifyChanged([a.itemId]);
       return { verdict: 'auto', reason: 'ok', decisionId, autoWriteId, result };
     } finally {
@@ -1235,6 +1521,8 @@ export function createActionExecutor(deps: ActionExecutorInput): ActionExecutorH
     item: Item,
     payloadOf: (version: number) => UpdateEventPayload,
     taint: boolean,
+    /** [v2-repair REQUEST 3] the event the new version proposes (an undo's restore target); absent => the current one (cancel). */
+    event?: EventContentWithStatus,
   ): ApprovalAction => {
     const now = deps.now();
     return repos.db.transaction(() => {
@@ -1251,7 +1539,18 @@ export function createActionExecutor(deps: ActionExecutorInput): ActionExecutorH
         extraction: current.extraction,
         draftText: current.draftText,
         replyLang: current.replyLang,
-        event: current.event,
+        event:
+          event === undefined
+            ? current.event
+            : {
+                title: event.title,
+                startLocal: event.startLocal,
+                endLocal: event.endLocal,
+                timeZone: event.timeZone,
+                location: event.location,
+                assumptions: [], // the restored slot is the event's own earlier content, nothing is assumed about it
+                dateHint: '',
+              },
         freeBusy: current.freeBusy,
         suspicious: current.suspicious,
         createdAt: now,
@@ -1280,6 +1579,49 @@ export function createActionExecutor(deps: ActionExecutorInput): ActionExecutorH
     });
   };
 
+  /** [v2-fix editing-undo-4] Undoes insertChange's card change after a refused undo: the undo action is superseded and a new proposal
+   *  version (provider 'user') carries the content the card showed BEFORE (what Google still holds), with the pending draft carried
+   *  over again (C2 concern 19) - one transaction. Skipped when something newer already replaced the undo's proposal. */
+  const revertCard = (
+    item: Item,
+    before: NonNullable<ReturnType<Repos['proposals']['current']>>,
+    undo: ApprovalAction,
+  ): void => {
+    const now = deps.now();
+    repos.db.transaction(() => {
+      const current = repos.proposals.current(item.id);
+      if (current === null || current.id !== undo.proposalId) return;
+      const draft = repos.actions
+        .forItem(item.id)
+        .find((x) => x.kind === 'send_reply' && x.state === 'pending' && x.proposalId === current.id);
+      repos.actions.supersedePending(item.id, now);
+      undoExtras.delete(undo.id);
+      const proposal = repos.proposals.insertNext({
+        itemId: item.id,
+        provider: 'user',
+        model: 'user',
+        extraction: before.extraction,
+        draftText: before.draftText,
+        replyLang: before.replyLang,
+        event: before.event,
+        freeBusy: before.freeBusy,
+        suspicious: before.suspicious,
+        createdAt: now,
+      });
+      if (draft !== undefined) {
+        const payload = JSON.parse(draft.canonicalJson) as SendReplyPayload;
+        repos.actions.insertPending({
+          itemId: item.id,
+          proposalId: proposal.id,
+          chatId: item.chatId,
+          payload: { ...payload, proposalVersion: proposal.version },
+          now,
+        });
+      }
+      repos.items.update(item.id, { currentProposalId: proposal.id }, now);
+    });
+  };
+
   interface UndoPlan {
     item: Item;
     revertOf: EventRevisionRecord;
@@ -1304,6 +1646,28 @@ export function createActionExecutor(deps: ActionExecutorInput): ActionExecutorH
       const current = newest.next;
       if (current === null) return fail('ACTION_STALE'); // its JSON was nulled by retention: nothing to restore from
       const automatic = plan.writes.length > 0;
+      // Idempotent: an undo of this revision that already got past the write-ahead answers ACTION_STALE.
+      // [v2-fix editing-undo-3] ... except one whose outcome is UNKNOWN (its PATCH timed out): the Undo door then approves that undo's
+      // pending "Apply again" clone - the same undo, through the same gates (a landed one is recognised there, retryOfLandedUpdate) -
+      // instead of being blocked for good. Without a live clone (it expired) a fresh undo is offered; its pre-flight sees any landed write.
+      const prior = repos.db
+        .prepare<{ state: string }>(
+          `SELECT state FROM actions WHERE kind = 'update_event' AND state IN ('approved','executing','done','unknown_outcome')
+             AND json_valid(canonical_json) AND json_extract(canonical_json, '$.revertOf') = ?`,
+        )
+        .all(revertOf.id);
+      if (prior.some((r) => r.state !== 'unknown_outcome')) return fail('ACTION_STALE');
+      const retryRow =
+        prior.length === 0
+          ? undefined
+          : repos.db
+              .prepare<{ id: ActionId }>(
+                `SELECT id FROM actions WHERE kind = 'update_event' AND state = 'pending' AND retry_of IS NOT NULL
+                   AND json_valid(canonical_json) AND json_extract(canonical_json, '$.revertOf') = ?
+                 ORDER BY attempt DESC, created_at DESC LIMIT 1`,
+              )
+              .get(revertOf.id);
+      const retry = retryRow === undefined ? null : repos.actions.byId(retryRow.id);
       if (automatic) {
         const setAll = (s: 'blocked_started' | 'expired' | 'blocked_changed'): void =>
           repos.db.transaction(() => {
@@ -1320,16 +1684,26 @@ export function createActionExecutor(deps: ActionExecutorInput): ActionExecutorH
           return fail('ACTION_EXPIRED');
         }
         // F1: the baseline is the NEWEST revision's post_* (the app's last write, undo writes included); zero calls on a mismatch.
-        const pre = await getEvent(eventId);
-        if (!pre.ok && pre.error !== 'not_found')
+        // (A retry of an unknown undo skips it: its own earlier PATCH may have moved the etag - its pre-flight decides, see above.)
+        const pre = retry !== null ? null : await getEvent(eventId);
+        if (pre !== null && !pre.ok && pre.error !== 'not_found')
           return fail(pre.error === 'auth' ? 'CAL_RECONNECT' : 'CAL_UNAVAILABLE');
-        if (pre.ok) {
+        if (pre !== null && pre.ok) {
           const pf = pre.value;
           const noBaseline = newest.postEtag === null && newest.postUpdated === null;
+          // [v2-fix auto-mode-2] an automatic create whose readback failed has no baseline. It is still provably the app's own,
+          // untouched write when Google's copy carries THIS create's chain tag and equals what the app recorded (sameContent is the
+          // drift test everywhere else); anything else stays fail-closed (K4 / F5: no baseline => treated as changed in Google).
+          const ownUntouchedCreate =
+            noBaseline &&
+            newest.kind === 'create' &&
+            pf.priv.waAgent === '1' &&
+            pf.priv.waAction === repos.actions.chainRoot(newest.actionId).id &&
+            sameContent(pf, current);
           const moved =
             (newest.postEtag !== null && pf.etag !== newest.postEtag) ||
             (newest.postUpdated !== null && pf.updated !== newest.postUpdated);
-          if (noBaseline || moved) {
+          if ((noBaseline && !ownUntouchedCreate) || moved) {
             setAll('blocked_changed');
             deps.notifyChanged([item.id]);
             return fail('ACTION_STALE');
@@ -1339,40 +1713,46 @@ export function createActionExecutor(deps: ActionExecutorInput): ActionExecutorH
         const until = Math.min(revertOf.appliedAt + LIMITS.manualUndoWindowMs, plan.restoreStart);
         if (now >= until) return fail('ACTION_EXPIRED');
       }
-      // Idempotent: an undo of this revision that already got past the write-ahead answers ACTION_STALE.
-      const already = repos.db
-        .prepare<{ n: number }>(
-          `SELECT COUNT(*) AS n FROM actions WHERE kind = 'update_event' AND state IN ('approved','executing','done','unknown_outcome')
-             AND json_valid(canonical_json) AND json_extract(canonical_json, '$.revertOf') = ?`,
-        )
-        .get(revertOf.id)!.n;
-      if (already > 0) return fail('ACTION_STALE');
-
-      const to: EventContentWithStatus = plan.restoreTo ?? { ...current, status: 'cancelled' };
-      const action = insertChange(
-        item,
-        (version) => ({
-          v: 1,
-          kind: 'update_event',
-          itemId: item.id,
-          chatRef: item.chatId,
-          proposalVersion: version,
-          targetEventId: eventId,
-          targetItemId: item.id,
-          baseRevision: item.eventRevision,
-          change: 'undo',
-          from: current,
-          to,
-          revertOf: revertOf.id,
-        }),
-        automatic,
-      );
-      if (plan.extraReverts.length > 0) undoExtras.set(action.id, { extraReverts: plan.extraReverts });
-      const res = await approveAs(
-        { actionId: action.id, kind: 'update_event', shownHash: action.contentSha256 },
-        plan.ctx,
-        plan.by,
-      );
+      let res: Result<ApproveOutcome>;
+      if (retry !== null) {
+        res = await approveAs(
+          { actionId: retry.id, kind: 'update_event', shownHash: retry.contentSha256 },
+          plan.ctx,
+          plan.by,
+        );
+      } else {
+        const to: EventContentWithStatus = plan.restoreTo ?? { ...current, status: 'cancelled' };
+        const before = repos.proposals.current(item.id);
+        const action = insertChange(
+          item,
+          (version) => ({
+            v: 1,
+            kind: 'update_event',
+            itemId: item.id,
+            chatRef: item.chatId,
+            proposalVersion: version,
+            targetEventId: eventId,
+            targetItemId: item.id,
+            baseRevision: currentRevisionOf(repos, eventId, item),
+            change: 'undo',
+            from: current,
+            to,
+            revertOf: revertOf.id,
+          }),
+          automatic,
+          // UX2 3.4: the reverted state becomes the card's state - the proposal of the undo shows what it restores (a cancel keeps it)
+          plan.restoreTo ?? undefined,
+        );
+        if (plan.extraReverts.length > 0) undoExtras.set(action.id, { extraReverts: plan.extraReverts });
+        res = await approveAs(
+          { actionId: action.id, kind: 'update_event', shownHash: action.contentSha256 },
+          plan.ctx,
+          plan.by,
+        );
+        // [v2-fix editing-undo-4] a gate refused the undo before its write-ahead (calendar down, rate limit, 412, conflict / drift
+        // question - an undo has no confirm path): nothing was written, so the card must not keep showing the restore target.
+        if (repos.actions.byId(action.id)?.state === 'pending' && before !== null) revertCard(item, before, action);
+      }
       if (automatic) {
         if (res.ok && res.value.outcome === 'done') {
           if (undoActionsSince((deps.now() - DAY_MS) as EpochMs) >= LIMITS.autoUndoPauseCount)
@@ -1386,16 +1766,6 @@ export function createActionExecutor(deps: ActionExecutorInput): ActionExecutorH
       inFlight.delete(key);
     }
   };
-
-  /**
-   * The item that CURRENTLY holds an event (F27 chain): every applied change moves the event to its acting item, so after a chain of
-   * changes older items (closed 'superseded') still carry the id with a stale event_revision. The holder is the one with the highest
-   * event_revision; the revision compare-and-set of the undo / cancel payload is taken from it.
-   */
-  const holderOf = (door: Item & { calendarEventId: string }): Item =>
-    repos.items
-      .byCalendarEventId(door.calendarEventId)
-      .reduce((best, x) => (x.eventRevision > best.eventRevision ? x : best), door);
 
   /** The restore-target start of a revision: prev start for a change, the created event's own start for a create (F2). */
   const restoreStartOf = (r: EventRevisionRecord): EpochMs | null => {
@@ -1531,9 +1901,14 @@ export function createActionExecutor(deps: ActionExecutorInput): ActionExecutorH
       const now = deps.now();
       // [V2, F32 - V2-W2-01 fix-up] a rejected update_event ("Keep 15:00") sets the delta item's event_state = 'declined' in the SAME
       // transaction (linked_item_id kept); S4's suppression rule (rejectedDeltaTo) then never re-proposes the same `to`.
+      // [v2-fix editing-undo-5, exec side] ... but only a CHANGE CARD (its own item, linked to the event's holder) is declined. An
+      // update_event on the item that HOLDS the event (a B24 correction offer, a refused undo / cancel) keeps that in_calendar card as
+      // it is: 'declined' would turn the live event's card 'ignored' and drop it from findExistingEvent.
+      const target = a.kind === 'update_event' ? UpdateEventPayloadSchema.safeParse(JSON.parse(a.canonicalJson)) : null;
+      const onHolder = target !== null && target.success && target.data.targetItemId === a.itemId;
       repos.db.transaction(() => {
         repos.actions.markRejected(actionId);
-        if (a.kind === 'update_event') repos.items.update(a.itemId, { eventState: 'declined' }, now);
+        if (a.kind === 'update_event' && !onHolder) repos.items.update(a.itemId, { eventState: 'declined' }, now);
       });
       repos.audit.append('action_rejected', actionId, { kind: a.kind, attempt: a.attempt }, now);
       driftShown.delete(actionId);

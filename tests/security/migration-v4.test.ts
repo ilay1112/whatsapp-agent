@@ -636,11 +636,9 @@ describe('a failure at any step leaves the v3 file byte-identical', () => {
     ],
     ['step 8 (consents_new exists)', `CREATE TABLE consents_new (x INTEGER)`, 'failed'],
     ['step 10 (chats column exists)', `ALTER TABLE chats ADD COLUMN auto_tainted_until INTEGER`, 'failed'],
-    [
-      'step 11 (malformed settings JSON)',
-      `UPDATE settings SET value_json = '{not json' WHERE key = 'settings'`,
-      'failed',
-    ],
+    // [v2-fix-src-main-db, data-integrity-v4-6] a 'step 11 (malformed settings JSON)' row stood here and pinned the DEFECT: v1
+    // tolerates such a row, but step 11 aborted the whole migration on it and openDbWithRecovery then opened an EMPTY database.
+    // Step 11 now leaves a non-object row alone (test below); its abort/rollback stays covered by the per-statement injection above.
     [
       'the foreign-key check (an orphan row)',
       `INSERT INTO item_messages(item_id, wa_msg_id, from_me, ts, text, text_sha256) VALUES (999, 'ORPHAN', 0, 1, NULL, '${'f'.repeat(64)}')`,
@@ -657,5 +655,22 @@ describe('a failure at any step leaves the v3 file byte-identical', () => {
     expect(err).toBeInstanceOf(MigrationError);
     expect((err as MigrationError).reason).toBe(reason);
     assertUntouched(file, bytes);
+  });
+
+  it('the real openDb() path MIGRATES a v3 file whose settings row is not JSON (v1 read it as defaults), keeping every row', () => {
+    const { file } = prepareCopy(`UPDATE settings SET value_json = '{not json' WHERE key = 'settings'`);
+    const before = raw(file);
+    const itemsBefore = (before.prepare('SELECT COUNT(*) AS n FROM items').get() as { n: number }).n;
+    const actionsBefore = (before.prepare('SELECT COUNT(*) AS n FROM actions').get() as { n: number }).n;
+    before.close();
+    const db = openDb(file);
+    handles.push(db);
+    expect(db.userVersion()).toBe(SCHEMA_VERSION);
+    expect(db.prepare<{ n: number }>('SELECT COUNT(*) AS n FROM items').get()!.n).toBe(itemsBefore);
+    expect(db.prepare<{ n: number }>('SELECT COUNT(*) AS n FROM actions').get()!.n).toBe(actionsBefore);
+    expect(itemsBefore).toBeGreaterThan(0);
+    expect(db.prepare<{ v: string }>(`SELECT value_json AS v FROM settings WHERE key = 'settings'`).get()!.v).toBe(
+      '{not json',
+    );
   });
 });

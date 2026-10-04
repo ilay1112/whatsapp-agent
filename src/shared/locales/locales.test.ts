@@ -1,9 +1,11 @@
 // Locale parity over the MERGED resources (base + pending fragments).
 // Sources: CONTRACTS section 18 items 2 and 9, TESTS section 9 row "Key parity", UX 11.4 / 15.1 / 15.2 (owner W1-14).
 import { describe, expect, it } from 'vitest';
+import i18next from 'i18next';
 import {
   FLAT_LOCALES,
   LOCALE_FRAGMENT_FILES,
+  RESOURCES,
   flattenKeys,
   mergeLocaleResources,
   unflattenKeys,
@@ -324,6 +326,35 @@ describe('v2 copy rules (V2-W1-12)', () => {
       expect(en).toHaveProperty(`${base}_one`);
       expect(en).toHaveProperty(`${base}_other`);
       for (const suffix of ['_one', '_two', '_other']) expect(he).toHaveProperty(`${base}${suffix}`);
+    }
+  });
+
+  it('ux-i18n-v2-7: the "automatic mode ends in N days" lines are pluralised (1 day, Hebrew dual for 2)', async () => {
+    // HealthPill (health.sub.auto.on), SetupStrip row 7 and the AutomaticMode expiring line (setup.auto.expiring) all pass a
+    // Math.ceil day count, so the last day of a policy is count = 1 and the day before is count = 2.
+    for (const base of ['health.sub.auto.on', 'setup.auto.expiring']) {
+      expect(en, `${base} en`).toHaveProperty(`${base}_one`);
+      expect(en, `${base} en`).toHaveProperty(`${base}_other`);
+      for (const suffix of ['_one', '_two', '_other']) expect(he, `${base} he`).toHaveProperty(`${base}${suffix}`);
+    }
+    const i18n = i18next.createInstance();
+    await i18n.init({
+      lng: 'en',
+      fallbackLng: false,
+      resources: RESOURCES,
+      interpolation: { escapeValue: false },
+    });
+    const tEn = i18n.getFixedT('en');
+    const tHe = i18n.getFixedT('he');
+    expect(tEn('health.sub.auto.on', { count: 1 })).toBe('Automatic mode: on - ends in 1 day');
+    expect(tEn('health.sub.auto.on', { count: 5 })).toBe('Automatic mode: on - ends in 5 days');
+    expect(tEn('setup.auto.expiring', { count: 1 })).toBe('Automatic mode ends in 1 day.');
+    expect(tEn('setup.auto.expiring', { count: 2 })).toBe('Automatic mode ends in 2 days.');
+    for (const key of ['health.sub.auto.on', 'setup.auto.expiring']) {
+      expect(tHe(key, { count: 1 }), `${key} he 1`).toContain('בעוד יום אחד');
+      expect(tHe(key, { count: 2 }), `${key} he 2`).toContain('בעוד יומיים');
+      expect(tHe(key, { count: 5 }), `${key} he 5`).toContain('בעוד 5 ימים');
+      for (const n of [1, 2]) expect(tHe(key, { count: n }), `${key} he ${n}`).not.toMatch(/\d ימים/);
     }
   });
 

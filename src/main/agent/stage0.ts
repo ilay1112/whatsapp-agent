@@ -34,7 +34,7 @@ export type Stage0Verdict =
   | { kind: 'drop' } // own message / reaction / deleted / empty / media without text / policy 'never'
   | { kind: 'context_only' } // backlog: stored as context, never a trigger
   | { kind: 'no_item' } // nothing to do (e.g. sticker)
-  | { kind: 'held'; reason: HoldReason } // unknown_sender | paused | waiting_llm | budget -> raw card
+  | { kind: 'held'; reason: HoldReason; code?: ErrorCode } // unknown_sender | paused | waiting_llm | budget -> raw card ; [v2-repair] code = why (CLOUD_QUOTA)
   | { kind: 'deferred'; until: EpochMs } // rate/budget window; re-evaluate later
   | { kind: 'queued' }; // enqueue the chat for S1
 export type Stage0Fn = (input: Stage0Input) => Stage0Verdict;
@@ -113,7 +113,14 @@ export function createStage0(deps: Stage0Deps): Stage0Fn {
     if (paused()) return { kind: 'held', reason: 'paused' };
 
     // 5b. No usable provider (model downloading, key missing, consent missing).
-    if (!providerUsable().ok) return { kind: 'held', reason: 'waiting_llm' };
+    const usable = providerUsable();
+    // [v2-repair REQUEST 7] B13: an exhausted subscription window holds the chat as budget (CLOUD_QUOTA) until resetsAt; compose releases
+    // it by itself (releaseQuotaHeldItems) once the provider is usable again. Every other reason waits for the provider as before.
+    if (!usable.ok) {
+      return usable.code === 'CLOUD_QUOTA'
+        ? { kind: 'held', reason: 'budget', code: 'CLOUD_QUOTA' }
+        : { kind: 'held', reason: 'waiting_llm' };
+    }
     const consentKind = CLOUD_CONSENT[cfg.llm.provider as keyof typeof CLOUD_CONSENT] as
       (typeof CLOUD_CONSENT)[keyof typeof CLOUD_CONSENT] | undefined;
     // Defence in depth: the factory checks this too, but a missing consent must never be one bug away from a cloud call.
@@ -166,6 +173,24 @@ export function releaseHeldItems(
   const released: number[] = [];
   const chats = new Set<ChatRef>();
   for (const item of held) {
+    repos.items.update(item.id, { analysis: 'queued', holdReason: null, errorCode: null }, now);
+    released.push(item.id);
+    chats.add(item.chatId);
+  }
+  for (const chatId of chats) repos.queue.enqueue(chatId, now);
+  return released;
+}
+
+/**
+ * [v2-repair REQUEST 7] Release of the chats an exhausted CLI subscription window held (held/budget with errorCode CLOUD_QUOTA, set by S0
+ * or by the orchestrator on USAGE_LIMIT). Called by compose only when the provider is usable again (the window reset). v1 budget holds
+ * (runs/h, cloud daily tokens - no error code) are NOT touched: they keep their "Analyse this chat" action. Oldest trigger first.
+ */
+export function releaseQuotaHeldItems(repos: Pick<Repos, 'items' | 'queue'>, now: EpochMs): number[] {
+  const released: number[] = [];
+  const chats = new Set<ChatRef>();
+  for (const item of repos.items.heldWith('budget')) {
+    if (item.errorCode !== 'CLOUD_QUOTA') continue;
     repos.items.update(item.id, { analysis: 'queued', holdReason: null, errorCode: null }, now);
     released.push(item.id);
     chats.add(item.chatId);

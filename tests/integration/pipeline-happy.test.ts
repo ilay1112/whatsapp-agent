@@ -1,7 +1,8 @@
 // tests/integration/pipeline-happy.test.ts - TESTS section 6 row 1 (owner W2-01).
 // inbound "coffee Thursday at 5?" (en + he) -> doorbell -> scan -> debounce -> S1..S4 -> one needs_reply item with draft +
 // proposed event + two pending actions; approve send -> exactly one /api/send to the chat JID with the textarea text;
-// approve create -> one create-event with whitelist args -> in_calendar; the item closes `replied`.
+// approve create -> one create-event with whitelist args -> in_calendar; the reply is sent and the card stays in_calendar
+// ([v2-fix editing-undo-9]: an in_calendar card is not "open", so ARCH 7's 'replied' closing never applies to it - B20 editability).
 import { afterEach, describe, expect, it } from 'vitest';
 import { createHarness, extraction, type Harness } from '../helpers/harness.ts';
 import type { StubRule } from '../fakes/stub-llm.ts';
@@ -143,7 +144,8 @@ describe('pipeline: the happy path', () => {
     if (!after.ok) return;
     expect(after.value.eventState).toBe('created');
     expect(after.value.replyState).toBe('sent');
-    expect(after.value.closedReason).toBe('replied');
+    expect(after.value.closedReason).toBeNull();
+    expect(after.value.status).toBe('in_calendar');
   });
 
   it('does the same for a Hebrew chat and drafts in Hebrew', async () => {

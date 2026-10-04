@@ -30,11 +30,13 @@ export interface QueueState {
   running: number;
   transcribing: { seconds: number } | null;
 }
-/** [V2] A view the dashboard asks the shell to open. `section` is a Settings group id (e.g. 'ai'). */
-export interface NavRequest {
-  view: 'activity' | 'settings';
-  section?: 'ai' | 'voice' | 'pictures' | 'auto';
-}
+/**
+ * [V2] A view a control asks the shell to open. `section` is a Settings group id (e.g. 'ai'); `view: 'dashboard'` with an
+ * `itemId` is the Automatic activity page's "Show" (back to the dashboard with that item open).
+ */
+export type NavRequest =
+  | { view: 'activity' | 'settings'; section?: 'ai' | 'voice' | 'pictures' | 'auto' }
+  | { view: 'dashboard'; itemId: ItemId };
 
 export interface DashboardStore {
   lists: Record<ListKey, { items: ItemCard[]; count: number }>;

@@ -15,7 +15,8 @@ import { stripRows, useAutoStore } from '../store/auto';
 import { useDashboardStore } from '../store/dashboard';
 import { SENTINEL, renderBdiTemplate } from './ItemCard.bdi';
 import { formatWhen, startMsOf } from './ChangeLine.format';
-import { UndoIcon, activationRefused, refuseBlockedKey } from './UndoControl';
+import { api } from '../api';
+import { GuardedButton, UndoIcon, activationRefused, refuseBlockedKey } from './UndoControl';
 
 export interface AutoStripProps {
   rows: AutoWriteView[];
@@ -23,6 +24,26 @@ export interface AutoStripProps {
   onUndo(autoWriteId: string): void;
   onShow(itemId: ItemId): void;
   onPause(): void;
+}
+
+/**
+ * UX2 3.4 / ARCHITECTURE-v2 6.4: after two automatic edits of one event its AutoStrip row also offers Restore original
+ * (ux-i18n-v2-10). The strip rows carry no event revision, so the rule here counts the automatic update / cancel writes
+ * of the item in the loaded rows (the last 7 days) and puts the button on that item's NEWEST write only, unless it was
+ * already undone - the card's rule (`canRestoreOriginal`). Main decides whether the restore is still possible.
+ */
+export function restoreOriginalRowIds(rows: readonly AutoWriteView[]): Set<string> {
+  const edits = new Map<ItemId, number>();
+  const newest = new Map<ItemId, AutoWriteView>();
+  for (const r of rows) {
+    if (r.kind !== 'create') edits.set(r.itemId, (edits.get(r.itemId) ?? 0) + 1);
+    const n = newest.get(r.itemId);
+    if (!n || r.writtenAt > n.writtenAt) newest.set(r.itemId, r);
+  }
+  const ids = new Set<string>();
+  for (const [itemId, r] of newest)
+    if ((edits.get(itemId) ?? 0) >= 2 && r.undoState !== 'undone') ids.add(r.autoWriteId);
+  return ids;
 }
 
 /** UX2 3.1: at most five rows; "Show all in Automatic activity" below when more exist. */
@@ -90,6 +111,7 @@ export function AutoStrip({ rows, policyState, onUndo, onShow, onPause }: AutoSt
   const anyUndoable = shown.some((r) => r.undoState === 'available' || r.undoState === 'failed');
   const open = userOpen ?? anyUndoable;
   const visible = shown.slice(0, STRIP_MAX_ROWS);
+  const restorable = restoreOriginalRowIds(rows);
 
   return (
     <section
@@ -231,6 +253,14 @@ export function AutoStrip({ rows, policyState, onUndo, onShow, onPause }: AutoSt
                     data-state={state}
                   >
                     {side}
+                    {restorable.has(row.autoWriteId) && !inFlight ? (
+                      <GuardedButton
+                        testId={`autostrip-restore-${row.autoWriteId}`}
+                        label={t('undo.restoreOriginal')}
+                        busyLabel={t('undo.restoringOriginal')}
+                        run={() => api.restoreOriginal(row.itemId)}
+                      />
+                    ) : null}
                     {show}
                   </span>
                 </div>

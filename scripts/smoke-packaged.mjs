@@ -639,6 +639,35 @@ export function toolListProblems(names) {
  *  - the child exited non-zero and said `Failed to start server`  => the FIXTURE or the server runtime is wrong;
  *  - the child is still alive, produced no JSON-RPC line in 20 s   => `runAsNode` is OFF and the exe started as a GUI.
  */
+/**
+ * [v2-repair-v2-packaging-pins] The packaged exe could not be started at all (the spawn call threw or the child emitted 'error').
+ * Pure, so it is unit-tested. On Windows 11, `UNKNOWN` (and `EPERM`/`EACCES`) on a freshly packed, UNSIGNED exe is
+ * Smart App Control / a WDAC policy refusing it (Code Integrity events 3033/3077). That is an environment block, not a
+ * product defect - but it is never a pass: the check stays FAILED and the operator gets the cause.
+ * @param {unknown} err  the spawn error
+ * @param {string} platform  process.platform
+ * @returns {{ mode: 'spawn', message: string }}
+ */
+export function spawnFailure(err, platform) {
+  const code =
+    err && typeof err === 'object' && 'code' in err && typeof err.code === 'string'
+      ? err.code
+      : err instanceof Error
+        ? err.message
+        : String(err);
+  const blocked = platform === 'win32' && /^(UNKNOWN|EPERM|EACCES)$/.test(code);
+  return {
+    mode: 'spawn',
+    message:
+      `could not start the packaged exe as Node (spawn ${code}); the check did NOT run.` +
+      (blocked
+        ? ' On Windows 11 this is usually Smart App Control or a WDAC policy refusing the freshly built, unsigned exe' +
+          ' (Event Viewer > Microsoft-Windows-CodeIntegrity/Operational, events 3033/3077). Re-run on a machine that' +
+          ' allows the build to execute, or sign the build; never count this as a pass.'
+        : ''),
+  };
+}
+
 export function classifyMcpFailure({ exited, exitCode, stderr, sawJsonRpc, timedOut }) {
   if (sawJsonRpc) return null;
   const text = String(stderr ?? '');
@@ -881,8 +910,24 @@ function spawnAsNode(exePath, args, extraEnv) {
  * Resolves `{ ok, tools, callText, failure }`; never throws for a protocol failure, and always kills by PID.
  */
 async function mcpSession({ exePath, args, env, callTool, timeoutMs = MCP_TIMEOUT_MS, log }) {
-  const child = spawnAsNode(exePath, args, env);
+  let child;
+  try {
+    child = spawnAsNode(exePath, args, env);
+  } catch (err) {
+    // [v2-repair-v2-packaging-pins] A synchronous spawn refusal (Windows `spawn UNKNOWN`) used to crash the whole smoke
+    // at check 1, so checks 2-12 never ran. It is now a FAILED check (exit stays 1) and the remaining checks still run.
+    return { ok: false, failure: spawnFailure(err, process.platform) };
+  }
+  let spawnError = null;
   const pending = new Map();
+  child.on('error', (err) => {
+    spawnError = err;
+    for (const [, waiter] of pending) waiter(null);
+    pending.clear();
+  });
+  child.stdin?.on('error', () => {
+    /* EPIPE after a refused/failed start: reported through spawnError / the exit handler */
+  });
   let stdoutBuf = '';
   let stderr = '';
   let sawJsonRpc = false;
@@ -965,6 +1010,8 @@ async function mcpSession({ exePath, args, env, callTool, timeoutMs = MCP_TIMEOU
     clientInfo: { name: 'wca-smoke-packaged', version: '1.0.0' },
   });
   if (init === null || init.error) {
+    if (spawnError !== null && !sawJsonRpc)
+      return finish({ ok: false, failure: spawnFailure(spawnError, process.platform) });
     return finish({
       ok: false,
       failure: classifyMcpFailure({ exited, exitCode, stderr, sawJsonRpc, timedOut }) ?? {

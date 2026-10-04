@@ -10,6 +10,7 @@ import {
   applySendSuccess,
   autoWriteIdOfAction,
   commitUpdateDone,
+  currentRevisionOf,
   parseFinalPayload,
 } from './outcome';
 import { contentOfProjection, normaliseField } from './eventContent';
@@ -66,11 +67,48 @@ function findOutboundMatch(
   return null;
 }
 
+/**
+ * [v2-fix editing-undo-10] Once an action of a retry chain is confirmed done, the chain's still-pending retry clones ("Send again",
+ * "Add again", "Apply again" - same item, same kind, same chain root) are superseded in the SAME transaction: the side effect they would
+ * repeat already happened, and a live clone on the resolved card invites a duplicate approval.
+ */
+export function supersedeChainClones(repos: Repos, action: ApprovalAction, keepPending: ActionId | null = null): void {
+  const root = repos.actions.chainRoot(action.id).id;
+  for (const x of repos.actions.forItem(action.itemId)) {
+    if (
+      x.id === action.id ||
+      x.id === keepPending ||
+      x.kind !== action.kind ||
+      x.state !== 'pending' ||
+      x.retryOf === null
+    )
+      continue;
+    if (repos.actions.chainRoot(x.id).id !== root) continue;
+    repos.db.prepare(`UPDATE actions SET state = 'superseded' WHERE id = ? AND state = 'pending'`).run(x.id);
+  }
+}
+
 /** create_event: read.findAppEvent(chainRoot) -> markDone with the found eventId. */
 async function reconcileCreate(deps: ReconcileDeps, action: ApprovalAction): Promise<boolean> {
+  return typeof (await resolveLandedCreate(deps, action, { offerCorrection: true })) === 'object';
+}
+
+/**
+ * [v2-fix editing-undo-1] The create resolution of reconcile, shared with the executor's in-session "Add again" check (T-401): looks for
+ * the event of the action's chain root (read-only) and, when it exists, marks the action done exactly as reconcile does (rev-1 row,
+ * item in_calendar, audit action_reconciled, the chain's pending clones superseded). `offerCorrection` = B24's pending update_event when
+ * the found event was edited in Google (the executor passes false for an edited retry: that click decides what to write); `keepPending`
+ * = the clicked retry clone, left pending for its own click. Returns the found event's id and readback, 'not_found' when the lookup
+ * answered "no such event", or 'unavailable' when it could not be made (in both cases the action keeps unknown_outcome).
+ */
+export async function resolveLandedCreate(
+  deps: ReconcileDeps,
+  action: ApprovalAction,
+  opts: { offerCorrection: boolean; keepPending?: ActionId },
+): Promise<{ eventId: string; readback: OwnedEventProjection | null } | 'not_found' | 'unavailable'> {
   const read = deps.read;
   const payload = parseFinalPayload(action);
-  if (read === null || payload === null || payload.kind !== 'create_event') return false;
+  if (read === null || payload === null || payload.kind !== 'create_event') return 'unavailable';
   // The approved payload always pins its own zone; `deps.timeZone()` is the settings fallback for a row that somehow lost it.
   const settingsZone = deps.timeZone();
   const timeZone = payload.timeZone || settingsZone;
@@ -89,9 +127,10 @@ async function reconcileCreate(deps: ReconcileDeps, action: ApprovalAction): Pro
   try {
     found = await read.findAppEvent(root.id, window);
   } catch {
-    return false; // [R2] a reconcile failure keeps unknown_outcome and still offers the clone
+    return 'unavailable'; // [R2] a reconcile failure keeps unknown_outcome and still offers the clone
   }
-  if (!found.ok || found.value === null) return false;
+  if (!found.ok) return 'unavailable';
+  if (found.value === null) return 'not_found';
   // [V2] the readback of the found event: the rev-1 baseline (post_etag / post_updated) and the B24 edit check.
   const eventId = found.value.eventId;
   const readback = await readEvent(deps, settings.calendar.targetCalendarId, eventId);
@@ -106,11 +145,13 @@ async function reconcileCreate(deps: ReconcileDeps, action: ApprovalAction): Pro
     deps.repos.actions.markDone(action.id, result, now);
     applyCreateSuccess(deps.repos, action, payload, result, now, readback);
     deps.repos.audit.append('action_reconciled', action.id, { kind: 'create_event', attempt: action.attempt }, now);
+    supersedeChainClones(deps.repos, action, opts.keepPending ?? null);
     // [V2] B24 (T-401): found but EDITED in Google => ONE pending update_event from the found content to the approved content -
     // a card, zero writes without a click (F38).
-    if (edited && foundContent !== null) offerCorrection(deps, action, payload, eventId, foundContent, approved, now);
+    if (opts.offerCorrection && edited && foundContent !== null)
+      offerCorrection(deps, action, payload, eventId, foundContent, approved, now);
   });
-  return true;
+  return { eventId, readback };
 }
 
 function reconcileSend(deps: ReconcileDeps, action: ApprovalAction): boolean {
@@ -132,6 +173,7 @@ function reconcileSend(deps: ReconcileDeps, action: ApprovalAction): boolean {
     deps.repos.actions.markDone(action.id, result, now);
     applySendSuccess(deps.repos, action, payload, now);
     deps.repos.audit.append('action_reconciled', action.id, { kind: 'send_reply', attempt: action.attempt }, now);
+    supersedeChainClones(deps.repos, action); // a delivered reply's "Send again" clone would send it twice
   });
   return true;
 }
@@ -142,12 +184,19 @@ export async function reconcileUnknown(deps: ReconcileDeps): Promise<ReconcileRe
     const action = deps.repos.actions.byId(id);
     if (!action) continue;
     out.checked += 1;
-    const resolved =
-      action.kind === 'send_reply'
-        ? reconcileSend(deps, action)
-        : action.kind === 'update_event'
-          ? (await reconcileUpdateWith(deps, action)) === 'done'
-          : await reconcileCreate(deps, action);
+    let resolved = false;
+    try {
+      resolved =
+        action.kind === 'send_reply'
+          ? reconcileSend(deps, action)
+          : action.kind === 'update_event'
+            ? (await reconcileUpdateWith(deps, action)) === 'done'
+            : await reconcileCreate(deps, action);
+    } catch {
+      // [v2-fix editing-undo-8 / data-integrity-v4-4] one row that throws (every resolution is one transaction, so it rolled back) stays
+      // unknown_outcome; it must not abort the pass and leave every LATER unknown action unresolved (and offered as a clone).
+      deps.repos.audit.append('db_recovery', action.id, { stage: 'reconcile_unknown' }, deps.now());
+    }
     if (resolved) out.resolvedDone += 1;
     else out.stillUnknown += 1;
   }
@@ -232,12 +281,17 @@ async function reconcileUpdateWith(
   if (payload === null || payload.kind !== 'update_event' || action.state !== 'unknown_outcome')
     return 'unknown_outcome';
   const target = deps.repos.items.byId(payload.targetItemId);
-  if (target !== null && target.eventRevision > payload.baseRevision) {
+  // [v2-fix editing-undo-8] the event's revision CHAIN, not the source item (which an applied delta never bumps): a done "Apply again"
+  // clone of this very chain is a newer revision too, so the original is superseded instead of being committed a second time.
+  if (currentRevisionOf(deps.repos, payload.targetEventId, target) > payload.baseRevision) {
     // another change of this event landed meanwhile: this one can never apply as approved
     const now = deps.now();
-    deps.repos.db
-      .prepare(`UPDATE actions SET state = 'superseded' WHERE id = ? AND state = 'unknown_outcome'`)
-      .run(action.id);
+    deps.repos.db.transaction(() => {
+      deps.repos.db
+        .prepare(`UPDATE actions SET state = 'superseded' WHERE id = ? AND state = 'unknown_outcome'`)
+        .run(action.id);
+      supersedeChainClones(deps.repos, action); // its "Apply again" is pinned to the same, outdated base revision
+    });
     deps.repos.audit.append(
       'action_reconciled',
       action.id,
@@ -266,6 +320,7 @@ async function reconcileUpdateWith(
       { autoWriteId: autoWriteIdOfAction(deps.repos, action.id), extraReverts: [], auditKind: 'action_reconciled' },
       now,
     );
+    supersedeChainClones(deps.repos, action);
   });
   return 'done';
 }

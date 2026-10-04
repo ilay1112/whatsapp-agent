@@ -158,8 +158,25 @@ function slotOf(c: { startLocal: string; endLocal: string; timeZone: string }): 
 type Mode = 'full' | 'phaseA';
 type Check = { reason: AutoReason; failed: boolean; pause?: AutoGateResult['pausePolicy']; needsReads?: boolean };
 
-function hasSeverity(item: Item, severity: 'red' | 'amber' | 'info'): boolean {
-  return item.badges.some((b) => !RESULT_BADGES.has(b) && BADGE_SEVERITY[b] === severity);
+function hasSeverity(
+  item: Item,
+  severity: 'red' | 'amber' | 'info',
+  exempt: ReadonlySet<string> = RESULT_BADGES,
+): boolean {
+  return item.badges.some((b) => !exempt.has(b) && BADGE_SEVERITY[b] === severity);
+}
+
+/** [v2-fix auto-mode-5] What the "zero badges" rule (B8) exempts on top of the two auto RESULT badges. */
+const PICTURE_EXEMPT: ReadonlySet<string> = new Set([...RESULT_BADGES, 'from_image']);
+/**
+ * The badges the B8 "zero badges" rule ignores: always the two auto RESULT badges, and on a PICTURE item the provenance badge
+ * `from_image` (info). S4 writes `from_image` on EVERY picture that contributed text, so counting it made D-068 ("picture-derived events
+ * MAY be automatic once imagesPassed") unreachable. The picture itself stays gated by `media_derived` below (a closed images gate
+ * falls back with that reason - v2-contracts 19 note 15: "harmless because media_derived fires"). The picture's other badges
+ * (`image_unclear` amber, `image_unread` info, `manipulation` red) are never exempt.
+ */
+function exemptBadges(i: AutoGateInput): ReadonlySet<string> {
+  return i.item.triggerKind === 'image' ? PICTURE_EXEMPT : RESULT_BADGES;
 }
 
 /** The ordered check list (ARCH-v2 6.2: policy -> contact/chat -> proposal quality -> provider -> cage -> edits -> budgets; inside a group
@@ -199,10 +216,11 @@ function* checks(
   facts.kind = i.payload.kind;
   facts.triggerKind = i.item.triggerKind;
   facts.triggerAuthor = i.triggerAuthor;
-  facts.badges = i.item.badges.filter((b) => !RESULT_BADGES.has(b)).length;
-  yield { reason: 'badge_red', failed: hasSeverity(i.item, 'red') };
-  yield { reason: 'badge_amber', failed: hasSeverity(i.item, 'amber') };
-  yield { reason: 'badge_info', failed: hasSeverity(i.item, 'info') };
+  const exempt = exemptBadges(i);
+  facts.badges = i.item.badges.filter((b) => !exempt.has(b)).length;
+  yield { reason: 'badge_red', failed: hasSeverity(i.item, 'red', exempt) };
+  yield { reason: 'badge_amber', failed: hasSeverity(i.item, 'amber', exempt) };
+  yield { reason: 'badge_info', failed: hasSeverity(i.item, 'info', exempt) };
   facts.blockedCalls = i.proposal.blockedCalls;
   yield { reason: 'blocked_tool_call', failed: i.proposal.blockedCalls > 0 };
   yield {
@@ -389,7 +407,7 @@ function run(input: AutoGateInput, mode: Mode): AutoGateResult | null {
 
 /** Exhaustive: a table-driven test has one row per AUTO_REASONS value and an all-clear fixture yielding {verdict:'auto', reason:'ok'}.
  *  Eligibility (B8): chat.isKnown (forceKnown alone does NOT qualify) ; chat.policy !== 'never' ; chat.autoPolicy !== 'never' ;
- *  chat.autoTaintedUntil < now ; proposal.contextFromMeRecent ; zero badges of any tone except AUTO_RESULT_BADGES ; proposal.blockedCalls === 0 ;
+ *  chat.autoTaintedUntil < now ; proposal.contextFromMeRecent ; zero badges of any tone except AUTO_RESULT_BADGES (+ from_image on a picture item, v2-fix auto-mode-5) ; proposal.blockedCalls === 0 ;
  *  !suspicious ; no hour_assumed_* assumption ; item.missing empty ; title + location pass contentScreen() (else 'content_rejected', F9: URL or
  *  bare domain, e-mail address, phone-number pattern (>= 7 digits with separators), any bidi/invisible char (the sanitize.ts set), location >
  *  LIMITS.autoLocationMaxChars) ; update_event: editableEventsInChat === 1 (else 'multiple_events', F31) ; intent in {schedule_request, confirmation} (create) or change in

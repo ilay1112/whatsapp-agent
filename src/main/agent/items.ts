@@ -92,9 +92,32 @@ export interface ItemServiceDeps {
   // ---- [V2 ADD] optional so the v1 wiring keeps compiling; each ABSENT member fails closed ----
   /** McpHost.updateSurface().available (B4). Absent / false => update_event buttons greyed 'calendar_updates_unavailable'. */
   updatesAvailable?: () => boolean;
-  /** V2-W1-07's media cache (B19). Absent => no thumbnails, item:getImage answers MEDIA_UNAVAILABLE. */
-  mediaCache?: { thumb(itemId: ItemId): string | null; dataUrl(itemId: ItemId): string | null };
+  /** V2-W1-07's media cache (B19). Absent => no thumbnails, item:getImage answers MEDIA_UNAVAILABLE.
+   *  [fix data-integrity-v4-7] `deleteForItem` (rows + files) is used by "Never analyse"; absent => the chat's cached pictures stay
+   *  until retention (logged), never a row deleted without its files. */
+  mediaCache?: {
+    thumb(itemId: ItemId): string | null;
+    dataUrl(itemId: ItemId): string | null;
+    deleteForItem?(itemId: ItemId): number;
+  };
 }
+
+// [fix data-integrity-v4-7] ARCHITECTURE-v2 9.3 / B19 / v2-pipeline 4: transcripts.text and proposals.delta_json / image_json are nulled
+// "with the 30-day job AND at once on Dismiss / 'Never analyse'" - the same columns repos.retention.purge() nulls, keyed by item / chat.
+/** Transcripts of the item's own messages (the snapshot window + the trigger row), in the item's chat. */
+const FORGET_ITEM_TRANSCRIPTS_SQL = `UPDATE transcripts SET text = NULL
+   WHERE text IS NOT NULL
+     AND chat_jid = (SELECT c.jid FROM items i JOIN chats c ON c.id = i.chat_id WHERE i.id = ?1)
+     AND (wa_msg_id IN (SELECT wa_msg_id FROM item_messages WHERE item_id = ?1)
+          OR wa_msg_id = (SELECT trigger_msg_id FROM items WHERE id = ?1))`;
+const FORGET_ITEM_PROPOSALS_SQL = `UPDATE proposals SET delta_json = NULL, image_json = NULL
+   WHERE item_id = ? AND (delta_json IS NOT NULL OR image_json IS NOT NULL)`;
+const FORGET_CHAT_TRANSCRIPTS_SQL = `UPDATE transcripts SET text = NULL
+   WHERE text IS NOT NULL AND chat_jid = (SELECT jid FROM chats WHERE id = ?)`;
+const FORGET_CHAT_PROPOSALS_SQL = `UPDATE proposals SET delta_json = NULL, image_json = NULL
+   WHERE item_id IN (SELECT id FROM items WHERE chat_id = ?) AND (delta_json IS NOT NULL OR image_json IS NOT NULL)`;
+const CHAT_MEDIA_ITEMS_SQL = `SELECT DISTINCT item_id AS itemId FROM media_cache WHERE chat_id = ? AND item_id IS NOT NULL
+   ORDER BY item_id`;
 
 const HOUR_MS = 3_600_000;
 /** Action states a card still shows a control or an error line for. */
@@ -155,6 +178,28 @@ export function createItemService(deps: ItemServiceDeps): ItemService {
    * at click time. A failing lookup therefore degrades that one field to its fail-closed value (no Undo door, no chip, no
    * thumbnail) and is logged by field name only - it never takes the dashboard down with it.
    */
+  /** [fix data-integrity-v4-7] "Never analyse": null the chat's media-derived text in one transaction, then delete every cached picture
+   *  of the chat's items through the media cache (rows + files). A media_cache row not linked to an item is left to retention. */
+  const forgetChatMedia = (chatRef: number): void => {
+    repos.db.transaction(() => {
+      repos.db.prepare(FORGET_CHAT_TRANSCRIPTS_SQL).run(chatRef);
+      repos.db.prepare(FORGET_CHAT_PROPOSALS_SQL).run(chatRef);
+    });
+    const itemIds = repos.db.prepare<{ itemId: number }>(CHAT_MEDIA_ITEMS_SQL).all(chatRef);
+    if (itemIds.length === 0) return;
+    const deleteForItem = deps.mediaCache?.deleteForItem;
+    if (deleteForItem === undefined) {
+      log.warn('media_cache_delete_unwired', { chatRef, items: itemIds.length });
+      return;
+    }
+    for (const { itemId } of itemIds) {
+      try {
+        deleteForItem(itemId);
+      } catch (e) {
+        log.warn('media_cache_delete_failed', { chatRef, reason: e instanceof Error ? e.name : 'unknown' });
+      }
+    }
+  };
   const decorate = <T>(field: string, itemId: ItemId, fallback: T, build: () => T): T => {
     try {
       return build();
@@ -471,6 +516,9 @@ export function createItemService(deps: ItemServiceDeps): ItemService {
       repos.db.transaction(() => {
         repos.actions.supersedePending(id, now);
         repos.items.update(id, { closedReason: 'dismissed' }, now);
+        // [fix data-integrity-v4-7] 9.3: the media-derived text goes at once (the cached picture: compose's item:dismiss wrapper)
+        repos.db.prepare(FORGET_ITEM_TRANSCRIPTS_SQL).run(id);
+        repos.db.prepare(FORGET_ITEM_PROPOSALS_SQL).run(id);
       });
       notifyChanged([id]);
       log.info('item_dismissed', { itemId: id });
@@ -596,6 +644,8 @@ export function createItemService(deps: ItemServiceDeps): ItemService {
           : 'autoPolicy' in req
             ? repos.chats.setAutoPolicy(req.chatRef, req.autoPolicy) // [V2] V2-W1-01 implements the repo member
             : repos.chats.setPolicy(req.chatRef, req.policy);
+      // [fix data-integrity-v4-7] "Never analyse" (9.3, B19): the chat's transcripts, delta / image JSON and cached pictures go at once.
+      if ('policy' in req && req.policy === 'never') forgetChatMedia(req.chatRef);
       // "Analyse this chat" releases the held raw card of that chat straight away.
       if ('forceKnown' in req) {
         const now = clock.now();

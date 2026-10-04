@@ -153,6 +153,46 @@ describe('useAutoStore', () => {
     expect(useAutoStore.getState().state?.policy?.state).toBe('shadow');
   });
 
+  it('REQUEST 2: a push that lands while a hydrate is in flight wins over the older read', async () => {
+    let resolve!: (v: unknown) => void;
+    mockInvoke('auto:getState', () => new Promise((r) => (resolve = r)) as never);
+    const pending = useAutoStore.getState().hydrate();
+    useAutoStore.getState().applyPush(state('on'));
+    resolve({ ok: true, value: state(null) });
+    await pending;
+    expect(useAutoStore.getState().state?.policy?.state).toBe('on');
+  });
+
+  it('REQUEST 2: of two overlapping hydrates only the newest read is kept', async () => {
+    const resolvers: ((v: unknown) => void)[] = [];
+    mockInvoke('auto:getState', () => new Promise((r) => resolvers.push(r)) as never);
+    const first = useAutoStore.getState().hydrate();
+    const second = useAutoStore.getState().hydrate();
+    resolvers[1]!({ ok: true, value: state('shadow') });
+    await second;
+    resolvers[0]!({ ok: true, value: state(null) });
+    await first;
+    expect(useAutoStore.getState().state?.policy?.state).toBe('shadow');
+  });
+
+  it('REQUEST 2: an older read still lands when the newer read failed', async () => {
+    const resolvers: ((v: unknown) => void)[] = [];
+    mockInvoke('auto:getState', () => new Promise((r) => resolvers.push(r)) as never);
+    const first = useAutoStore.getState().hydrate();
+    const second = useAutoStore.getState().hydrate();
+    resolvers[1]!({ ok: false, error: { code: 'INTERNAL' } });
+    await second;
+    resolvers[0]!({ ok: true, value: state('on') });
+    await first;
+    expect(useAutoStore.getState().state?.policy?.state).toBe('on');
+  });
+
+  it('REQUEST 2: applyPush replaces the state and re-reads the rows', async () => {
+    useAutoStore.getState().applyPush(state('paused'));
+    expect(useAutoStore.getState().state?.policy?.state).toBe('paused');
+    expect(invokeMocks['auto:listWrites']).toHaveBeenCalledTimes(1);
+  });
+
   it('never calls an enabling or settings channel', async () => {
     await useAutoStore.getState().hydrate();
     await useAutoStore.getState().undo(A);

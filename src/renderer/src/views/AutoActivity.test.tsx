@@ -9,6 +9,7 @@ import { DEFAULT_AUTO_SCOPE } from '@shared/schemas';
 import { DEFAULT_SETTINGS } from '@shared/settings';
 import { i18next, invokeMocks, mockInvoke } from '../../../../tests/setup-renderer';
 import { useAutoStore } from '../store/auto';
+import { useDashboardStore } from '../store/dashboard';
 import { useFocusGuardStore } from '../store/health';
 import { useSettingsStore } from '../store/settings';
 import { ACTIVITY_PAGE_DAYS, AutoActivity, dayKeyOf, groupByDay, undoViewOf } from './AutoActivity';
@@ -150,6 +151,15 @@ describe('AutoActivity - page', () => {
       }),
     );
     expect(invokeMocks['item:undoChange']).not.toHaveBeenCalled();
+  });
+
+  // ux-i18n-v2-10: a write row had only Undo - the user could not open the item behind it (UX2 4.6 "[Undo] [Show]").
+  it('Show on a row asks the shell to open that item on the dashboard', async () => {
+    useDashboardStore.setState({ navRequest: null });
+    mockInvoke('auto:listWrites', () => ({ ok: true, value: { writes: [row()] } }));
+    render(<AutoActivity onBack={() => {}} />);
+    await userEvent.click(await screen.findByTestId('activity-show-33333333-3333-4333-8333-333333333333'));
+    expect(useDashboardStore.getState().navRequest).toEqual({ view: 'dashboard', itemId: 7 });
   });
 
   it('"Show older" widens the window by another 30 days', async () => {

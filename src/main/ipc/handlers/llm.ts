@@ -118,8 +118,12 @@ export function createLlmHandlers(deps: HandlerDeps, v2?: LlmHandlersV2): Pick<I
     if (status.state !== 'ready') return CLI_STATE_CODE[status.state];
     if (!deps.repos.consents.isCurrent(CONSENT_FOR[provider])) return 'CONSENT_REQUIRED';
     const test = status.lastTest;
-    if (test === null || !test.ok || deps.clock.now() - test.at > CLI_TEST_FRESH_MS) return 'CLI_UNSTABLE';
-    return null;
+    if (test !== null && test.ok && deps.clock.now() - test.at <= CLI_TEST_FRESH_MS) return null;
+    // [v2-repair REQUEST 13] no passed test within 24 h (typically: never tested yet) is not "keeps stopping": run the provider-start
+    // smoke now, exactly as cli:test does, and answer with ITS outcome. The consent was checked above; nothing else is sent.
+    if (v2.runCliTest === undefined) return 'CLI_UNSTABLE';
+    const ran = await v2.runCliTest(provider);
+    return ran.ok ? null : ran.error.code;
   };
 
   /** [V2] llm:listModels for a CLI id: Claude = the alias presets (the CLI has no listing); agy = its model listing, schema-filtered. */

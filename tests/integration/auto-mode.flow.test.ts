@@ -74,6 +74,25 @@ async function clickCreate(harness: Harness, card: ItemCard): Promise<void> {
   });
   if (!res.ok) throw new Error(JSON.stringify(res));
 }
+const ADDED = 'Calendar: an event was added automatically';
+const UNDONE = 'Calendar change undone';
+const UNDO_FAILED = 'Could not undo the calendar change';
+/** Track record (three clicks) -> automatic mode on (no trial) -> one automatic create; returns its auto_writes id and its toast. */
+async function oneAutomaticCreate(harness: Harness): Promise<{ autoWriteId: string; toastIndex: number }> {
+  for (const n of [1, 2, 3]) await clickCreate(harness, await inboundCard(harness, n));
+  dialog.__script([{ response: 1, checkboxChecked: true }]);
+  const enabled = await harness.invoke('auto:requestEnable', { scope: DEFAULT_AUTO_SCOPE, trial: false });
+  expect(enabled).toMatchObject({ ok: true, value: { policy: { state: 'on' } } });
+  await inboundCard(harness, 7);
+  const writes = await harness.invoke('auto:listWrites', { sinceTs: 0 });
+  if (!writes.ok || writes.value.writes.length !== 1) throw new Error('expected exactly one automatic write');
+  let toastIndex = -1;
+  Notification.instances.forEach((n, i) => {
+    if (n.title === ADDED) toastIndex = i;
+  });
+  if (toastIndex < 0) throw new Error('no automatic-write toast');
+  return { autoWriteId: writes.value.writes[0]!.autoWriteId, toastIndex };
+}
 const creates = (harness: Harness): number => harness.calendar.calls.filter((c) => c.tool === 'create-event').length;
 
 describe('auto-mode flow through compose()', () => {
@@ -126,6 +145,42 @@ describe('auto-mode flow through compose()', () => {
     expect(after.undoState).toBe('undone');
     expect(h.repos.actions.byId(after.undoActionId!)!.approvedBy).toBe('user_toast');
   });
+
+  // [v2-fix auto-mode-1] the toast Undo must report what happened, ONCE: undoAuto answers ok:true for a 'failed' / 'needs_confirm_*'
+  // outcome, and compose used to map r.ok straight to "Calendar change undone" - after runUndo's own (correct) toast.
+  it('a successful toast Undo shows exactly one "Calendar change undone" toast', async () => {
+    h = await createHarness({ rules: RULES(4) });
+    const { autoWriteId, toastIndex } = await oneAutomaticCreate(h);
+    const toastsBefore = h.notifications.length;
+    Notification.__emitAction(toastIndex, 0);
+    await h.settle();
+    expect(h.repos.autoWrites.byId(autoWriteId)!.undoState).toBe('undone');
+    expect(h.notifications.slice(toastsBefore).map((t) => t.title)).toEqual([UNDONE]);
+  });
+
+  it('a toast Undo whose calendar write fails says it could not undo - never "Calendar change undone"', async () => {
+    h = await createHarness({ rules: RULES(4) });
+    const { autoWriteId, toastIndex } = await oneAutomaticCreate(h);
+    const toastsBefore = h.notifications.length;
+    h.calendar.failNext('update-event', 'error');
+    Notification.__emitAction(toastIndex, 0);
+    await h.settle();
+    expect(h.repos.autoWrites.byId(autoWriteId)!.undoState).toBe('available'); // the event was NOT restored
+    expect(h.notifications.slice(toastsBefore).map((t) => t.title)).toEqual([UNDO_FAILED]);
+  });
+
+  it('a toast Undo refused before any calendar call (window over) still says it could not undo, once', async () => {
+    h = await createHarness({ rules: RULES(4) });
+    const { autoWriteId, toastIndex } = await oneAutomaticCreate(h);
+    await h.advance(4 * 24 * HOUR); // past the event's start: undo_until = min(written + 72 h, start)
+    const toastsBefore = h.notifications.length;
+    const callsBefore = h.calendar.calls.length;
+    Notification.__emitAction(toastIndex, 0);
+    await h.settle();
+    expect(h.calendar.calls.length).toBe(callsBefore); // refused before any calendar call
+    expect(h.repos.autoWrites.byId(autoWriteId)!.undoState).not.toBe('undone');
+    expect(h.notifications.slice(toastsBefore).map((t) => t.title)).toEqual([UNDO_FAILED]);
+  }, 60_000);
 
   it('each pause trigger of B7 pauses with its reason, and a click still works while paused', async () => {
     h = await createHarness({ rules: RULES(4) });

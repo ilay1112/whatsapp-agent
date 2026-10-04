@@ -37,7 +37,10 @@ export const CRT_FILES = ['msvcp140.dll', 'vcruntime140.dll', 'vcruntime140_1.dl
 
 // ---- [V2-W2-04] v2 notices (ARCH-v2 12 THIRD_PARTY_NOTICES row, T2 11 check 12) -------------------------------------
 export const WHISPER_MIT_PATH = join(REPO_ROOT, 'resources', 'licenses', 'whisper.cpp-MIT.txt');
-/** Committed: libopus is compiled into opus-decoder's embedded WASM and the npm package ships no copy of its licence. */
+/** Committed: libopus is compiled into opus-decoder's embedded WASM and the npm package ships no copy of its licence.
+ *  [v2-repair-v2-packaging-pins] Verified offline 2026-10-04: byte-identical (after CRLF/trim normalisation) to the libopus
+ *  COPYING that Chromium redistributes, as found in the installed Electron 44.4.3 `dist/LICENSES.chromium.html` ("opus");
+ *  pinned by sha256 in smoke-packaged.notices.test.mjs. */
 export const LIBOPUS_LICENSE_PATH = join(REPO_ROOT, 'resources', 'licenses', 'libopus-BSD-3.txt');
 /** The decoder chain of B18, in the order the notices list it. */
 export const DECODER_CHAIN = ['opus-decoder', '@wasm-audio-decoders/common', 'simple-yenc', '@eshaz/web-worker'];

@@ -500,6 +500,41 @@ export function App() {
     setView('settings');
   }, []);
 
+  // [V2] ux-i18n-v2-1: a dashboard control's `requestNavigation()` (AutoStrip "Show all in Automatic activity", the
+  // sheet's "See all automatic activity", the voice / picture raw cards' "Turn on in Settings" / "Choose an AI") is a
+  // request for the shell. Voice notes and Pictures live in the AI engine group (UX2 4), so 'voice' / 'pictures' open
+  // it. The request is cleared once handled so the same button works again.
+  // [V2] ux-i18n-v2-4: a voice tier the user asked for (Settings Download, the onboarding opt-in) is turned on once its
+  // files are ready, also while Settings > Voice notes is closed. Re-checked whenever a voice file's download moves.
+  const voiceIntent = useSettingsStore((s) => s.voiceIntent);
+  const voiceDownloadKey = [...VOICE_TIERS, 'voice-vad' as const].map((f) => downloads[f]?.status ?? '-').join('|');
+  useEffect(() => {
+    if (voiceIntent === null) return;
+    api
+      .getVoiceState()
+      .then((r) => {
+        if (r.ok) void useSettingsStore.getState().settleVoiceIntent(r.value);
+      })
+      .catch(() => undefined); // the next download change asks again
+  }, [voiceIntent, voiceDownloadKey]);
+
+  // A store subscription (the store is the external system here), so the view changes in the store's callback.
+  useEffect(
+    () =>
+      useDashboardStore.subscribe((s) => {
+        const req = s.navRequest;
+        if (req === null) return;
+        s.clearNavRequest();
+        if (req.view === 'dashboard') {
+          // ux-i18n-v2-10: the Automatic activity page's "Show" - the same move as main's ui:navigate {view, itemId}.
+          setView('dashboard');
+          void s.openItemById(req.itemId);
+        } else if (req.view === 'activity') openSettings('activity');
+        else openSettings(req.section === 'auto' ? 'auto' : 'ai');
+      }),
+    [openSettings],
+  );
+
   const onHealthAction = useCallback(
     (part: HealthPart, code?: ErrorCode) => {
       if (part === 'whatsapp' && (code === 'WA_LOGGED_OUT' || !code)) {

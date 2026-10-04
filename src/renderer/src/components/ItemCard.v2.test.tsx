@@ -1057,3 +1057,58 @@ describe('Change card snapshots', () => {
     }
   }
 });
+
+// REPAIR v2-renderer-defects (V2-W2-03 REQUEST 8): a badge whose host row is not drawn (no draft box, no EventChip) is
+// shown in the card row instead - a red badge is never hidden because its scope's row is missing.
+describe('badges without their host row', () => {
+  /** S3 aborted for manipulation (two strikes): no draft, the event part still proposed. */
+  const noDraft = (patch: Partial<ItemVM> = {}): ItemVM =>
+    card({ draft: null, replyState: 'none', badges: ['manipulation'], actions: [createAction()], ...patch });
+
+  it('compact: manipulation is shown although no draft box is drawn', () => {
+    render(<ItemCard item={noDraft()} mode="compact" />);
+    expect(screen.queryByTestId('draft-box')).toBeNull();
+    expect(screen.queryByTestId('draft-collapsed')).toBeNull();
+    const chips = screen.getAllByTestId('badge-manipulation');
+    expect(chips).toHaveLength(1);
+    expect(chips[0]!.className).toContain('bg-danger-soft');
+  });
+
+  it('expanded: manipulation is shown although no draft box is drawn', () => {
+    render(<ItemCard item={{ ...noDraft(), messages: structuredClone(defaultDetail.messages) }} mode="expanded" />);
+    expect(screen.queryByTestId('draft-box')).toBeNull();
+    expect(screen.getAllByTestId('badge-manipulation')).toHaveLength(1);
+  });
+
+  it('no draft and no event: every draft- and event-scope badge still renders exactly once', () => {
+    render(
+      <ItemCard
+        item={noDraft({
+          eventState: 'none',
+          event: null,
+          actions: [],
+          badges: ['manipulation', 'link_removed', 'conflict', 'time_assumed'],
+        })}
+        mode="compact"
+      />,
+    );
+    expect(screen.queryByTestId('event-chip')).toBeNull();
+    for (const code of ['manipulation', 'link_removed', 'conflict', 'time_assumed']) {
+      expect(screen.getAllByTestId(`badge-${code}`)).toHaveLength(1);
+    }
+  });
+
+  it('with a draft the manipulation badge stays under the draft box and is not duplicated', () => {
+    render(<ItemCard item={card({ badges: ['manipulation'] })} mode="compact" />);
+    const chips = screen.getAllByTestId('badge-manipulation');
+    expect(chips).toHaveLength(1);
+    expect(chips[0]!.closest('[data-testid="badges"]')).toHaveAttribute('data-scope', 'draft');
+  });
+
+  it('with an EventChip the event badges stay on the chip and are not duplicated', () => {
+    render(<ItemCard item={noDraft({ badges: ['manipulation', 'conflict'] })} mode="compact" />);
+    expect(screen.getByTestId('event-chip')).toBeInTheDocument();
+    expect(screen.getAllByTestId('badge-conflict')).toHaveLength(1);
+    expect(screen.getAllByTestId('badge-manipulation')).toHaveLength(1);
+  });
+});
