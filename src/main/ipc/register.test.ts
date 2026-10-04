@@ -3,6 +3,7 @@
 // anywhere names a JID, URL, path, file, tool, args, recipient or phone (allow-list: `jsonText`).
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
+  FOCUS_GATED_CHANNELS,
   IPC_CHANNELS,
   IPC_REQUEST_SCHEMAS,
   type IpcChannel,
@@ -10,9 +11,17 @@ import {
   type IpcHandlers,
 } from '../../shared/ipc';
 import { applySettingsPatch, DEFAULT_SETTINGS, type Settings } from '../../shared/settings';
-import type { Result } from '../../shared/types';
+import { LIMITS, type Result } from '../../shared/types';
 import { assertSettingsBusContract, makeFixture } from './register.fixtures';
-import { fail, ok, registerIpc, type HandlerDeps, type RegisterIpcOptions } from './register';
+import {
+  FOCUS_GATED,
+  fail,
+  ok,
+  passesFocusGate,
+  registerIpc,
+  type HandlerDeps,
+  type RegisterIpcOptions,
+} from './register';
 import type { IpcEventLike } from './sender';
 
 // ---------------------------------------------------------------------------------------------------------------------
@@ -103,6 +112,46 @@ const VALID: Record<IpcChannel, unknown> = {
   'external:open': { target: 'project_readme' },
   'data:purgeNow': { confirm: true },
   'diagnostics:export': undefined,
+  // [V2 ADD] the 24 C2 8 channels
+  'item:undoChange': { itemId: 1, revisionId: 1 },
+  'item:getImage': { itemId: 1 },
+  'item:restoreOriginal': { itemId: 1 },
+  'item:cancelEvent': { itemId: 1 },
+  'wa:setReadScope': { scope: 'trigger_chat' },
+  'auto:getState': undefined,
+  'auto:requestEnable': {
+    scope: {
+      creates: true,
+      knownContactsOnly: true,
+      edits: true,
+      cancels: false,
+      horizonDays: 30,
+      maxMinutes: 240,
+      perChatPerDay: 3,
+      globalPerDay: 15,
+      moveMaxDays: 14,
+      quietHours: { from: 22, to: 7 },
+      validityDays: 30,
+    },
+    trial: true,
+  },
+  'auto:disable': { reason: 'user' },
+  'auto:pause': { reason: 'user' },
+  'auto:resume': { confirm: true },
+  'auto:endShadow': { confirm: true },
+  'auto:undo': { autoWriteId: UUID },
+  'auto:listWrites': { sinceTs: 0 },
+  'auto:export': undefined,
+  'cli:getStatus': { provider: 'claude_cli' },
+  'cli:signIn': { provider: 'claude_cli' },
+  'cli:setOverage': { allow: false },
+  'cli:test': { provider: 'claude_cli' },
+  'cli:pickExe': { provider: 'claude_cli' },
+  'cli:previewWorkspaceChange': { provider: 'antigravity_cli' },
+  'cli:allowWorkspace': { provider: 'antigravity_cli', confirm: true },
+  'voice:getState': undefined,
+  'voice:selfTest': undefined,
+  'voice:retry': { itemId: 1 },
 };
 
 function stubHandlers(): {
@@ -325,7 +374,92 @@ describe('registerIpc with the real isTrustedSender', () => {
 // TESTS 5.3 `shared/ipc.ts`: no request field anywhere is a JID, URL, file path, tool name or MCP argument.
 // ---------------------------------------------------------------------------------------------------------------------
 const FORBIDDEN_KEY_RE = /jid|url|path|file|tool|args|recipient|phone/i;
+// [V2] T2 5 / build plan W1-10 acceptance: ZERO new allow-listed keys - the list is the v1 one (`jsonText`: credential file CONTENT).
+// `llm.cli.claudeExePath` is not in SettingsPatchSchema at all (cli:pickExe only, C2 concern 5). The v2 settings group
+// `whatsapp.readTools` matches /tool/ by NAME but is a container that cannot hold a single character of text (booleans and numbers
+// only); such a key is structurally unable to carry a JID / URL / path / tool name, so it passes WITHOUT an allow-list entry -
+// `canCarryText` proves the "cannot" per key, and a string anywhere beneath it would turn it into an offender again.
 const KEY_ALLOW_LIST = new Set(['jsonText']);
+/** C2 19 item 25: no key anywhere is named exactly one of these - no exemption of any kind applies to this list. */
+const C2_BANNED_KEY_NAMES = [
+  'jid',
+  'chatJid',
+  'path',
+  'url',
+  'token',
+  'eventId',
+  'targetEventId',
+  'tool',
+  'toolName',
+  'exePath',
+];
+
+/** true when a value of this schema can contain text (a string / enum / string literal anywhere beneath it). Unknown kinds: true. */
+function canCarryText(schema: unknown): boolean {
+  const def = (schema as { def?: Record<string, unknown> } | undefined)?.def;
+  if (!def) return true;
+  switch (def.type) {
+    case 'number':
+    case 'boolean':
+    case 'bigint':
+    case 'undefined':
+    case 'null':
+      return false;
+    case 'literal':
+      return (def.values as unknown[]).some((v) => typeof v === 'string');
+    case 'object':
+      return Object.values(def.shape as Record<string, unknown>).some(canCarryText);
+    case 'union':
+      return (def.options as unknown[]).some(canCarryText);
+    case 'array':
+      return canCarryText(def.element);
+    case 'optional':
+    case 'nullable':
+    case 'default':
+    case 'nonoptional':
+    case 'readonly':
+    case 'catch':
+      return canCarryText(def.innerType);
+    case 'pipe':
+      return canCarryText(def.in) || canCarryText(def.out);
+    default:
+      return true; // string, enum, any, unknown, record, ... - text is possible
+  }
+}
+/** Every (key, value-schema) pair a request schema can accept, nested. */
+function requestKeyEntries(schema: unknown, out: Array<[string, unknown]> = []): Array<[string, unknown]> {
+  const def = (schema as { def?: Record<string, unknown> } | undefined)?.def;
+  if (!def) return out;
+  switch (def.type) {
+    case 'object':
+      for (const [key, value] of Object.entries(def.shape as Record<string, unknown>)) {
+        out.push([key, value]);
+        requestKeyEntries(value, out);
+      }
+      break;
+    case 'union':
+      for (const option of def.options as unknown[]) requestKeyEntries(option, out);
+      break;
+    case 'array':
+      requestKeyEntries(def.element, out);
+      break;
+    case 'optional':
+    case 'nullable':
+    case 'default':
+    case 'nonoptional':
+    case 'readonly':
+    case 'catch':
+      requestKeyEntries(def.innerType, out);
+      break;
+    case 'pipe':
+      requestKeyEntries(def.in, out);
+      requestKeyEntries(def.out, out);
+      break;
+    default:
+      break;
+  }
+  return out;
+}
 
 /** Walks a zod v4 schema tree and collects every property name it can accept. */
 function requestKeys(schema: unknown, out = new Set<string>()): Set<string> {
@@ -366,11 +500,61 @@ describe('request-schema key-name scan', () => {
   it('no request schema names a jid, url, path, file, tool, args, recipient or phone', () => {
     const offenders: string[] = [];
     for (const channel of IPC_CHANNELS) {
-      for (const key of requestKeys(IPC_REQUEST_SCHEMAS[channel])) {
-        if (FORBIDDEN_KEY_RE.test(key) && !KEY_ALLOW_LIST.has(key)) offenders.push(`${channel}.${key}`);
+      for (const [key, value] of requestKeyEntries(IPC_REQUEST_SCHEMAS[channel])) {
+        if (FORBIDDEN_KEY_RE.test(key) && !KEY_ALLOW_LIST.has(key) && canCarryText(value))
+          offenders.push(`${channel}.${key}`);
       }
     }
     expect(offenders).toEqual([]);
+  });
+
+  it('[V2] the allow-list gained NO key: it is exactly the v1 list', () => {
+    expect([...KEY_ALLOW_LIST]).toEqual(['jsonText']);
+  });
+
+  it('[V2] C2 19 item 25: no key is named jid, chatJid, path, url, token, eventId, targetEventId, tool, toolName or exePath', () => {
+    const found: string[] = [];
+    for (const channel of IPC_CHANNELS) {
+      for (const [key] of requestKeyEntries(IPC_REQUEST_SCHEMAS[channel])) {
+        if (C2_BANNED_KEY_NAMES.includes(key)) found.push(`${channel}.${key}`);
+      }
+    }
+    expect(found).toEqual([]);
+    expect(requestKeys(IPC_REQUEST_SCHEMAS['settings:set'])).not.toContain('claudeExePath');
+    expect(requestKeys(IPC_REQUEST_SCHEMAS['settings:set'])).not.toContain('allowOverage');
+    expect(requestKeys(IPC_REQUEST_SCHEMAS['settings:set'])).not.toContain('scope');
+  });
+
+  it('[V2] the text-free exemption is not vacuous: readTools is text-free, a string beneath a matching key is an offender', async () => {
+    const { z } = await import('zod');
+    const readTools = requestKeyEntries(IPC_REQUEST_SCHEMAS['settings:set']).find(([k]) => k === 'readTools');
+    expect(readTools).toBeDefined();
+    expect(canCarryText(readTools![1])).toBe(false);
+    expect(requestKeys(readTools![1])).toEqual(new Set(['enabled', 'windowDays']));
+    for (const hostile of [
+      z.strictObject({ toolPrefs: z.strictObject({ name: z.string() }) }),
+      z.strictObject({ toolPrefs: z.strictObject({ kind: z.enum(['a']) }) }),
+      z.strictObject({ toolPrefs: z.union([z.literal('x'), z.number()]) }),
+      z.strictObject({ toolPrefs: z.array(z.strictObject({ n: z.number(), s: z.string().optional() })) }),
+      z.strictObject({ toolPrefs: z.record(z.string(), z.number()) }),
+    ]) {
+      const entry = requestKeyEntries(hostile).find(([k]) => k === 'toolPrefs')!;
+      expect(canCarryText(entry[1])).toBe(true);
+    }
+    expect(canCarryText(z.strictObject({ a: z.number(), b: z.boolean(), c: z.literal(true), d: z.null() }))).toBe(
+      false,
+    );
+    expect(canCarryText(undefined)).toBe(true);
+    expect(canCarryText(z.number().nullable().default(1).readonly().catch(2))).toBe(false);
+    expect(
+      canCarryText(
+        z
+          .string()
+          .transform((s) => s.length)
+          .pipe(z.number()),
+      ),
+    ).toBe(true);
+    expect(canCarryText(z.number().pipe(z.number()))).toBe(false);
   });
 
   it('the scanner really sees nested keys (guard against a walker that silently returns nothing)', () => {
@@ -423,5 +607,164 @@ describe('SettingsBus contract check', () => {
     expect(() => assertSettingsBusContract(build('patch'))).toThrow(/patch\(\) must notify/);
     expect(() => assertSettingsBusContract(build('setInternal'))).toThrow(/setInternal\(\) must notify/);
     expect(() => assertSettingsBusContract(build('unsubscribe'))).toThrow(/must stop further notifications/);
+  });
+});
+
+// ---------------------------------------------------------------------------------------------------------------------
+// [V2] C2 8 / C2 19 item 24: register.ts applies the focus gate + focus-steal guard to EXACTLY FOCUS_GATED_CHANNELS.
+// ---------------------------------------------------------------------------------------------------------------------
+describe('[V2] focus gate', () => {
+  const NOW = 1_700_000_000_000;
+  const setup = (ctx: IpcContext) => {
+    const ipc = fakeIpcMain();
+    const stub = stubHandlers();
+    const opts = options({ windowState: () => ctx, now: () => NOW });
+    registerIpc(ipc as unknown as IpcMainArg, stub.handlers, opts);
+    return { ipc, stub, opts };
+  };
+  const UNFOCUSED: IpcContext[] = [
+    { windowFocused: false, windowVisible: true, shownByNotificationAt: null },
+    { windowFocused: true, windowVisible: false, shownByNotificationAt: null },
+    { windowFocused: false, windowVisible: false, shownByNotificationAt: null },
+    // focus-steal guard: main raised the window from a toast click less than LIMITS.focusGuardMainMs ago
+    { windowFocused: true, windowVisible: true, shownByNotificationAt: NOW - LIMITS.focusGuardMainMs + 1 },
+    { windowFocused: true, windowVisible: true, shownByNotificationAt: NOW },
+  ];
+
+  it('FOCUS_GATED is exactly FOCUS_GATED_CHANNELS, a subset of IPC_CHANNELS, without auto:disable / auto:pause', () => {
+    expect([...FOCUS_GATED].sort()).toEqual([...FOCUS_GATED_CHANNELS].sort());
+    for (const c of FOCUS_GATED) expect(IPC_CHANNELS).toContain(c);
+    expect(FOCUS_GATED.has('auto:disable')).toBe(false);
+    expect(FOCUS_GATED.has('auto:pause')).toBe(false);
+  });
+
+  it('every gated channel refuses an unfocused / hidden / just-raised window with WINDOW_NOT_FOCUSED, before its handler', async () => {
+    for (const ctx of UNFOCUSED) {
+      const { ipc, stub, opts } = setup(ctx);
+      for (const channel of FOCUS_GATED_CHANNELS) {
+        expect(await ipc.handlers.get(channel)!(EVENT, VALID[channel]), channel).toEqual(fail('WINDOW_NOT_FOCUSED'));
+      }
+      expect(stub.calls).toHaveLength(0);
+      expect(opts.audit).toHaveBeenCalledTimes(FOCUS_GATED_CHANNELS.length);
+      for (const [kind, ref, detail, at] of opts.audit.mock.calls) {
+        expect(kind).toBe('ipc_rejected');
+        expect(FOCUS_GATED_CHANNELS).toContain(ref);
+        expect(detail).toEqual({ reason: 'window_not_focused' });
+        expect(at).toBe(NOW);
+      }
+    }
+  });
+
+  it('every OTHER channel (auto:disable, auto:pause included) works from an unfocused, hidden window', async () => {
+    const { ipc, stub, opts } = setup({ windowFocused: false, windowVisible: false, shownByNotificationAt: NOW });
+    const others = IPC_CHANNELS.filter((c) => !FOCUS_GATED.has(c));
+    expect(others).toContain('auto:disable');
+    expect(others).toContain('auto:pause');
+    for (const channel of others) {
+      expect(await ipc.handlers.get(channel)!(EVENT, VALID[channel]), channel).toEqual(ok(null));
+    }
+    expect(stub.calls).toHaveLength(others.length);
+    expect(opts.audit).not.toHaveBeenCalled();
+  });
+
+  it('the guard ends exactly LIMITS.focusGuardMainMs after the toast raise; focused + visible passes', async () => {
+    const { ipc, stub } = setup({
+      windowFocused: true,
+      windowVisible: true,
+      shownByNotificationAt: NOW - LIMITS.focusGuardMainMs,
+    });
+    for (const channel of FOCUS_GATED_CHANNELS) {
+      expect(await ipc.handlers.get(channel)!(EVENT, VALID[channel]), channel).toEqual(ok(null));
+    }
+    expect(stub.calls.map((c) => c.channel).sort()).toEqual([...FOCUS_GATED_CHANNELS].sort());
+  });
+
+  it('the focus gate runs AFTER the sender check and the parse: an untrusted or malformed call is BAD_REQUEST', async () => {
+    const ipc = fakeIpcMain();
+    const opts = options({
+      isTrusted: () => false,
+      windowState: () => UNFOCUSED[0]!,
+      now: () => NOW,
+    });
+    registerIpc(ipc as unknown as IpcMainArg, stubHandlers().handlers, opts);
+    expect(await ipc.handlers.get('item:undoChange')!(EVENT, VALID['item:undoChange'])).toEqual(fail('BAD_REQUEST'));
+    const { ipc: ipc2 } = setup(UNFOCUSED[0]!);
+    expect(await ipc2.handlers.get('item:undoChange')!(EVENT, { itemId: 1 })).toEqual(fail('BAD_REQUEST'));
+  });
+
+  it('passesFocusGate is the pure form of the rule', () => {
+    expect(passesFocusGate({ windowFocused: true, windowVisible: true, shownByNotificationAt: null }, NOW)).toBe(true);
+    for (const ctx of UNFOCUSED) expect(passesFocusGate(ctx, NOW)).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------------------------------------------------
+// [V2] contract rows generated from shared/ipc.ts: a wrong-TYPE payload is refused on every channel (the extra-key and
+// untrusted-sender rows above already cover all of them), and the v2 channels refuse the values they must never carry.
+// ---------------------------------------------------------------------------------------------------------------------
+describe('[V2] generated invalid payloads', () => {
+  it('every channel refuses a payload of the wrong type as BAD_REQUEST', async () => {
+    const ipc = fakeIpcMain();
+    const stub = stubHandlers();
+    registerIpc(ipc as unknown as IpcMainArg, stub.handlers, options());
+    for (const channel of IPC_CHANNELS) {
+      const bad: unknown[] = VALID[channel] === undefined ? ['x', 0, [], null, {}] : ['x', 0, [], null, undefined];
+      for (const payload of bad) {
+        expect(await ipc.handlers.get(channel)!(EVENT, payload), `${channel} ${JSON.stringify(payload)}`).toEqual(
+          fail('BAD_REQUEST'),
+        );
+      }
+    }
+    expect(stub.calls).toHaveLength(0);
+  });
+
+  it('item:undoChange refuses an event id in place of the revision id; auto:undo a non-uuid; scope / provider enums hold', async () => {
+    const ipc = fakeIpcMain();
+    const stub = stubHandlers();
+    registerIpc(ipc as unknown as IpcMainArg, stub.handlers, options());
+    for (const payload of [
+      { itemId: 1, revisionId: 'a1b2c3d4e5f6g7h8' },
+      { itemId: 1, revisionId: 0 },
+      { itemId: 1, revisionId: 1, targetEventId: 'a1b2c3d4e5' },
+    ]) {
+      expect(await ipc.handlers.get('item:undoChange')!(EVENT, payload)).toEqual(fail('BAD_REQUEST'));
+    }
+    expect(await ipc.handlers.get('auto:undo')!(EVENT, { autoWriteId: 'not-a-uuid' })).toEqual(fail('BAD_REQUEST'));
+    expect(await ipc.handlers.get('wa:setReadScope')!(EVENT, { scope: 'everything' })).toEqual(fail('BAD_REQUEST'));
+    expect(await ipc.handlers.get('cli:pickExe')!(EVENT, { provider: 'antigravity_cli' })).toEqual(fail('BAD_REQUEST'));
+    expect(stub.calls).toHaveLength(0);
+  });
+
+  it('settings:set rejects auto, llm.provider, llm.cli.claudeExePath, llm.cli.allowOverage, whatsapp.readTools.scope + audit', async () => {
+    const ipc = fakeIpcMain();
+    const stub = stubHandlers();
+    const opts = options();
+    registerIpc(ipc as unknown as IpcMainArg, stub.handlers, opts);
+    const hostile = [
+      { auto: { enabled: true } },
+      { llm: { provider: 'claude_cli' } },
+      { llm: { cli: { claudeExePath: 'C:/Users/x/Downloads/claude.exe' } } },
+      { llm: { cli: { allowOverage: true } } },
+      { whatsapp: { readTools: { scope: 'all_chats' } } },
+    ];
+    for (const payload of hostile) {
+      expect(await ipc.handlers.get('settings:set')!(EVENT, payload), JSON.stringify(payload)).toEqual(
+        fail('BAD_REQUEST'),
+      );
+    }
+    expect(stub.calls).toHaveLength(0);
+    expect(opts.audit).toHaveBeenCalledTimes(hostile.length);
+    for (const [kind, ref, detail] of opts.audit.mock.calls) {
+      expect([kind, ref, detail]).toEqual(['ipc_rejected', 'settings:set', { reason: 'bad_payload' }]);
+    }
+    // the allowed siblings of those keys still pass
+    expect(
+      await ipc.handlers.get('settings:set')!(EVENT, {
+        llm: { cli: { claudeModel: 'sonnet', maxRunsPerHour: 10 } },
+        whatsapp: { readTools: { enabled: false, windowDays: 7 } },
+        voice: { tier: 'voice-lite' },
+        images: { cloud: false },
+      }),
+    ).toEqual(ok(null));
   });
 });

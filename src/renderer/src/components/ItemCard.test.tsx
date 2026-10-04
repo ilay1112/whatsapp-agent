@@ -646,8 +646,22 @@ describe('ItemCard - the sheet names the target calendar, never its API id', () 
       ok: true,
       value: {
         calendars: [
-          { id: 'primary', name: 'Personal', primary: true, timeZone: 'Asia/Jerusalem', writable: true },
-          { id: secondary, name: 'Work', primary: false, timeZone: 'Asia/Jerusalem', writable: true },
+          {
+            id: 'primary',
+            name: 'Personal',
+            primary: true,
+            timeZone: 'Asia/Jerusalem',
+            writable: true,
+            accessRole: 'owner',
+          },
+          {
+            id: secondary,
+            name: 'Work',
+            primary: false,
+            timeZone: 'Asia/Jerusalem',
+            writable: true,
+            accessRole: 'owner',
+          },
         ],
       },
     }));

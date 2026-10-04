@@ -17,6 +17,7 @@ import { IPC_REQUEST_SCHEMAS } from '../../src/shared/ipc.ts';
 import { LIMITS } from '../../src/shared/types.ts';
 import type { ActionId, EpochMs, ItemCard } from '../../src/shared/types.ts';
 import type { IpcEventLike } from '../../src/main/ipc/sender.ts';
+import { makeExecRig, stopRigsChecked, type Rig as ExecRig } from '../helpers/ledger.execRig.ts';
 
 const CHAT = '972550000001@s.whatsapp.net';
 const REPO_ROOT = fileURLToPath(new URL('../..', import.meta.url));
@@ -608,8 +609,184 @@ describe('I1 - notification and tray paths carry no approval capability', () => 
     // Nothing a tray click can do produces a side effect; the push surface stays the declared event set.
     expect(harness.bridge.sends).toHaveLength(before);
     const events = new Set(harness.pushes.map((p) => p.event));
+    // [V2] C2 8 adds four read-only state pushes (policy state, CLI status, queue counters, voice progress numbers).
+    // None of them carries an approval capability; the send assertion above is unchanged.
     for (const e of events) {
-      expect(['health', 'dashboard', 'pairing', 'google', 'model', 'language', 'navigate']).toContain(e);
+      expect([
+        'health',
+        'dashboard',
+        'pairing',
+        'google',
+        'model',
+        'language',
+        'navigate',
+        'auto:changed',
+        'cli:changed',
+        'queue:changed',
+        'voice:progress',
+      ]).toContain(e);
     }
+  });
+});
+
+// ---------------------------------------------------------------------------------------------------------------------
+// [V2] (owner V2-W2-02) T2 8.2 group 5 extension: `update_event` rows. The REAL ActionExecutor + McpWriteClient/McpReadClient over
+// the fake calendar v2 (tests/helpers/ledger.execRig.ts), ledger rules 6-9 attached to every rig.
+// ---------------------------------------------------------------------------------------------------------------------
+
+const WED = { startLocal: '2026-10-07T15:00:00', endLocal: '2026-10-07T16:00:00' };
+const THU = { startLocal: '2026-10-08T17:00:00', endLocal: '2026-10-08T18:00:00' };
+const FRI = { startLocal: '2026-10-09T10:00:00', endLocal: '2026-10-09T11:00:00' };
+
+describe('[V2] A11 - update_event approvals are bound like every other kind', () => {
+  const rigs: ExecRig[] = [];
+  afterEach(() => stopRigsChecked(rigs.splice(0)));
+  async function rig(opts: Parameters<typeof makeExecRig>[0] = {}): Promise<ExecRig> {
+    const r = await makeExecRig(opts);
+    rigs.push(r);
+    r.attachLedger();
+    return r;
+  }
+  const patches = (r: ExecRig) => r.cal.calls.filter((c) => c.tool === 'update-event');
+
+  it('confirmDrift is honoured ONLY after this action answered needs_confirm_drift', async () => {
+    const r = await rig();
+    const a = await r.createByClick({ slot: WED });
+    const b = await r.createByClick({ chatN: 2, slot: FRI });
+    const da = r.seedDelta({ source: a, change: 'reschedule', to: THU });
+    const db = r.seedDelta({
+      source: b,
+      change: 'reschedule',
+      to: { startLocal: '2026-10-10T10:00:00', endLocal: '2026-10-10T11:00:00' },
+    });
+    r.cal.userEditsInGoogle(a.calendarEventId!, { summary: 'Edited in Google' });
+    r.cal.userEditsInGoogle(b.calendarEventId!, { summary: 'Edited in Google too' });
+    // a FIRST click that already carries confirmDrift cannot skip the drift question
+    expect(await r.click(da.action.id, { confirmDrift: true })).toMatchObject({
+      ok: true,
+      value: { outcome: 'needs_confirm_drift' },
+    });
+    expect(r.repos.actions.byId(da.action.id)!.state).toBe('pending');
+    // the drift answer of action A does not unlock action B
+    expect(await r.click(db.action.id, { confirmDrift: true })).toMatchObject({
+      ok: true,
+      value: { outcome: 'needs_confirm_drift' },
+    });
+    expect(patches(r)).toHaveLength(0);
+    // the second click on A ("Apply anyway") executes exactly one PATCH, bound to the user's click
+    expect(await r.click(da.action.id, { confirmDrift: true })).toMatchObject({ ok: true, value: { outcome: 'done' } });
+    expect(patches(r)).toHaveLength(1);
+    const row = r.repos.actions.byId(da.action.id)!;
+    expect(row.state).toBe('done');
+    expect(row.approvedBy).toBe('user');
+  });
+
+  it('an ordinary click without confirmDrift never applies a drifted event, however often it is repeated', async () => {
+    const r = await rig();
+    const a = await r.createByClick({ slot: WED });
+    const d = r.seedDelta({ source: a, change: 'reschedule', to: THU });
+    r.cal.userEditsInGoogle(a.calendarEventId!, { start: '2026-10-07T16:30:00', end: '2026-10-07T17:30:00' });
+    for (let i = 0; i < 3; i += 1) {
+      expect(await r.click(d.action.id)).toMatchObject({ ok: true, value: { outcome: 'needs_confirm_drift' } });
+    }
+    expect(patches(r)).toHaveLength(0);
+    expect(r.repos.actions.byId(d.action.id)!.state).toBe('pending');
+  });
+
+  it('confirmDrift does not override any other refusal: foreign event, stale revision, wrong hash, kind mismatch', async () => {
+    const r = await rig();
+    const a = await r.createByClick({ slot: WED });
+    const d = r.seedDelta({ source: a, change: 'reschedule', to: THU });
+    r.cal.userEditsInGoogle(a.calendarEventId!, { summary: 'Edited in Google' });
+    expect(await r.click(d.action.id)).toMatchObject({ ok: true, value: { outcome: 'needs_confirm_drift' } });
+    // wrong shownHash
+    expect(await r.click(d.action.id, { confirmDrift: true, shownHash: 'f'.repeat(64) })).toMatchObject({ ok: false });
+    // kind mismatch (the IPC schema refuses confirmDrift on a create_event before any handler)
+    expect(
+      IPC_REQUEST_SCHEMAS['action:approve'].safeParse({
+        actionId: d.action.id,
+        kind: 'create_event',
+        shownHash: d.action.contentSha256,
+        confirmDrift: true,
+      }).success,
+    ).toBe(false);
+    expect(
+      IPC_REQUEST_SCHEMAS['action:approve'].safeParse({
+        actionId: d.action.id,
+        kind: 'send_reply',
+        shownHash: d.action.contentSha256,
+        confirmDrift: true,
+      }).success,
+    ).toBe(false);
+    // stale revision (the source moved on since the card was built)
+    r.repos.items.update(a.id, { eventRevision: 9 }, r.clock.now() as never);
+    expect(await r.click(d.action.id, { confirmDrift: true })).toEqual({ ok: false, error: { code: 'ACTION_STALE' } });
+    expect(patches(r)).toHaveLength(0);
+
+    // a foreign event (no app tag) with drift: confirmDrift still ends at CAL_EVENT_FOREIGN, zero PATCHes
+    const held = r.seedHeldEvent({ chatN: 3, eventId: 'foreignevt0001', tags: null, withBaseline: true });
+    const f = r.seedDelta({ source: held, change: 'reschedule', to: FRI });
+    const first = await r.click(f.action.id, { confirmDrift: true });
+    const second = await r.click(f.action.id, { confirmDrift: true });
+    for (const res of [first, second]) {
+      if (res.ok) expect(res.value.outcome).not.toBe('done');
+    }
+    expect(patches(r)).toHaveLength(0);
+    expect(r.repos.actions.byId(f.action.id)!.state).not.toBe('done');
+  });
+
+  it('a double approve racing a SLOW pre-flight get-event produces exactly one update-event', async () => {
+    let gate: (() => void) | null = null;
+    let slow = false;
+    let parked = 0;
+    const r = await rig({
+      wrapRead: (read) => ({
+        ...read,
+        getEvent: async (...args: Parameters<typeof read.getEvent>) => {
+          if (slow) {
+            parked += 1;
+            await new Promise<void>((res) => (gate = res));
+          }
+          return read.getEvent(...args);
+        },
+      }),
+    });
+    const a = await r.createByClick({ slot: WED });
+    const d = r.seedDelta({ source: a, change: 'reschedule', to: THU });
+    slow = true;
+    const p1 = r.click(d.action.id);
+    const p2 = r.click(d.action.id);
+    // release every parked pre-flight (each click may park one)
+    for (let i = 0; i < 20 && gate === null; i += 1) await new Promise((res) => setTimeout(res, 5));
+    slow = false;
+    for (let i = 0; i < 5; i += 1) {
+      const g = gate as (() => void) | null;
+      gate = null;
+      g?.();
+      await new Promise((res) => setTimeout(res, 5));
+    }
+    const [x, y] = await Promise.all([p1, p2]);
+    expect(parked, 'the pre-flight was really slow (non-vacuous race)').toBeGreaterThanOrEqual(1);
+    const done = [x, y].filter((res) => res.ok && res.value.outcome === 'done');
+    expect(done).toHaveLength(1);
+    const loser = [x, y].find((res) => !(res.ok && res.value.outcome === 'done'))!;
+    expect(loser.ok ? loser.value.outcome : loser.error.code).toMatch(/ACTION_STALE|ACTION_IN_FLIGHT|done/);
+    expect(patches(r)).toHaveLength(1);
+    // a third click after the winner finished is refused and still produces no PATCH
+    expect((await r.click(d.action.id)).ok).toBe(false);
+    expect(patches(r)).toHaveLength(1);
+  });
+
+  it('an update_event row can never become approved without approved_by (I1 at the DB)', async () => {
+    const r = await rig();
+    const a = await r.createByClick({ slot: WED });
+    const d = r.seedDelta({ source: a, change: 'reschedule', to: THU });
+    expect(() =>
+      r.db
+        .prepare(`UPDATE actions SET state='approved', approved_at=?, approved_final_json=canonical_json WHERE id=?`)
+        .run(r.clock.now(), d.action.id),
+    ).toThrow();
+    expect(r.repos.actions.byId(d.action.id)!.state).toBe('pending');
+    expect(patches(r)).toHaveLength(0);
   });
 });

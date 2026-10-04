@@ -3,7 +3,7 @@
 // an ErrorCode and never the provider's message (which can echo prompt text).
 import { describe, expect, it } from 'vitest';
 import { CLAUDE_MODEL_PRESETS, GEMINI_MODEL_PRESETS } from '../../../shared/settings';
-import type { HardwareInfo, ModelPlan, TierInfo } from '../../../shared/types';
+import { CONSENT_VERSIONS, type HardwareInfo, type ModelPlan, type TierInfo } from '../../../shared/types';
 import { LlmError } from '../../llm/types';
 import { makeFixture, NOW_0 } from '../register.fixtures';
 import {
@@ -32,7 +32,7 @@ function tier(over: Partial<TierInfo> & { tier: TierInfo['tier'] }): TierInfo {
   };
 }
 function plan(selected: ModelPlan['selectedTier'], tiers: TierInfo[]): ModelPlan {
-  return { recommendedTier: selected, selectedTier: selected, tiers, suggestSmaller: false };
+  return { recommendedTier: selected, selectedTier: selected, tiers, suggestSmaller: false, mmproj: null }; // [V2] + mmproj
 }
 
 describe('llm:getHardware / llm:getConfig', () => {
@@ -44,7 +44,7 @@ describe('llm:getHardware / llm:getConfig', () => {
 
   it('getConfig reports key PRESENCE (last4 only), consent per kind and the rolling 24 h cloud usage', async () => {
     const f = makeFixture();
-    f.state.consents.set('cloud_claude', 1);
+    f.state.consents.set('cloud_claude', CONSENT_VERSIONS.cloud_claude); // [V2] v2 text
     f.state.cloudTokens = { inputTokens: 1200, outputTokens: 340 };
     f.deps.secrets.has = (name) =>
       name === 'anthropic_api_key' ? { present: true, last4: '6789' } : { present: false, last4: '' };
@@ -63,7 +63,13 @@ describe('llm:getHardware / llm:getConfig', () => {
       anthropic_api_key: { present: true, last4: '6789' },
       gemini_api_key: { present: false, last4: '' },
     });
-    expect(res.value.consents).toEqual({ whatsapp_tos: false, cloud_claude: true, cloud_gemini: false });
+    expect(res.value.consents).toEqual({
+      whatsapp_tos: false,
+      cloud_claude: true,
+      cloud_gemini: false,
+      cloud_claude_cli: false, // [V2] C2 1.1
+      cloud_antigravity_cli: false,
+    });
     expect(res.value.usageToday).toEqual({ inputTokens: 1200, outputTokens: 340, budget: 200_000 });
     // A rolling window, not a calendar day: a time-zone change cannot reset the budget.
     expect(windowStart).toBe(NOW_0 - USAGE_WINDOW_MS);
@@ -104,7 +110,7 @@ describe('llm:setProvider', () => {
 
   it('consent without a stored key is KEY_MISSING', async () => {
     const f = makeFixture();
-    f.state.consents.set('cloud_gemini', 1);
+    f.state.consents.set('cloud_gemini', CONSENT_VERSIONS.cloud_gemini); // [V2]
     expect(await createLlmHandlers(f.deps)['llm:setProvider']({ provider: 'gemini' }, CTX)).toEqual({
       ok: false,
       error: { code: 'KEY_MISSING' },
@@ -117,7 +123,7 @@ describe('llm:setProvider', () => {
       ['gemini', 'cloud_gemini', 'geminiModel'],
     ] as const) {
       const f = makeFixture();
-      f.state.consents.set(kind, 1);
+      f.state.consents.set(kind, CONSENT_VERSIONS[kind]); // [V2]
       f.state.settings.llm[field] = '';
       f.deps.secrets.has = () => ({ present: true, last4: '6789' });
       expect(await createLlmHandlers(f.deps)['llm:setProvider']({ provider }, CTX), provider).toEqual({
@@ -132,7 +138,7 @@ describe('llm:setProvider', () => {
   it('a fully configured cloud provider is written, the cached provider dropped and the switch audited', async () => {
     let invalidated = 0;
     const f = makeFixture();
-    f.state.consents.set('cloud_claude', 1);
+    f.state.consents.set('cloud_claude', CONSENT_VERSIONS.cloud_claude); // [V2]
     f.deps.secrets.has = () => ({ present: true, last4: '6789' });
     f.deps.providerFactory.invalidate = async () => {
       invalidated += 1;
@@ -249,7 +255,13 @@ describe('llm:validateKey / llm:listModels', () => {
 describe('the per-provider maps are complete and point at the right rows', () => {
   it('secret name, consent kind and presets exist for both cloud providers', () => {
     expect(SECRET_FOR).toEqual({ claude: 'anthropic_api_key', gemini: 'gemini_api_key' });
-    expect(CONSENT_FOR).toEqual({ claude: 'cloud_claude', gemini: 'cloud_gemini' });
+    // [V2] C2 1.1 CONSENT_KIND_FOR covers every CloudProviderId (the two CLI ids too)
+    expect(CONSENT_FOR).toEqual({
+      claude: 'cloud_claude',
+      gemini: 'cloud_gemini',
+      claude_cli: 'cloud_claude_cli',
+      antigravity_cli: 'cloud_antigravity_cli',
+    });
     expect(PRESETS_FOR.claude).toEqual(CLAUDE_MODEL_PRESETS);
     expect(PRESETS_FOR.gemini).toEqual(GEMINI_MODEL_PRESETS);
   });

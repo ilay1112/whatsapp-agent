@@ -6,7 +6,7 @@ import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { createBridgeDb, type BridgeDb } from './bridgeDb';
+import { createBridgeDb, type BridgeDb, type BridgeMessageRowV2 } from './bridgeDb';
 import { createFakeBridgeDb, type FakeBridgeDb } from '../../../tests/fakes/fake-bridge-db';
 
 const CHAT_A = '972550000001@s.whatsapp.net';
@@ -293,4 +293,128 @@ describe('createBridgeDb - concurrency', () => {
     // the next trigger succeeds again
     expect(db.rowsAfter(0, 10)).toHaveLength(1);
   }, 15_000);
+});
+
+// =====================================================================================================================================
+// [V2] B17 / C2 12: the four SELECT-only reads + the `filename` column (owner V2-W1-05-wa-toolserver)
+// =====================================================================================================================================
+describe('[V2] createBridgeDb - the four WhatsApp-tool reads', () => {
+  const seed = (fake: FakeBridgeDb, chat: string, n: number, prefix: string): number[] =>
+    Array.from({ length: n }, (_, i) =>
+      fake.addMessage({
+        id: `${prefix}${i}`,
+        chatJid: chat,
+        sender: '972550000001',
+        content: `${prefix} text ${i}`,
+        fromMe: i % 2 === 0,
+      }),
+    );
+
+  it('messagesBefore: one contact (both JID forms), rowid < before, newest first, LIMIT n', () => {
+    const { path, fake } = newStore();
+    fake.addLidMapping(LID, CHAT_A);
+    const a = seed(fake, CHAT_A, 3, 'a');
+    seed(fake, CHAT_B, 2, 'b');
+    const l = seed(fake, LID, 2, 'l');
+    const db = open(path);
+    expect(db.messagesBefore(CHAT_A, null, 10).map((r) => r.id)).toEqual(['l1', 'l0', 'a2', 'a1', 'a0']);
+    expect(db.messagesBefore(LID, null, 10).map((r) => r.id)).toEqual(['l1', 'l0', 'a2', 'a1', 'a0']);
+    expect(db.messagesBefore(CHAT_A, l[0]!, 2).map((r) => r.rowid)).toEqual([a[2], a[1]]);
+    expect(db.messagesBefore(CHAT_A, null, 0)).toEqual([]);
+    expect(db.messagesBefore(CHAT_A, null, Number.NaN)).toEqual([]);
+    expect(db.messagesBefore('972550000009@s.whatsapp.net', null, 5)).toEqual([]);
+  });
+
+  it('messageByRowid: the row with its chat_jid; unknown / invalid rowids => null', () => {
+    const { path, fake } = newStore();
+    const [r0] = seed(fake, CHAT_B, 1, 'b');
+    const db = open(path);
+    expect(db.messageByRowid(r0!)).toMatchObject({ id: 'b0', chat_jid: CHAT_B, content: 'b text 0', filename: null });
+    for (const bad of [0, -1, 1.5, Number.NaN, 999_999]) expect(db.messageByRowid(bad)).toBeNull();
+  });
+
+  it('searchContent: instr() on a BOUND needle (ASCII case-folded + exact), deleted / NULL content excluded, newest first', () => {
+    const { path, fake } = newStore();
+    fake.addMessage({ id: 's1', chatJid: CHAT_A, sender: '1', content: 'Coffee on Wednesday?', fromMe: false });
+    fake.addMessage({ id: 's2', chatJid: CHAT_B, sender: '1', content: 'coffee later', fromMe: false });
+    fake.addMessage({ id: 's3', chatJid: CHAT_A, sender: '1', content: 'נקבע קפה ברביעי', fromMe: true });
+    fake.seedDeleted({ id: 's4', chatJid: CHAT_A, sender: '1', content: 'deleted coffee', fromMe: false });
+    fake.addMessage({ id: 's5', chatJid: CHAT_A, sender: '1', content: "100% ' OR 1=1 -- _x_", fromMe: false });
+    const db = open(path);
+    expect(db.searchContent('coffee', CHAT_A, 0, 10).map((r) => r.id)).toEqual(['s1']);
+    expect(db.searchContent('COFFEE', null, 0, 10).map((r) => r.id)).toEqual(['s2', 's1']);
+    expect(db.searchContent('קפה', CHAT_A, 0, 10).map((r) => r.id)).toEqual(['s3']);
+    expect(db.searchContent("' OR 1=1 --", null, 0, 10).map((r) => r.id)).toEqual(['s5']);
+    expect(db.searchContent('%', null, 0, 10).map((r) => r.id)).toEqual(['s5']); // literal, not a LIKE wildcard
+    expect(db.searchContent('coffee', null, 0, 1).map((r) => r.id)).toEqual(['s2']);
+    const s1 = db.searchContent('Wednesday', CHAT_A, 0, 1)[0]!.rowid;
+    expect(db.searchContent('coffee', null, s1, 10).map((r) => r.id)).toEqual(['s2']); // rowid > sinceRowid
+  });
+
+  it('recentDmChats: DM JIDs only (phone + @lid), MAX(rowid) order, no group / status / newsletter', () => {
+    const { path, fake } = newStore();
+    seed(fake, CHAT_A, 1, 'a');
+    fake.seedGroupRow({ chatJid: '972550000003-1700000000@g.us', id: 'g0', content: 'group' });
+    fake.seedStatusRow({ id: 'st0', content: 'status' });
+    fake.seedNewsletterRow({ chatJid: '972550000004@newsletter', id: 'n0', content: 'news' });
+    seed(fake, LID, 1, 'l');
+    seed(fake, CHAT_B, 1, 'b');
+    const db = open(path);
+    expect(db.recentDmChats(10).map((c) => c.jid)).toEqual([CHAT_B, LID, CHAT_A]);
+    expect(db.recentDmChats(1)).toHaveLength(1);
+    expect(db.recentDmChats(0)).toEqual([]);
+  });
+
+  it('every SELECT carries the UNTRUSTED filename column; a store without the column reads NULL instead of failing', () => {
+    const { path, fake } = newStore();
+    fake.seedMediaRow({ chatJid: CHAT_A, id: 'img1', mediaType: 'image', filename: 'IMG-0001.jpg' });
+    const db = open(path);
+    expect(db.rowsAfter(0, 5)[0]).toMatchObject({ id: 'img1', filename: 'IMG-0001.jpg', media_type: 'image' });
+    expect((db.lastMessages(CHAT_A, 1)[0] as BridgeMessageRowV2).filename).toBe('IMG-0001.jpg');
+
+    const dir = mkdtempSync(join(tmpdir(), 'wca-bridgedb-'));
+    dirs.push(dir);
+    const oldPath = join(dir, 'messages.db');
+    const raw = new DatabaseSync(oldPath);
+    raw.exec(
+      'CREATE TABLE messages (id TEXT, chat_jid TEXT, sender TEXT, content TEXT, timestamp TIMESTAMP, is_from_me BOOLEAN, media_type TEXT, deleted_at TIMESTAMP)',
+    );
+    raw
+      .prepare('INSERT INTO messages VALUES (?, ?, ?, ?, ?, 0, ?, NULL)')
+      .run('o1', CHAT_A, '1', 'old', '2026-09-21 10:00:00+03:00', '');
+    raw.close();
+    const old = open(oldPath);
+    expect(old.messagesBefore(CHAT_A, null, 5)[0]).toMatchObject({ id: 'o1', filename: null });
+  });
+
+  it('SQLITE_BUSY => [] / null for the four reads (never a throw); the connection stays read-only', async () => {
+    const { path, fake } = newStore();
+    const [r0] = seed(fake, CHAT_A, 2, 'a');
+    const db = open(path);
+    db.open();
+    const lock = fake.holdWriteLock(2_600);
+    expect(db.messagesBefore(CHAT_A, null, 5)).toEqual([]);
+    expect(db.messageByRowid(r0!)).toBeNull();
+    expect(db.searchContent('text', null, 0, 5)).toEqual([]);
+    expect(db.recentDmChats(5)).toEqual([]);
+    await lock;
+    expect(db.messagesBefore(CHAT_A, null, 5)).toHaveLength(2);
+    const src = readFileSync(fileURLToPath(new URL('./bridgeDb.ts', import.meta.url)), 'utf8');
+    expect(src).not.toMatch(/\bCREATE INDEX\b/i);
+  }, 20_000);
+
+  it('a non-busy failure propagates, and a closed / missing store answers empty', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'wca-bridgedb-'));
+    dirs.push(dir);
+    const missing = open(join(dir, 'nope', 'messages.db'));
+    expect(missing.messagesBefore(CHAT_A, null, 5)).toEqual([]);
+    expect(missing.recentDmChats(5)).toEqual([]);
+    expect(missing.messageByRowid(1)).toBeNull();
+    const p = join(dir, 'broken.db');
+    const raw = new DatabaseSync(p);
+    raw.exec('CREATE TABLE unrelated (x INTEGER)');
+    raw.close();
+    const broken = open(p);
+    expect(() => broken.messagesBefore(CHAT_A, null, 5)).toThrow(/no such table/);
+  });
 });

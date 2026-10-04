@@ -109,3 +109,25 @@ describe('createIpcSender', () => {
     expect(() => sender.send('dashboard:changed', { itemIds: [1] })).not.toThrow();
   });
 });
+
+// [V2] C2 8: the four new push events travel through the same sender, payload verbatim, numbers / enums only.
+describe('[V2] createIpcSender - new push events', () => {
+  it('auto:changed, cli:changed, queue:changed and voice:progress reach the window unchanged', () => {
+    const send = vi.fn();
+    const sender = createIpcSender(() => ({ webContents: { send }, isDestroyed: () => false }));
+    const queue = { pending: 2, running: 1, transcribing: { seconds: 42 } };
+    const progress = { itemId: 3, phase: 'transcribe' as const, audioSeconds: 12 };
+    sender.send('queue:changed', queue);
+    sender.send('voice:progress', progress);
+    sender.send('auto:changed', { policy: null } as never);
+    sender.send('cli:changed', { provider: 'claude_cli', state: 'ready' } as never);
+    expect(send.mock.calls.map((c) => c[0])).toEqual([
+      'queue:changed',
+      'voice:progress',
+      'auto:changed',
+      'cli:changed',
+    ]);
+    expect(send.mock.calls[0]![1]).toBe(queue);
+    expect(send.mock.calls[1]![1]).toBe(progress);
+  });
+});

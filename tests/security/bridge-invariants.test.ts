@@ -27,6 +27,21 @@ import {
   type SpawnViolation,
 } from '../../src/main/bridge/invariants.ts';
 import { BRIDGE_ENV_ALLOW_LIST, createBridgeLauncher } from '../../src/main/bridge/launcher.ts';
+import {
+  AGY_ENV_KEYS,
+  CLAUDE_ENV_KEYS,
+  CLAUDE_S3_ENV_KEYS,
+  JOB_ENV_FORBIDDEN,
+  WHISPER_ENV_KEYS,
+  createJobRunner,
+  envKeysAllowed,
+  type JobSpec,
+} from '../../src/main/proc/jobRunner.ts';
+import { NEVER_PORTS, freePort } from '../../src/main/proc/freePort.ts';
+import { buildWhisperEnv } from '../../src/main/voice/whisperCli.ts';
+import { buildClaudeEnv } from '../../src/main/llm/cli/claudeCli.env.ts';
+import { buildAgyEnv } from '../../src/main/llm/cli/antigravityCli.ts';
+import { LLAMA_ENV_PASSTHROUGH, buildLlamaEnv } from '../../src/main/llm/local/llamaServer.ts';
 import { parsePidFile, taskkillArgs } from '../../src/main/proc/supervisor.ts';
 import { PS_QUERY_ARGS, reapOrphans } from '../../src/main/proc/reaper.ts';
 import { createPaths } from '../../src/main/paths.ts';
@@ -670,5 +685,218 @@ describe('[R2] reaper - a hostile pid file spawns nothing and kills nothing', ()
     expect(command).not.toMatch(/ProcessId=\d/); // the pid is never baked into the WQL filter
     expect(PS_QUERY_ARGS).toContain('-NoProfile');
     expect(PS_QUERY_ARGS).toContain('-NonInteractive');
+  });
+});
+
+// ---------------------------------------------------------------------------------------------------------------------
+// [V2] (owner V2-W2-02) T2 8.2 group 8 extensions: the job env allow-lists (B26; whisper = the llama list) asserted LITERALLY, the
+// real env builders under a poisoned main-process env, the JobRunner refusing any other key set BEFORE spawn, and NEVER_PORTS for
+// the tool server's port picker.
+// ---------------------------------------------------------------------------------------------------------------------
+
+/** A main-process env carrying every secret / redirect a job must never inherit (synthetic values, T5). */
+const POISONED_ENV: Record<string, string> = {
+  SystemRoot: 'C:\\Windows',
+  windir: 'C:\\Windows',
+  TEMP: 'C:\\Temp',
+  TMP: 'C:\\Temp',
+  NUMBER_OF_PROCESSORS: '8',
+  USERPROFILE: 'C:\\Users\\wca-fake-home',
+  HOMEDRIVE: 'C:',
+  HOMEPATH: '\\Users\\wca-fake-home',
+  APPDATA: 'C:\\Users\\wca-fake-home\\AppData\\Roaming',
+  LOCALAPPDATA: 'C:\\Users\\wca-fake-home\\AppData\\Local',
+  PATH: 'C:\\evil\\bin;C:\\Windows\\System32',
+  ANTHROPIC_API_KEY: 'sk-ant-TESTONLY-poison-0001',
+  ANTHROPIC_AUTH_TOKEN: 'TESTONLY-poison-0002',
+  ANTHROPIC_BASE_URL: 'https://evil.example.invalid',
+  CLAUDE_CODE_OAUTH_TOKEN: 'TESTONLY-poison-0003',
+  CLAUDE_CONFIG_DIR: 'C:\\evil\\claude',
+  GEMINI_API_KEY: 'AIzaTESTONLY-poison-0004',
+  GOOGLE_API_KEY: 'AIzaTESTONLY-poison-0005',
+  HTTPS_PROXY: 'http://evil.example.invalid:3128',
+  HTTP_PROXY: 'http://evil.example.invalid:3128',
+  NODE_OPTIONS: '--require C:\\evil\\hook.js',
+  ELECTRON_RUN_AS_NODE: 'TESTONLY-poison-run-as-node',
+  WHATSAPP_BRIDGE_TOKEN: 'TESTONLY-poison-bridge-token',
+  WHATSAPP_WEBHOOK_SECRET: 'TESTONLY-poison-doorbell',
+  LLAMA_API_KEY: 'TESTONLY-poison-llama',
+};
+const POISON_VALUES = Object.entries(POISONED_ENV)
+  .filter(([k]) => /KEY|TOKEN|URL|PROXY|SECRET|OPTIONS|CONFIG|RUN_AS/.test(k))
+  .map(([, v]) => v);
+
+describe('[V2] I6 / B26 - the job env allow-lists are literal and never inherit the main process env', () => {
+  it('pins the four key sets literally (whisper = the llama list)', () => {
+    expect([...CLAUDE_ENV_KEYS]).toEqual([
+      'SystemRoot',
+      'PATH',
+      'TEMP',
+      'TMP',
+      'USERPROFILE',
+      'HOMEDRIVE',
+      'HOMEPATH',
+      'APPDATA',
+      'LOCALAPPDATA',
+      'MCP_TIMEOUT',
+      'MCP_TOOL_TIMEOUT',
+      'ENABLE_TOOL_SEARCH',
+      'CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC',
+      'DISABLE_TELEMETRY',
+      'DISABLE_ERROR_REPORTING',
+      'DISABLE_AUTOUPDATER',
+      'DISABLE_BUG_COMMAND',
+      'CI',
+      'CLAUDE_CODE_DISABLE_CLAUDE_MDS',
+      'CLAUDE_CODE_DISABLE_AUTO_MEMORY',
+      'ENABLE_CLAUDEAI_MCP_SERVERS',
+    ]);
+    expect([...CLAUDE_S3_ENV_KEYS]).toEqual([...CLAUDE_ENV_KEYS, 'WCA_MCP_TOKEN']);
+    expect([...AGY_ENV_KEYS]).toEqual([
+      'SystemRoot',
+      'PATH',
+      'USERPROFILE',
+      'HOME',
+      'APPDATA',
+      'LOCALAPPDATA',
+      'TEMP',
+      'TMP',
+      'AGY_CLI_DISABLE_AUTO_UPDATE',
+    ]);
+    expect([...WHISPER_ENV_KEYS]).toEqual(['SystemRoot', 'windir', 'TEMP', 'TMP', 'NUMBER_OF_PROCESSORS']);
+    expect([...WHISPER_ENV_KEYS]).toEqual([...LLAMA_ENV_PASSTHROUGH]);
+    // no allow-list names a forbidden key, in any casing
+    const forbidden = new Set(JOB_ENV_FORBIDDEN.map((k) => k.toLowerCase()));
+    for (const k of [...CLAUDE_S3_ENV_KEYS, ...AGY_ENV_KEYS, ...WHISPER_ENV_KEYS])
+      expect(forbidden.has(k.toLowerCase()), k).toBe(false);
+    for (const k of [
+      'ANTHROPIC_API_KEY',
+      'CLAUDE_CONFIG_DIR',
+      'GEMINI_API_KEY',
+      'GOOGLE_API_KEY',
+      'HTTPS_PROXY',
+      'NODE_OPTIONS',
+    ])
+      expect(JOB_ENV_FORBIDDEN).toContain(k);
+  });
+
+  it('the REAL builders produce exactly their key set from a poisoned env, and no poisoned value survives', () => {
+    const whisper = buildWhisperEnv(POISONED_ENV);
+    expect(Object.keys(whisper).sort()).toEqual([...WHISPER_ENV_KEYS].sort());
+    const claude = buildClaudeEnv({ processEnv: POISONED_ENV, tempDir: 'C:\\run\\x', token: null });
+    expect(Object.keys(claude).sort()).toEqual([...CLAUDE_ENV_KEYS].sort());
+    const claudeS3 = buildClaudeEnv({ processEnv: POISONED_ENV, tempDir: 'C:\\run\\x', token: 'TESTONLY-run-token' });
+    expect(Object.keys(claudeS3).sort()).toEqual([...CLAUDE_S3_ENV_KEYS].sort());
+    const agy = buildAgyEnv({ processEnv: POISONED_ENV, tempDir: 'C:\\run\\y', home: {} });
+    expect(Object.keys(agy).sort()).toEqual([...AGY_ENV_KEYS].sort());
+    for (const env of [whisper, claude, claudeS3, agy]) {
+      const values = Object.values(env).join('\n');
+      for (const v of POISON_VALUES) expect(values).not.toContain(v);
+      // PATH is never inherited: it is System32 only (the poisoned PATH carries an attacker dir first)
+      if ('PATH' in env) expect(env.PATH).toBe('C:\\Windows\\System32');
+      expect(envKeysAllowed(env === whisper ? 'voice' : 'cli', env)).toBe('ok');
+    }
+    // the llama child gets the same pass-through list (+ its own key, which no job list may carry)
+    const llama = buildLlamaEnv('TESTONLY-llama-key', POISONED_ENV);
+    expect(Object.keys(llama).sort()).toEqual(['LLAMA_API_KEY', ...WHISPER_ENV_KEYS].sort());
+    expect(
+      Object.keys(llama)
+        .filter((k) => k !== 'LLAMA_API_KEY')
+        .sort(),
+    ).toEqual(Object.keys(whisper).sort());
+  });
+
+  it("envKeysAllowed: one key more, one key less, another kind's list, or a forbidden key in any casing => refused", () => {
+    const whisper = buildWhisperEnv(POISONED_ENV);
+    expect(envKeysAllowed('voice', { ...whisper, PATH: 'x' })).toBe('env_keys');
+    const { NUMBER_OF_PROCESSORS: _drop, ...less } = whisper;
+    expect(envKeysAllowed('voice', less)).toBe('env_keys');
+    const claude = buildClaudeEnv({ processEnv: POISONED_ENV, tempDir: 'C:\\run\\x', token: null });
+    expect(envKeysAllowed('voice', claude)).toBe('env_keys');
+    expect(envKeysAllowed('cli', whisper)).toBe('env_keys');
+    for (const k of [
+      'ANTHROPIC_API_KEY',
+      'anthropic_base_url',
+      'Claude_Config_Dir',
+      'https_proxy',
+      'Node_Options',
+      'GEMINI_API_KEY',
+    ]) {
+      expect(envKeysAllowed('cli', { ...claude, [k]: 'x' }), k).toBe('env_forbidden');
+      expect(envKeysAllowed('voice', { ...whisper, [k]: 'x' }), k).toBe('env_forbidden');
+    }
+  });
+
+  it('the JobRunner refuses a spec with a non-allow-listed env BEFORE any spawn', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'wca-jobenv-'));
+    try {
+      const spawned: unknown[] = [];
+      const runner = createJobRunner({
+        runDir: dir,
+        now: () => 0 as EpochMs,
+        log: () => undefined,
+        proc: {
+          spawn: ((...a: unknown[]) => {
+            spawned.push(a);
+            throw new Error('must not spawn');
+          }) as unknown as SpawnFn,
+          killPid: async () => undefined,
+          setPriority: () => undefined,
+        },
+      });
+      const base = {
+        exePath: join(dir, 'tool.exe'),
+        args: [] as string[],
+        cwd: dir,
+        stdin: null,
+        stdout: 'ignore' as const,
+        wallClockMs: 1000,
+        graceMs: 10,
+        belowNormal: true,
+      };
+      const whisper = buildWhisperEnv(POISONED_ENV);
+      const bad: Array<[JobSpec['kind'], Record<string, string>, string]> = [
+        ['voice', { ...whisper, ANTHROPIC_API_KEY: 'x' }, 'env_forbidden'],
+        ['voice', { ...POISONED_ENV }, 'env_forbidden'],
+        ['voice', { ...whisper, PATH: 'C:\\evil' }, 'env_keys'],
+        [
+          'cli',
+          { ...buildClaudeEnv({ processEnv: POISONED_ENV, tempDir: dir, token: null }), WHATSAPP_BRIDGE_TOKEN: 'x' },
+          'env_forbidden',
+        ],
+        ['cli', { ...buildClaudeEnv({ processEnv: POISONED_ENV, tempDir: dir, token: null }), EXTRA: 'x' }, 'env_keys'],
+      ];
+      for (const [kind, env, reason] of bad) {
+        await expect(
+          runner.run({ ...base, kind, env }, async () => 'ran', new AbortController().signal),
+          `${kind} ${reason}`,
+        ).rejects.toMatchObject({ name: 'JobSpecError', reason });
+      }
+      expect(spawned).toEqual([]);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("[V2] NEVER_PORTS - the tool server never listens on the user's other bridge port", () => {
+  it("NEVER_PORTS holds 8080 (the port of the user's own reference bridge)", () => {
+    expect(NEVER_PORTS).toContain(8080);
+  });
+
+  it('freePort skips 8080 even when the OS hands it out repeatedly, and gives up instead of returning it', async () => {
+    const seq = [8080, 8080, 8080, 41234];
+    expect(await freePort({ listen: async () => seq.shift()! })).toBe(41234);
+    await expect(freePort({ listen: async () => 8080, maxAttempts: 5 })).rejects.toThrow(/no usable loopback port/);
+    const excluded = [8080, 50000, 50001];
+    expect(await freePort({ exclude: [50000], listen: async () => excluded.shift()! })).toBe(50001);
+  });
+
+  it('the real ephemeral bind is loopback and never 8080 (50 binds)', async () => {
+    for (let i = 0; i < 50; i += 1) {
+      const p = await freePort();
+      expect(p).not.toBe(8080);
+      expect(p).toBeGreaterThan(0);
+    }
   });
 });

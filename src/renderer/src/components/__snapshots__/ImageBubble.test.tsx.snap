@@ -1,0 +1,60 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`ImageBubble - sheet > RTL snapshot (he) 1`] = `
+<div
+  class="flex max-w-full flex-col gap-1 rounded-md rounded-ss-xs bg-quote px-3 py-2"
+  data-kind="invitation"
+  data-mode="card"
+  data-testid="image-bubble"
+>
+  <div
+    class="flex items-center gap-2 text-sm text-text-muted"
+  >
+    <span
+      aria-hidden="true"
+      class="icon icon-image"
+    />
+    <span>
+      תמונה
+    </span>
+  </div>
+  <div
+    aria-hidden="true"
+    class="media-rule"
+  />
+  <div
+    class="flex items-start gap-3"
+  >
+    <img
+      alt="תמונה שנשלחה על ידי דנה"
+      class="image-thumb shrink-0 rounded-sm"
+      data-testid="image-thumb"
+      draggable="false"
+      src="data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/wAALCAABAAEBAREA/8QAFAABAAAAAAAAAAAAAAAAAAAACf/EABQQAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQEAAD8AKp//2Q=="
+    />
+    <div
+      class="flex min-w-0 flex-col gap-1"
+    >
+      <span
+        class="text-xs text-text-muted"
+      >
+        טקסט שנקרא מהתמונה
+      </span>
+      <p
+        class="msg-text m-0 text-base"
+        data-testid="image-readtext"
+        dir="auto"
+        style="display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden;"
+      >
+        Dana & Yossi's wedding · Thursday 24.9.26 · reception 19:00
+      </p>
+    </div>
+  </div>
+  <p
+    class="media-caution m-0"
+    data-testid="image-caution"
+  >
+    נקרא מהתמונה - ייתכנו טעויות
+  </p>
+</div>
+`;

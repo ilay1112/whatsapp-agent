@@ -153,7 +153,9 @@ describe('trg_actions_frozen after v2 (I3 second line of defence)', () => {
     db.exec(
       `INSERT INTO actions(${ACTION_COLUMNS}) VALUES ('a1', 1, 1, 1, 'create_event', '{"v":1}', '${SHA}', 'k1', 1, NULL, 'pending', 1, 9)`,
     );
-    db.exec(`UPDATE actions SET state='approved', approved_at=2, approved_final_json='{"v":1}' WHERE id='a1'`);
+    db.exec(
+      `UPDATE actions SET state='approved', approved_at=2, approved_final_json='{"v":1}', approved_by='user' WHERE id='a1'`,
+    );
     db.exec(`UPDATE actions SET state='executing' WHERE id='a1'`);
     db.exec(`UPDATE actions SET state='failed', error_code='CAL_UNAVAILABLE' WHERE id='a1'`);
     db.exec(

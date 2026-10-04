@@ -7,6 +7,7 @@ import { createToolGate, type ToolGate } from '../../src/main/agent/toolGate.ts'
 import { DEFAULT_SETTINGS, type Settings } from '../../src/shared/settings.ts';
 import type { Logger, LogMeta } from '../../src/main/deps.ts';
 import type { BusyBlock, Chat, EpochMs, Item, Message } from '../../src/shared/types.ts';
+import { localToEpochMs } from '../../src/shared/when.ts';
 import type {
   AppEventRef,
   CurrentTimeProjection,
@@ -86,6 +87,7 @@ export function createRecordingReadClient(initialBusy: BusyBlock[] = []): Record
     findAppEvent(): Promise<McpResult<AppEventRef | null>> {
       return Promise.resolve({ ok: true, value: null });
     },
+    getEvent: () => Promise.resolve({ ok: false as const, error: 'unavailable' as const }), // [V2] C2 11 (unused by v1)
   };
 }
 
@@ -139,6 +141,8 @@ export function createTestEnv(opts: TestEnvOptions = {}): TestEnv {
       settings: () => settings,
       calendarConnected: () => calendarConnected,
       audit: (kind, ref, detail) => void audits.push({ kind, ref, detail }),
+      wa: { recentChats: () => [], chatMessages: () => [], search: () => [], context: () => null }, // [V2] C2 10
+      waAvailable: () => false, // [V2]
     }),
     patchSettings(mut) {
       mut(settings);
@@ -213,4 +217,94 @@ export function createIngestDouble(messages: Message[]): {
       return messages.slice(-Math.max(1, Math.trunc(n)));
     },
   };
+}
+
+// ======================= [V2-W1-03] the existing-event fixture (P2 15.2 harness: "seeds an in_calendar item with a done create_event") =======================
+
+export interface SeededEvent {
+  item: Item;
+  eventId: string;
+  actionId: string;
+}
+let seededEvents = 0;
+/**
+ * An app-created event of `chat`: an `in_calendar` item whose `create_event` action went `pending -> approved('user') -> executing -> done`
+ * through the REAL repos (so the v4 triggers check every step), with `calendar_event_id`, `event_start_ts`, `event_revision = 1` and
+ * `event_origin_item_id` = itself. The event id is in Google's base32hex alphabet (GOOGLE_EVENT_ID_RE) - P2 15.2's `exist<n>` is not
+ * (`x` is outside a-v), so the fixture uses `evtsrc<n>`.
+ */
+export function seedCalendarEvent(
+  repos: Repos,
+  chat: Chat,
+  ev: { title: string; startLocal: string; endLocal: string; location?: string; eventId?: string; createdAt?: EpochMs },
+): SeededEvent {
+  seededEvents += 1;
+  const at = ev.createdAt ?? ((ANCHOR_MS - 2 * 86_400_000 + seededEvents * 1_000) as EpochMs);
+  const eventId = ev.eventId ?? `evtsrc${String(seededEvents).padStart(4, '0')}`;
+  const startLocal = ev.startLocal.length === 16 ? `${ev.startLocal}:00` : ev.startLocal;
+  const endLocal = ev.endLocal.length === 16 ? `${ev.endLocal}:00` : ev.endLocal;
+  const created = repos.items.createOpen({
+    chatId: chat.id,
+    triggerMsgId: `wamid.SRC${seededEvents}`,
+    triggerTs: at,
+    analysis: 'running',
+    holdReason: null,
+    now: at,
+  });
+  const event = {
+    title: ev.title,
+    startLocal,
+    endLocal,
+    timeZone: TEST_TZ,
+    location: ev.location ?? '',
+    assumptions: [],
+    dateHint: '',
+  };
+  const proposal = repos.proposals.insertNext({
+    itemId: created.id,
+    provider: 'local',
+    model: 'seed',
+    extraction: null,
+    draftText: null,
+    replyLang: null,
+    event,
+    freeBusy: null,
+    suspicious: false,
+    createdAt: at,
+  });
+  const action = repos.actions.insertPending({
+    itemId: created.id,
+    proposalId: proposal.id,
+    chatId: chat.id,
+    payload: {
+      v: 1,
+      kind: 'create_event',
+      itemId: created.id,
+      chatRef: chat.id,
+      proposalVersion: proposal.version,
+      title: ev.title,
+      startLocal,
+      endLocal,
+      timeZone: TEST_TZ,
+      location: ev.location ?? '',
+    },
+    now: at,
+  });
+  if (repos.actions.markApprovedExecuting(action.id, action.canonicalJson, at, 'user') !== 'ok')
+    throw new Error('seedCalendarEvent: approve refused');
+  repos.actions.markDone(action.id, { kind: 'create_event', eventId, htmlLink: null }, at);
+  const item = repos.items.update(
+    created.id,
+    {
+      analysis: 'done',
+      eventState: 'created',
+      calendarEventId: eventId,
+      eventStartTs: localToEpochMs(startLocal, TEST_TZ),
+      eventRevision: 1,
+      eventOriginItemId: created.id,
+      currentProposalId: proposal.id,
+    },
+    at,
+  );
+  return { item, eventId, actionId: action.id };
 }

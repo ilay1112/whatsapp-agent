@@ -57,3 +57,37 @@ describe('assertConsent', () => {
     expect(() => assertConsent(repos, 'claude')).toThrow(ConsentRequiredError);
   });
 });
+
+// [V2] owner V2-W1-06-claude-cli: CONSENT_KIND_FOR +2 with exact versions (B21, T2 8.2 group 23).
+describe('[V2] CLI consent kinds', () => {
+  it('maps the two CLI ids to their own kinds (never the API-key kinds)', () => {
+    expect(CONSENT_KIND_FOR).toEqual({
+      claude_cli: 'cloud_claude_cli',
+      antigravity_cli: 'cloud_antigravity_cli',
+      claude: 'cloud_claude',
+      gemini: 'cloud_gemini',
+    });
+  });
+
+  it.each(['claude_cli', 'antigravity_cli'] as const)('%s needs its own consent at the EXACT current version', (id) => {
+    const kind = CONSENT_KIND_FOR[id];
+    expect(() => assertConsent(consents({}), id)).toThrow(ConsentRequiredError);
+    expect(() => assertConsent(consents({ [kind]: CONSENT_VERSIONS[kind] }), id)).not.toThrow();
+    expect(() => assertConsent(consents({ [kind]: CONSENT_VERSIONS[kind] + 1 }), id)).toThrow(ConsentRequiredError);
+    // the API-key consent of the same vendor never unlocks the subscription route (and vice versa)
+    expect(() =>
+      assertConsent(
+        consents({ cloud_claude: CONSENT_VERSIONS.cloud_claude, cloud_gemini: CONSENT_VERSIONS.cloud_gemini }),
+        id,
+      ),
+    ).toThrow(ConsentRequiredError);
+  });
+
+  it('claude / gemini with a v1 record after the bump to v2 are refused', () => {
+    expect(CONSENT_VERSIONS.cloud_claude).toBe(2);
+    expect(() => assertConsent(consents({ cloud_claude: 1 }), 'claude')).toThrow(ConsentRequiredError);
+    expect(() => assertConsent(consents({ cloud_claude_cli: CONSENT_VERSIONS.cloud_claude_cli }), 'claude')).toThrow(
+      ConsentRequiredError,
+    );
+  });
+});

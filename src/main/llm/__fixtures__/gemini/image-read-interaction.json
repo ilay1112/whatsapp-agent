@@ -1,0 +1,22 @@
+{
+  "_unverified": true,
+  "_note": "interactions.create response for V1 READ-IMAGE (response_format = IMAGE_READ_SCHEMA, no function declarations); synthetic flyer text only",
+  "id": "int_TESTONLY_0005",
+  "status": "completed",
+  "output_text": "{\"readable\":true,\"kind\":\"flyer\",\"readText\":\"Book club\\nTuesday Oct 6\\n7 pm\",\"language\":\"en\",\"title\":\"Book club\",\"dateText\":\"Tuesday Oct 6\",\"day\":6,\"month\":10,\"year\":0,\"weekday\":2,\"timeText\":\"7 pm\",\"hour\":19,\"minute\":0,\"timeAmbiguous\":false,\"endHour\":24,\"endMinute\":0,\"location\":\"\",\"confidence\":\"high\",\"suspicious\":false}",
+  "steps": [
+    {
+      "type": "model_output",
+      "content": [
+        {
+          "type": "text",
+          "text": "{\"readable\":true,\"kind\":\"flyer\",\"readText\":\"Book club\\nTuesday Oct 6\\n7 pm\",\"language\":\"en\",\"title\":\"Book club\",\"dateText\":\"Tuesday Oct 6\",\"day\":6,\"month\":10,\"year\":0,\"weekday\":2,\"timeText\":\"7 pm\",\"hour\":19,\"minute\":0,\"timeAmbiguous\":false,\"endHour\":24,\"endMinute\":0,\"location\":\"\",\"confidence\":\"high\",\"suspicious\":false}"
+        }
+      ]
+    }
+  ],
+  "usage": {
+    "total_input_tokens": 1500,
+    "total_output_tokens": 118
+  }
+}

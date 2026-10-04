@@ -8,11 +8,24 @@
 //   - the key is written straight to main (`secrets:set`) and NEVER read back: after saving, the only thing this view
 //     can show is `KeyStatus.last4`. There is no code path that renders the key again.
 //   - "never silently falls back": a failed `llm:setProvider` shows its ErrorCode inline and changes nothing.
+//
+// [V2] V2-W1-12 (UX2 4.1, 6 step 1, 7; B12-B14): cards in the B12 order - On this computer / Claude - your subscription /
+// ("Show experimental") Gemini - your subscription / ("Advanced: use an API key") Claude + Gemini with an API key. The two
+// disclosures are collapsed by default and open by themselves when the ACTIVE provider is inside them. The subscription
+// cards carry the Connect card (compact in onboarding, full in Settings). Selecting a card NEVER switches the provider by
+// itself for a subscription: "Use ..." (Settings) or "Continue" (onboarding) runs consent (exact version) -> `llm:setProvider`
+// ("Checking Claude..." meanwhile); main refuses a CLI that is not ready + consented + smoke-tested (B12). A failure keeps
+// the previous provider and says so ("Still using: ..."). Onboarding adds the voice-notes opt-in and the pictures sentence;
+// automatic mode is never offered here.
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
+  CLI_PROVIDER_IDS,
+  CONSENT_KIND_FOR,
   CONSENT_VERSIONS,
   MODEL_TIERS,
+  type ApiKeyProviderId,
+  type CliProviderId,
   type CloudProviderId,
   type ConsentKind,
   type HardwareInfo,
@@ -23,10 +36,17 @@ import {
   type ProviderId,
   type SecretName,
   type TierSetting,
+  type VoiceState,
 } from '@shared/types';
 import type { ErrorCode } from '@shared/errors';
+import { formatModelSize } from '@shared/i18n/format';
 import { api } from '../../api';
-import { ConsentDialog } from '../../components/ConsentDialog';
+import { ConsentDialog, cloudConsentKindOf } from '../../components/ConsentDialog';
+import { ConnectCard } from '../../components/ConnectCard';
+import { useCliStore } from '../../store/cli';
+import { isActivationBlocked } from '../../store/health';
+import { useSettingsStore } from '../../store/settings';
+import { Disclosure } from '../settings/parts';
 import { PrivacyNote, StepFrame, gib, num } from './frame';
 
 export interface ChooseAiProps {
@@ -35,19 +55,39 @@ export interface ChooseAiProps {
   embedded?: boolean;
 }
 
-const CLOUD: readonly CloudProviderId[] = ['claude', 'gemini'];
+// [V2 W0] the v1 onboarding cloud choices are exactly the two API-key providers (C2 1.1); the CLI providers are V2-W1-12's ConnectCard.
+const CLOUD: readonly ApiKeyProviderId[] = ['claude', 'gemini'];
+/** [V2 W0] true for the two API-key providers this v1 wizard configures (the CLI ids never reach the key/model paths). */
+function isApiKeyProvider(p: ProviderId): p is ApiKeyProviderId {
+  return p === 'claude' || p === 'gemini';
+}
+/** [V2] the two subscription (vendor CLI) providers. */
+export function isCliProvider(p: ProviderId): p is CliProviderId {
+  return (CLI_PROVIDER_IDS as readonly string[]).includes(p);
+}
+/** [V2] UX2 6: the voice opt-in is checked by default only with >= 4 GiB free disk and >= 8 GiB of memory. */
+export const VOICE_OPTIN_MIN_DISK_GIB = 4;
+export const VOICE_OPTIN_MIN_RAM_GIB = 8;
+export function voiceOptInBlocker(hardware: HardwareInfo | null): 'disk' | 'ram' | null {
+  if (!hardware) return null;
+  if (hardware.freeDiskGiB < VOICE_OPTIN_MIN_DISK_GIB) return 'disk';
+  if (hardware.ramGiB < VOICE_OPTIN_MIN_RAM_GIB) return 'ram';
+  return null;
+}
+/** The one voice tier the onboarding opt-in names ("1.5 GB, Hebrew-optimised"). */
+const OPTIN_TIER = 'voice-hebrew' as const;
 const TIER_SETTINGS: readonly TierSetting[] = ['auto', ...MODEL_TIERS];
 
 /** The consent kind a cloud provider needs. Narrower than `ConsentKind`: `whatsapp_tos` is not reachable from here. */
 export type CloudConsentKind = Extract<ConsentKind, 'cloud_claude' | 'cloud_gemini'>;
 
-export function consentKindOf(provider: CloudProviderId): CloudConsentKind {
+export function consentKindOf(provider: ApiKeyProviderId): CloudConsentKind {
   return provider === 'claude' ? 'cloud_claude' : 'cloud_gemini';
 }
-export function secretNameOf(provider: CloudProviderId): SecretName {
+export function secretNameOf(provider: ApiKeyProviderId): SecretName {
   return provider === 'claude' ? 'anthropic_api_key' : 'gemini_api_key';
 }
-export function keyHelpTargetOf(provider: CloudProviderId): 'anthropic_api_keys' | 'gemini_api_keys' {
+export function keyHelpTargetOf(provider: ApiKeyProviderId): 'anthropic_api_keys' | 'gemini_api_keys' {
   return provider === 'claude' ? 'anthropic_api_keys' : 'gemini_api_keys';
 }
 /** `secrets:set` accepts printable ASCII only (CONTRACTS section 8); checked here so a paste mistake is explained. */
@@ -81,6 +121,19 @@ export function ChooseAi({ onDone, onBack, embedded = false }: ChooseAiProps) {
   const [sizeOpen, setSizeOpen] = useState(false);
   const [downloadStarted, setDownloadStarted] = useState(false);
   const [consentFor, setConsentFor] = useState<CloudProviderId | null>(null);
+  // [V2]
+  const cliStatus = useCliStore((s) => s.status);
+  const windowDays = useSettingsStore((s) => s.settings?.whatsapp.readTools.windowDays ?? 30);
+  const [experimentalOpen, setExperimentalOpen] = useState(false);
+  const [advancedOpen, setAdvancedOpen] = useState(false);
+  /** The CLI provider whose `llm:setProvider` smoke run is in flight ("Checking Claude..."). */
+  const [switching, setSwitching] = useState<CliProviderId | null>(null);
+  /** The CLI provider whose last switch failed (the ErrorCode row + "Still using: ..." sit under its card). */
+  const [cliError, setCliError] = useState<{ provider: CliProviderId; code: ErrorCode } | null>(null);
+  /** Onboarding: after the consent for a CLI provider, the wizard continues by itself only if Continue started it. */
+  const [continueAfter, setContinueAfter] = useState(false);
+  const [voiceOptIn, setVoiceOptIn] = useState<boolean | null>(null);
+  const [voice, setVoice] = useState<VoiceState | null>(null);
   const [providerError, setProviderError] = useState<ErrorCode | null>(null);
   const [keyInput, setKeyInput] = useState('');
   const [showKey, setShowKey] = useState(false);
@@ -96,7 +149,7 @@ export function ChooseAi({ onDone, onBack, embedded = false }: ChooseAiProps) {
     if (p.ok) setPlan(p.value);
   }, []);
 
-  const loadModels = useCallback(async (provider: CloudProviderId) => {
+  const loadModels = useCallback(async (provider: ApiKeyProviderId) => {
     const r = await api.listModels(provider);
     setModels(r.ok ? r.value : null);
   }, []);
@@ -108,18 +161,29 @@ export function ChooseAi({ onDone, onBack, embedded = false }: ChooseAiProps) {
       setConfig(r.value);
       setSelected(r.value.provider);
       setTier(r.value.local.tier);
-      if (r.value.provider !== 'local') {
-        setKeyOk(r.value.keys[secretNameOf(r.value.provider)].present);
-        void loadModels(r.value.provider);
+      const current = r.value.provider;
+      // [V2] UX2 4.1: a disclosure opens by itself when the active provider is inside it.
+      if (current === 'antigravity_cli') setExperimentalOpen(true);
+      if (isApiKeyProvider(current)) {
+        setAdvancedOpen(true);
+        setKeyOk(r.value.keys[secretNameOf(current)].present);
+        void loadModels(current);
       }
     });
     // The plan/hardware probe is started from the promise chain (not called straight from the effect body) so that no
     // state update can ever happen synchronously while the effect runs.
     void Promise.resolve().then(() => loadPlan());
+    // [V2] UX2 6: detection of the vendor CLIs runs silently on entry (main caches cli:getStatus 60 s).
+    void Promise.resolve().then(() => useCliStore.getState().refresh());
+    if (!embedded) {
+      void api.getVoiceState().then((r) => {
+        if (!cancelled && r.ok) setVoice(r.value);
+      });
+    }
     return () => {
       cancelled = true;
     };
-  }, [loadPlan, loadModels]);
+  }, [loadPlan, loadModels, embedded]);
 
   const effectiveTier: ModelTier = tier === 'auto' ? (plan?.recommendedTier ?? 'small') : tier;
   const tierInfo = useMemo(() => plan?.tiers.find((row) => row.tier === effectiveTier) ?? null, [plan, effectiveTier]);
@@ -144,6 +208,8 @@ export function ChooseAi({ onDone, onBack, embedded = false }: ChooseAiProps) {
         void commitProvider('local');
         return;
       }
+      // [V2] a subscription card only EXPANDS on selection: switching is "Use ..." / "Continue" (B12).
+      if (!isApiKeyProvider(provider)) return;
       setKeyOk(config?.keys[secretNameOf(provider)].present ?? false);
       void loadModels(provider);
       if (!config?.consents[consentKindOf(provider)]) {
@@ -155,26 +221,77 @@ export function ChooseAi({ onDone, onBack, embedded = false }: ChooseAiProps) {
     [commitProvider, config, loadModels],
   );
 
+  // [V2] UX2 4.5.1 / onboarding: "Also understand voice notes" - queued only when the wizard moves on (never on a mere
+  // checkbox change), behind the AI model in the same downloader queue. `voice.enabled=true` is refused by main until
+  // the model is ready (C2 4) - then only the tier is stored (UX2 C11, see the notes file).
+  const blocker = voiceOptInBlocker(hardware);
+  const optIn = !embedded && (voiceOptIn ?? blocker === null);
+  const finish = useCallback(async () => {
+    if (optIn) {
+      const enabled = await api.setSettings({ voice: { enabled: true, tier: OPTIN_TIER } });
+      if (!enabled.ok) await api.setSettings({ voice: { tier: OPTIN_TIER } });
+      await api.startDownload(OPTIN_TIER);
+    }
+    onDone();
+  }, [optIn, onDone]);
+
+  /** [V2] consent (exact version) -> llm:setProvider for a subscription card; "Checking Claude..." meanwhile. */
+  const switchToCli = useCallback(
+    async (provider: CliProviderId, thenContinue: boolean) => {
+      setCliError(null);
+      setProviderError(null);
+      setSwitching(provider);
+      const r = await api.setProvider(provider);
+      setSwitching(null);
+      if (!r.ok) {
+        setCliError({ provider, code: r.error.code });
+        return;
+      }
+      setConfig(r.value);
+      setSelected(provider);
+      if (thenContinue) void finish();
+    },
+    [finish],
+  );
+
+  const startCli = useCallback(
+    (provider: CliProviderId, thenContinue: boolean) => {
+      if (!config?.consents[CONSENT_KIND_FOR[provider]]) {
+        setContinueAfter(thenContinue);
+        setConsentFor(provider);
+        return;
+      }
+      void switchToCli(provider, thenContinue);
+    },
+    [config, switchToCli],
+  );
+
   const onConsentAccept = useCallback(async () => {
     const provider = consentFor;
     setConsentFor(null);
     if (!provider) return;
-    const kind = consentKindOf(provider);
+    const kind = CONSENT_KIND_FOR[provider];
     const r = await api.acceptConsent(kind, CONSENT_VERSIONS[kind]);
     if (!r.ok) {
       setProviderError(r.error.code);
-      setSelected('local');
+      if (!isCliProvider(provider)) setSelected('local');
       return;
     }
     setConfig((c) => (c ? { ...c, consents: { ...c.consents, [kind]: true } } : c));
+    if (isCliProvider(provider)) {
+      await switchToCli(provider, continueAfter);
+      return;
+    }
     await commitProvider(provider);
-  }, [consentFor, commitProvider]);
+  }, [consentFor, commitProvider, switchToCli, continueAfter]);
 
   const onConsentCancel = useCallback(() => {
-    // UX 8.1 / acceptance: declining leaves Local selected and nothing was changed in main.
+    // UX 8.1 / acceptance: declining leaves Local selected and nothing was changed in main. [V2] A declined
+    // subscription consent changes nothing either: the card stays expanded, the active provider stays active.
+    const provider = consentFor;
     setConsentFor(null);
-    setSelected('local');
-  }, []);
+    if (!provider || !isCliProvider(provider)) setSelected('local');
+  }, [consentFor]);
 
   const startDownload = useCallback(async () => {
     const r = await api.startDownload(effectiveTier);
@@ -184,11 +301,11 @@ export function ChooseAi({ onDone, onBack, embedded = false }: ChooseAiProps) {
     }
     setDownloadStarted(true);
     if (tier !== 'auto') void api.setSettings({ llm: { local: { tier } } });
-    if (!embedded) onDone(); // UX 8.1: the download continues in the background, the wizard moves on at once
-  }, [effectiveTier, tier, embedded, onDone]);
+    if (!embedded) void finish(); // UX 8.1: the download continues in the background, the wizard moves on at once
+  }, [effectiveTier, tier, embedded, finish]);
 
   const checkKey = useCallback(async () => {
-    if (selected === 'local') return;
+    if (!isApiKeyProvider(selected)) return;
     const provider = selected;
     const value = keyInput.trim();
     if (!KEY_RE.test(value)) {
@@ -219,7 +336,7 @@ export function ChooseAi({ onDone, onBack, embedded = false }: ChooseAiProps) {
   }, [selected, keyInput, loadModels, commitProvider]);
 
   const removeKey = useCallback(async () => {
-    if (selected === 'local') return;
+    if (!isApiKeyProvider(selected)) return;
     const name = secretNameOf(selected);
     const r = await api.clearSecret(name);
     if (!r.ok) return;
@@ -237,7 +354,7 @@ export function ChooseAi({ onDone, onBack, embedded = false }: ChooseAiProps) {
     }
   }, []);
 
-  const onModel = useCallback((provider: CloudProviderId, id: string) => {
+  const onModel = useCallback((provider: ApiKeyProviderId, id: string) => {
     setConfig((c) => (c ? { ...c, [provider === 'claude' ? 'claudeModel' : 'geminiModel']: id } : c));
     void api.setSettings(provider === 'claude' ? { llm: { claudeModel: id } } : { llm: { geminiModel: id } });
   }, []);
@@ -245,7 +362,21 @@ export function ChooseAi({ onDone, onBack, embedded = false }: ChooseAiProps) {
   const canContinue =
     selected === 'local'
       ? downloadStarted || tierInfo?.status === 'ready'
-      : Boolean(config?.consents[consentKindOf(selected)] && config.keys[secretNameOf(selected)].present && keyOk);
+      : isCliProvider(selected)
+        ? // [V2] UX2 6: Ready + (consent + a passed llm:setProvider, which Continue itself runs when still missing)
+          cliStatus[selected]?.state === 'ready' && switching === null
+        : isApiKeyProvider(selected) &&
+          Boolean(config?.consents[consentKindOf(selected)] && config.keys[secretNameOf(selected)].present && keyOk);
+
+  /** [V2] Continue on a subscription card: consent + llm:setProvider first when this provider is not active yet. */
+  const onContinue = (e: React.MouseEvent) => {
+    if (isCliProvider(selected) && config?.provider !== selected) {
+      if (e.detail > 1 || isActivationBlocked()) return;
+      startCli(selected, true);
+      return;
+    }
+    void finish();
+  };
 
   // ---- card bodies ---------------------------------------------------------------------------------------------------
 
@@ -352,7 +483,7 @@ export function ChooseAi({ onDone, onBack, embedded = false }: ChooseAiProps) {
     </div>
   );
 
-  const cloudBody = (provider: CloudProviderId) => {
+  const cloudBody = (provider: ApiKeyProviderId) => {
     const name = secretNameOf(provider);
     const status = config?.keys[name];
     const hasConsent = Boolean(config?.consents[consentKindOf(provider)]);
@@ -500,7 +631,78 @@ export function ChooseAi({ onDone, onBack, embedded = false }: ChooseAiProps) {
     );
   };
 
+  const cardName = (provider: ProviderId): string =>
+    provider === 'local' ? t('ai.local.name') : t(`ai.provider.${provider}`);
+
+  /** [V2] A subscription card: name, description, privacy note and the Connect card (UX2 4.1, 6, 7). */
+  const cliCard = (provider: CliProviderId) => {
+    const isSelected = selected === provider;
+    const status = cliStatus[provider];
+    const vendor = t(`cli.vendor.${provider}`);
+    const active = config?.provider === provider;
+    return (
+      <div
+        key={provider}
+        data-testid={`ai-card-${provider}`}
+        data-selected={isSelected ? '1' : '0'}
+        data-active={active ? '1' : '0'}
+        className={`flex flex-col gap-2 rounded-md p-3 ${isSelected ? 'border-2 border-accent bg-accent-soft' : 'border border-line bg-surface'}`}
+      >
+        <label className="flex items-start gap-2">
+          <input
+            type="radio"
+            name="ai-provider"
+            value={provider}
+            data-testid={`choose-ai-${provider}`}
+            checked={isSelected}
+            onChange={() => onSelect(provider)}
+          />
+          <span className="grow font-semibold">{cardName(provider)}</span>
+          {provider === 'antigravity_cli' ? (
+            <span className="chip chip-experimental">{t('ai.experimental')}</span>
+          ) : null}
+        </label>
+        <p className="m-0 text-text-muted">{t(`ai.provider.${provider}Desc`)}</p>
+        <PrivacyNote>{t('ai.cli.privacy', { vendor })}</PrivacyNote>
+        {status ? (
+          <ConnectCard
+            provider={provider}
+            size={embedded ? 'full' : 'compact'}
+            status={status}
+            selected={active}
+            onUse={() => startCli(provider, false)}
+          />
+        ) : (
+          <p className="m-0 text-sm" role="status" data-testid={`connect-${provider}-loading`}>
+            {t('cli.checking', { cli: t(`cli.name.${provider}`) })}
+          </p>
+        )}
+        {switching === provider ? (
+          <p className="m-0 text-sm" role="status" data-testid={`ai-switching-${provider}`}>
+            {t('ai.useChecking', { vendor: t(`cli.name.${provider}`) })}
+          </p>
+        ) : null}
+        {cliError?.provider === provider ? (
+          <div role="alert" className="rounded-sm bg-danger-soft p-2" data-testid={`ai-use-error-${provider}`}>
+            <p className="m-0 font-semibold">
+              {t(`errors.${cliError.code}.title`, { cli: t(`cli.name.${provider}`), vendor })}
+            </p>
+            <p className="m-0 text-sm" data-testid={`ai-still-using-${provider}`}>
+              {t('ai.stillUsing', { provider: cardName(config?.provider ?? 'local') })}
+            </p>
+          </div>
+        ) : null}
+        {provider === 'antigravity_cli' ? (
+          <p className="m-0 text-sm text-text-muted" data-testid="gemini-cli-note">
+            {t('cli.geminiCliNote')}
+          </p>
+        ) : null}
+      </div>
+    );
+  };
+
   const card = (provider: ProviderId) => {
+    if (isCliProvider(provider)) return cliCard(provider);
     const isSelected = selected === provider;
     const cloud = provider !== 'local';
     return (
@@ -519,9 +721,7 @@ export function ChooseAi({ onDone, onBack, embedded = false }: ChooseAiProps) {
             checked={isSelected}
             onChange={() => onSelect(provider)}
           />
-          <span className="grow font-semibold">
-            {provider === 'local' ? t('ai.local.name') : t(`onboarding.ai.${provider}.name`)}
-          </span>
+          <span className="grow font-semibold">{cardName(provider)}</span>
           {provider === 'local' ? <span className="chip">{t('onboarding.ai.recommended')}</span> : null}
         </label>
         <p className="m-0 text-text-muted">
@@ -535,25 +735,95 @@ export function ChooseAi({ onDone, onBack, embedded = false }: ChooseAiProps) {
             : t('ai.cloud.privacy', { vendor: t(`onboarding.ai.vendor.${provider}`) })}
           {provider === 'gemini' ? ` ${t('onboarding.ai.gemini.freeTier')}` : ''}
         </PrivacyNote>
-        {isSelected ? (cloud ? cloudBody(provider) : localBody) : null}
+        {isSelected ? (cloud && isApiKeyProvider(provider) ? cloudBody(provider) : localBody) : null}
+        {provider === 'gemini' ? (
+          <p className="m-0 text-sm text-text-muted" data-testid="gemini-cli-note-key">
+            {t('cli.geminiCliNote')}
+          </p>
+        ) : null}
       </div>
     );
   };
 
+  const voiceSize =
+    voice?.model && voice.model.id === OPTIN_TIER && voice.model.sizeBytes > 0
+      ? formatModelSize(voice.model.sizeBytes, lang === 'he' ? 'he' : 'en')
+      : null;
+  const mmprojSize = plan?.mmproj ? formatModelSize(plan.mmproj.sizeBytes, lang === 'he' ? 'he' : 'en') : null;
+
+  /** [V2] UX2 6 step 1: the voice-notes opt-in and the pictures sentence (onboarding only). */
+  const mediaBlock = embedded ? null : (
+    <div className="flex flex-col gap-1">
+      <label className="flex items-start gap-2">
+        <input
+          type="checkbox"
+          data-testid="onboarding-voice-optin"
+          checked={optIn}
+          onChange={(e) => setVoiceOptIn(e.target.checked)}
+        />
+        <span className="flex flex-col">
+          <span>
+            {voiceSize ? t('onboarding.ai.voiceOptIn', { size: voiceSize }) : t('onboarding.ai.voiceOptInNoSize')}
+          </span>
+          {blocker ? (
+            <span className="text-sm text-text-muted" data-testid="onboarding-voice-blocker" data-reason={blocker}>
+              {blocker === 'disk'
+                ? t('onboarding.ai.voiceNoDisk', {
+                    size: voiceSize ?? formatModelSize(VOICE_OPTIN_MIN_DISK_GIB * 2 ** 30, lang === 'he' ? 'he' : 'en'),
+                  })
+                : t('onboarding.ai.voiceNoRam')}
+            </span>
+          ) : null}
+        </span>
+      </label>
+      <p className="m-0 text-sm text-text-muted" data-testid="onboarding-pictures-note">
+        {mmprojSize ? t('onboarding.ai.picturesNote', { size: mmprojSize }) : t('onboarding.ai.picturesNoteNoSize')}
+      </p>
+    </div>
+  );
+
   const body = (
     <>
       <div role="radiogroup" aria-label={t('onboarding.ai.groupLabel')} className="flex flex-col gap-3">
-        {(['local', ...CLOUD] as ProviderId[]).map(card)}
+        {card('local')}
+        {card('claude_cli')}
+        <Disclosure
+          open={experimentalOpen}
+          onToggle={() => setExperimentalOpen((v) => !v)}
+          label={t('ai.showExperimental')}
+          testId="ai-show-experimental"
+          controls="ai-experimental-cards"
+        />
+        {experimentalOpen ? (
+          <div id="ai-experimental-cards" className="flex flex-col gap-3">
+            {card('antigravity_cli')}
+          </div>
+        ) : null}
+        <Disclosure
+          open={advancedOpen}
+          onToggle={() => setAdvancedOpen((v) => !v)}
+          label={t('ai.advanced')}
+          testId="ai-advanced"
+          controls="ai-advanced-cards"
+        />
+        {advancedOpen ? (
+          <div id="ai-advanced-cards" className="flex flex-col gap-3">
+            <p className="m-0 text-sm text-text-muted">{t('ai.advancedDesc')}</p>
+            {CLOUD.map(card)}
+          </div>
+        ) : null}
       </div>
+      {mediaBlock}
       {providerError ? (
         <p role="alert" data-testid="ai-provider-error" className="m-0 rounded-sm bg-danger-soft p-2">
           {t(`errors.${providerError}.title`)}
         </p>
       ) : null}
       <ConsentDialog
-        kind={consentFor ? consentKindOf(consentFor) : 'cloud_claude'}
-        version={consentFor ? CONSENT_VERSIONS[consentKindOf(consentFor)] : 1}
+        kind={consentFor ? cloudConsentKindOf(consentFor) : 'cloud_claude'}
+        version={consentFor ? CONSENT_VERSIONS[CONSENT_KIND_FOR[consentFor]] : CONSENT_VERSIONS.cloud_claude}
         open={consentFor !== null}
+        days={windowDays}
         onAccept={() => void onConsentAccept()}
         onCancel={onConsentCancel}
       />
@@ -580,9 +850,9 @@ export function ChooseAi({ onDone, onBack, embedded = false }: ChooseAiProps) {
           className="btn btn-primary"
           data-testid="ai-continue"
           disabled={!canContinue}
-          onClick={onDone}
+          onClick={onContinue}
         >
-          {t('onboarding.continue')}
+          {switching ? t('ai.useChecking', { vendor: t(`cli.name.${switching}`) }) : t('onboarding.continue')}
         </button>
       }
     >

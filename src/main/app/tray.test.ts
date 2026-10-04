@@ -22,10 +22,18 @@ function health(
   return {
     overall: over.overall ?? 'ok',
     whatsapp: { state: over.whatsapp ?? 'online', since: NOW },
-    llm: { state: over.llmState ?? 'ready', since: NOW, provider: over.provider ?? 'local', model: 'tiny' },
-    calendar: { state: 'connected', since: NOW },
+    llm: {
+      state: over.llmState ?? 'ready',
+      since: NOW,
+      provider: over.provider ?? 'local',
+      model: 'tiny',
+      quota: null,
+    },
+    calendar: { state: 'connected', since: NOW, updatesAvailable: true },
     queue: { pending: 0, running: 0 },
     paused: false,
+    voice: { state: 'off', since: NOW }, // [V2] C2 3
+    auto: { state: 'off', expiresAt: null, pausedReason: null }, // [V2] C2 3
   };
 }
 function state(over: Partial<TrayState> = {}): TrayState {

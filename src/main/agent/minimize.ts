@@ -23,21 +23,26 @@ export function ageLabelFor(ts: number | null, anchorMs: number): string {
   return `${Math.floor(delta / DAY)} d ago`;
 }
 
-/** The rows that reach the model: sanitised, non-empty, ordered oldest -> newest. Exported for contextBuilder's snapshot zip. */
-export function sanitizedNonEmpty(messages: Message[]): Array<{ message: Message; text: string }> {
+/** The rows that reach the model: sanitised, non-empty, ordered oldest -> newest. Exported for contextBuilder's snapshot zip.
+ *  [V2] `keepEmpty` (optional): a row whose sanitised text is empty but that still carries app-attached content - the picture row of an
+ *  image run (its `imageText` lives next to the empty caption, P2 4.5) - is kept with text ''. Without it the v1 rule stands. */
+export function sanitizedNonEmpty(
+  messages: Message[],
+  keepEmpty?: (m: Message) => boolean,
+): Array<{ message: Message; text: string }> {
   const rows: Array<{ message: Message; text: string }> = [];
   for (const m of messages) {
     if (m.deleted) continue;
     const text = sanitizeForModel(m.text).text.trim();
-    if (text === '') continue; // deleted / media-only / empty rows carry no analysable text and no metadata may leak
+    if (text === '' && keepEmpty?.(m) !== true) continue; // deleted / media-only / empty rows carry no analysable text and no metadata may leak
     rows.push({ message: m, text });
   }
   return rows;
 }
 
 /** Last LIMITS.contextMessages rows, LIMITS.contextChars total; no names, no JIDs, no message ids, no media metadata. */
-export function minimize(messages: Message[]): MinimizedMessage[] {
-  const rows = sanitizedNonEmpty(messages);
+export function minimize(messages: Message[], keepEmpty?: (m: Message) => boolean): MinimizedMessage[] {
+  const rows = sanitizedNonEmpty(messages, keepEmpty);
   const windowed = rows.slice(Math.max(0, rows.length - LIMITS.contextMessages));
 
   // Drop from the OLDEST end until the window fits LIMITS.contextChars.

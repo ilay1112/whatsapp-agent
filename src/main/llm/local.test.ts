@@ -1,5 +1,6 @@
 // src/main/llm/local.test.ts - TESTS 5.3 row `llm/local.ts` (owner W1-07). Every request goes to the loopback
 // fake-llama-server; no real llama-server.exe is ever spawned and no model is ever downloaded.
+import { createHash } from 'node:crypto';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { startFakeLlamaServer, type FakeLlamaServer } from '../../../tests/fakes/fake-llama-server';
 import {
@@ -11,6 +12,9 @@ import {
   mapHttpStatus,
   toWireMessages,
   toWireTools,
+  toWireContent,
+  hasImagePart,
+  LOCAL_IMAGE_SCHEMA_NAME,
 } from './local';
 import { LlmError, type CallOpts, type LlmMessage, type LlmTool } from './types';
 import type { LlamaRuntime } from './local/llamaServer';
@@ -535,5 +539,138 @@ describe('lifecycle', () => {
   it('the LlmError message is the code itself (provider bodies are never logged)', () => {
     expect(new LlmError('bad_output').message).toBe('bad_output');
     expect(vi.isMockFunction(fetch)).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------------------------------------------------
+// [V2, V2-W1-08-vision] V1 READ-IMAGE over llama-server --mmproj (C2 9 / 9.1, B19, I12; T2 3.8)
+// ---------------------------------------------------------------------------------------------------------------------
+describe('V1 read_image (image_url part, tool-less, vision-gated)', () => {
+  const JPEG = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 9, 8, 7, 6]);
+  const SHA = createHash('sha256').update(JPEG).digest('hex');
+  const V1: LlmMessage[] = [
+    { role: 'system', content: 'V1 CONSTANT (test)' },
+    {
+      role: 'user',
+      content: [
+        { type: 'image', mime: 'image/jpeg', base64: JPEG.toString('base64') },
+        { type: 'text', text: '<<DATA-0123456789abcdef>>\n{}\n<<END-DATA-0123456789abcdef>>' },
+      ],
+    },
+  ];
+  const visionRuntime = (fake: FakeLlamaServer, ready: () => boolean) =>
+    fakeRuntime(fake.port, { vision: () => ({ requested: true, ready: ready(), stale: false }) });
+
+  it('capabilities.images follows the runtime vision readiness live (absent vision() = false)', async () => {
+    const fake = await server();
+    let ready = false;
+    const p = provider(
+      fake,
+      visionRuntime(fake, () => ready),
+    );
+    expect(p.capabilities).toEqual({ images: false });
+    ready = true;
+    expect(p.capabilities).toEqual({ images: true });
+    expect(provider(fake).capabilities).toEqual({ images: false });
+    expect(p.loop).toBe('turn');
+  });
+
+  it('sends the picture as an image_url data URL FIRST, the image_read schema name, and no tools', async () => {
+    const fake = await server({
+      apiKey: API_KEY,
+      vision: true,
+      rules: [{ when: { purpose: 'read_image', imageSha256: SHA }, respond: { structured: { readable: true } } }],
+    });
+    const out = await provider(
+      fake,
+      visionRuntime(fake, () => true),
+    ).structured<{ readable: boolean }>(
+      V1,
+      { type: 'object' } as JsonSchemaLcd,
+      opts({ purpose: 'read_image', maxOutputTokens: 768 }),
+    );
+    expect(out).toEqual({ readable: true });
+    const body = lastBody(fake);
+    expect(body.tools).toBeUndefined();
+    expect(body.tool_choice).toBeUndefined();
+    expect(body.parallel_tool_calls).toBeUndefined();
+    expect((body.response_format as { json_schema: { name: string } }).json_schema.name).toBe(LOCAL_IMAGE_SCHEMA_NAME);
+    expect(body.max_tokens).toBe(768);
+    expect((body.messages as unknown[])[1]).toEqual({
+      role: 'user',
+      content: [
+        { type: 'image_url', image_url: { url: `data:image/jpeg;base64,${JPEG.toString('base64')}` } },
+        { type: 'text', text: '<<DATA-0123456789abcdef>>\n{}\n<<END-DATA-0123456789abcdef>>' },
+      ],
+    });
+    expect(fake.images).toEqual([{ mime: 'image/jpeg', sha256: SHA, bytes: JPEG.length }]);
+    expect(fake.violations).toEqual([]);
+  });
+
+  it('a child without confirmed vision never receives the picture (unsupported, zero requests)', async () => {
+    const fake = await server({ apiKey: API_KEY, vision: true });
+    const rt = visionRuntime(fake, () => false);
+    await expect(
+      provider(fake, rt).structured(V1, { type: 'object' } as JsonSchemaLcd, opts({ purpose: 'read_image' })),
+    ).rejects.toMatchObject({
+      code: 'unsupported',
+    });
+    expect(rt.starts).toBe(1); // started (lazy) to learn the vision state, then refused
+    await expect(
+      provider(fake).structured(V1, { type: 'object' } as JsonSchemaLcd, opts({ purpose: 'read_image' })),
+    ).rejects.toMatchObject({
+      code: 'unsupported',
+    });
+    expect(fake.requests.filter((r) => r.path === '/v1/chat/completions')).toHaveLength(0);
+  });
+
+  it('a picture on another purpose, or in chat(), is refused before any request', async () => {
+    const fake = await server({ apiKey: API_KEY, vision: true });
+    const p = provider(
+      fake,
+      visionRuntime(fake, () => true),
+    );
+    await expect(
+      p.structured(V1, { type: 'object' } as JsonSchemaLcd, opts({ purpose: 'extract' })),
+    ).rejects.toMatchObject({ code: 'unsupported' });
+    await expect(p.chat(V1, [], opts({ purpose: 'read_image' }))).rejects.toMatchObject({ code: 'unsupported' });
+    expect(fake.requests.filter((r) => r.path === '/v1/chat/completions')).toHaveLength(0);
+  });
+
+  it('vision_garbage => bad_output; the fake flags a picture sent with tools (vision_with_tools)', async () => {
+    const fake = await server({ apiKey: API_KEY, vision: true, scenario: 'vision_garbage' });
+    await expect(
+      provider(
+        fake,
+        visionRuntime(fake, () => true),
+      ).structured(V1, { type: 'object' } as JsonSchemaLcd, opts({ purpose: 'read_image' })),
+    ).rejects.toMatchObject({ code: 'bad_output' });
+    // the fake's own guard (T2 3.8): a hand-built request carrying an image part AND tools is a violation
+    const res = await fetch(`${fake.url}/v1/chat/completions`, {
+      method: 'POST',
+      headers: { authorization: `Bearer ${API_KEY}`, 'content-type': 'application/json' },
+      body: JSON.stringify({ messages: toWireMessages(V1), tools: [{ type: 'function', function: { name: 'x' } }] }),
+    });
+    await res.text();
+    expect(fake.violations).toContain('vision_with_tools');
+  });
+
+  it('toWireContent / hasImagePart map in order and only look at user turns', () => {
+    expect(
+      toWireContent([
+        { type: 'text', text: 't' },
+        { type: 'image', mime: 'image/png', base64: 'AA==' },
+      ]),
+    ).toEqual([
+      { type: 'text', text: 't' },
+      { type: 'image_url', image_url: { url: 'data:image/png;base64,AA==' } },
+    ]);
+    expect(hasImagePart(V1)).toBe(true);
+    expect(
+      hasImagePart([
+        { role: 'user', content: [{ type: 'text', text: 'x' }] },
+        { role: 'system', content: 's' },
+      ]),
+    ).toBe(false);
   });
 });

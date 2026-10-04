@@ -177,7 +177,7 @@ describe('chats repo - [R2] mergeLidInto', () => {
     const { repos } = memRepos();
     const phone = repos.chats.upsertFromBridge(JID_A, 'Phone', false, T0);
     const { lid, item, action } = seedLidCreateEvent(repos);
-    expect(repos.actions.markApprovedExecuting(action.id, '{"v":1}', T0 + 1)).toBe('ok');
+    expect(repos.actions.markApprovedExecuting(action.id, '{"v":1}', T0 + 1, 'user')).toBe('ok');
 
     const returned = repos.chats.mergeLidInto(lid.id, JID_A, T0 + 2);
     expect(returned).toMatchObject({ id: lid.id, jid: LID_JID });
@@ -221,7 +221,7 @@ describe('chats repo - [R2] mergeLidInto', () => {
     const { repos } = memRepos();
     const phone = repos.chats.upsertFromBridge(JID_A, null, true, T0);
     const { lid, item, action } = seedLidCreateEvent(repos);
-    expect(repos.actions.markApprovedExecuting(action.id, '{"v":1}', T0 + 1)).toBe('ok');
+    expect(repos.actions.markApprovedExecuting(action.id, '{"v":1}', T0 + 1, 'user')).toBe('ok');
     repos.actions.markFailed(action.id, 'CAL_UNAVAILABLE', T0 + 2);
     const clone = repos.actions.insertPending({
       itemId: item.id,

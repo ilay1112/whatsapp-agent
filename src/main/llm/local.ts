@@ -1,8 +1,17 @@
 // src/main/llm/local.ts - Local provider over llama-server's OpenAI-compatible API (build-plan section 3; owner W1-07). S-FETCH.
-import type { CallOpts, LlmMessage, LlmProvider, LlmResponse, LlmTool, LlmToolCall, ProviderErrorCode } from './types';
+import type {
+  CallOpts,
+  LlmMessage,
+  LlmProvider,
+  LlmResponse,
+  LlmTool,
+  LlmToolCall,
+  LlmUserContent,
+  ProviderErrorCode,
+} from './types';
 import { LlmError } from './types';
 import type { FetchFn, Logger } from '../deps';
-import type { JsonSchemaLcd } from '../../shared/types';
+import { PROVIDER_LOOP, type JsonSchemaLcd } from '../../shared/types';
 import type { LlamaRuntime } from './local/llamaServer';
 
 export interface LocalSampling {
@@ -25,6 +34,8 @@ export interface LocalProviderInput {
 export const LOCAL_WIRE_MODEL = 'local';
 /** Name of the json_schema wrapper (`response_format.json_schema.name`). */
 export const LOCAL_SCHEMA_NAME = 'extraction';
+/** [V2] json_schema wrapper name of the V1 read_image request (image-events 2.3). */
+export const LOCAL_IMAGE_SCHEMA_NAME = 'image_read';
 
 // ---------------------------------------------------------------------------------------------------------------------
 // wire types (what llama-server speaks; nothing here is exported to the pipeline)
@@ -48,8 +59,12 @@ interface WireCompletion {
   usage?: { prompt_tokens?: number; completion_tokens?: number };
 }
 
+/** [V2] C2 9 binding wire mapping of an LlmImagePart for llama-server b10964 with --mmproj (OpenAI-compatible content parts). */
+export type WireContentPart = { type: 'text'; text: string } | { type: 'image_url'; image_url: { url: string } };
+
 type WireRequestMessage =
-  | { role: 'system' | 'user'; content: string }
+  | { role: 'system'; content: string }
+  | { role: 'user'; content: string | WireContentPart[] }
   | { role: 'assistant'; content: string; tool_calls?: WireToolCall[] }
   | { role: 'tool'; tool_call_id: string; content: string };
 
@@ -57,8 +72,13 @@ type WireRequestMessage =
 export function toWireMessages(messages: readonly LlmMessage[]): WireRequestMessage[] {
   const out: WireRequestMessage[] = [];
   for (const m of messages) {
-    if (m.role === 'system' || m.role === 'user') {
-      out.push({ role: m.role, content: m.content });
+    if (m.role === 'system') {
+      out.push({ role: 'system', content: m.content });
+      continue;
+    }
+    if (m.role === 'user') {
+      // [V2] V1 read_image (C2 9.1): the picture travels as a data-URL image_url part, in the order the caller built (image FIRST).
+      out.push({ role: 'user', content: typeof m.content === 'string' ? m.content : toWireContent(m.content) });
       continue;
     }
     if (m.role === 'assistant') {
@@ -78,6 +98,22 @@ export function toWireMessages(messages: readonly LlmMessage[]): WireRequestMess
     for (const r of m.results) out.push({ role: 'tool', tool_call_id: r.toolCallId, content: r.content });
   }
   return out;
+}
+
+/** [V2] LlmUserContent array -> OpenAI content parts. Only image/jpeg and image/png ever reach here (LlmImagePart). */
+export function toWireContent(parts: Exclude<LlmUserContent, string>): WireContentPart[] {
+  return parts.map((part) =>
+    part.type === 'image'
+      ? { type: 'image_url', image_url: { url: `data:${part.mime};base64,${part.base64}` } }
+      : { type: 'text', text: part.text },
+  );
+}
+
+/** [V2] true when any user turn carries a picture (V1). */
+export function hasImagePart(messages: readonly LlmMessage[]): boolean {
+  return messages.some(
+    (m) => m.role === 'user' && typeof m.content !== 'string' && m.content.some((p) => p.type === 'image'),
+  );
 }
 
 /** LlmTool[] -> OpenAI function tools. The schema is passed through untouched (it is app-authored, LCD subset). */
@@ -169,14 +205,34 @@ export function createLocalProvider(input: LocalProviderInput): LlmProvider {
   return {
     id: 'local',
     model: input.modelLabel,
+    loop: PROVIDER_LOOP.local, // [V2 ADD]
+    /** [V2] C2 9: mmprojReady = the running child was spawned with --mmproj AND GET /props reported modalities.vision. Read live
+     *  (a getter), because the child is lazy and may be restarted with or without the projector. */
+    get capabilities(): { images: boolean } {
+      return { images: input.runtime.vision?.().ready === true };
+    },
 
     async structured<T>(messages: LlmMessage[], schema: JsonSchemaLcd, opts: CallOpts): Promise<T> {
+      // [V2] a picture is only ever sent on the V1 purpose, and only to a child that confirmed vision (I12: no guessing).
+      const withImage = hasImagePart(messages);
+      if (withImage) {
+        if (opts.purpose !== 'read_image') throw new LlmError('unsupported');
+        await start();
+        if (input.runtime.vision?.().ready !== true) throw new LlmError('unsupported');
+      }
       // [R2] OpenAI form: llama-server b10964 reads response_format.json_schema.schema; a top-level `schema` gives NO grammar.
       const wire = await post(
         {
           model: LOCAL_WIRE_MODEL,
           messages: toWireMessages(messages),
-          response_format: { type: 'json_schema', json_schema: { name: LOCAL_SCHEMA_NAME, strict: true, schema } },
+          response_format: {
+            type: 'json_schema',
+            json_schema: {
+              name: opts.purpose === 'read_image' ? LOCAL_IMAGE_SCHEMA_NAME : LOCAL_SCHEMA_NAME,
+              strict: true,
+              schema,
+            },
+          },
           temperature: input.sampling.extract.temperature,
           max_tokens: opts.maxOutputTokens,
           stream: false,
@@ -196,6 +252,8 @@ export function createLocalProvider(input: LocalProviderInput): LlmProvider {
     },
 
     async chat(messages: LlmMessage[], tools: LlmTool[], opts: CallOpts): Promise<LlmResponse> {
+      // [V2] C2 9.1: chat() never receives a picture (V1 is structured-only and tool-less on every provider, I12).
+      if (hasImagePart(messages)) throw new LlmError('unsupported');
       const wire = await post(
         {
           model: LOCAL_WIRE_MODEL,

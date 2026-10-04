@@ -42,6 +42,11 @@ const EXTRACTION: Extraction = {
   location: '',
   missing: [],
   suspicious: false,
+  // [V2] C2 5: the four B20 fields S1 v2 always returns (null-event defaults of the S1 v2 few-shots)
+  refersToExisting: false,
+  change: 'no_change',
+  changeConfidence: 'high',
+  confidence: 'high',
 };
 const extraction = (over: Partial<Extraction> = {}): Record<string, unknown> => ({ ...EXTRACTION, ...over });
 

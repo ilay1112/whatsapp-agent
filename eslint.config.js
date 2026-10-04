@@ -26,6 +26,62 @@ const noNodeBuiltins = {
   message: 'src/shared and src/renderer never import node built-ins.',
 };
 
+// ---- [V2] build-plan rule 13 (ARCH 18 + ARCH2 15 + C2 19) boundaries. Flat config REPLACES a rule's options when two blocks
+// match one file, so every v2 block repeats the v1 patterns of the directory it narrows (agent/llm/exec). ----
+const re = (s, message) => ({ regex: s, message });
+const AGENT_LLM_V1 = [
+  re(String.raw`(^|/)exec(/|$)`, 'agent/** and llm/** never import exec/**.'),
+  re(String.raw`(^|/)bridge/sendClient(\.ts)?$`, 'agent/** and llm/** never import bridge/sendClient.'),
+  re(String.raw`(^|/)mcp/writeClient(\.ts)?$`, 'agent/** and llm/** never import mcp/writeClient.'),
+  re(String.raw`(^|/)mcp/adminClient(\.ts)?$`, 'agent/** and llm/** never import mcp/adminClient.'),
+  re(String.raw`(^|/)mcp/host(\.ts)?$`, 'agent/** and llm/** never import mcp/host.'),
+];
+const EXEC_V1 = [
+  re(String.raw`(^|/)llm(/|$)`, 'exec/** never imports llm/**.'),
+  re(String.raw`(^|/)agent(/|$)`, 'exec/** never imports agent/**.'),
+];
+/** exec/autoGate.ts: pure, LLM-free (ARCH2 B8, T2 group 15 part C). */
+const AUTOGATE_V2 = [
+  re(String.raw`(^|/)ipc(/|$)`, 'exec/autoGate.ts never imports ipc/** (B8: pure).'),
+  re('^node:fs(/promises)?$', 'exec/autoGate.ts never imports node:fs (B8: no I/O).'),
+  re('^node:child_process$', 'exec/autoGate.ts never imports node:child_process (B8: no I/O).'),
+];
+/** The WhatsApp read surface (toolServer, waReadClient, waTools, handles): T2 group 2 part B. Relative same-dir forms included. */
+const WA_READ_SURFACE_V2 = [
+  re(
+    String.raw`(^|/)bridge/sendClient(\.ts)?$|^\./sendClient(\.ts)?$`,
+    'the WhatsApp read surface never imports bridge/sendClient.',
+  ),
+  re(
+    String.raw`(^|/)bridge/readClient(\.ts)?$|^\./readClient(\.ts)?$`,
+    'the WhatsApp read surface never imports bridge/readClient.',
+  ),
+  re(
+    String.raw`(^|/)mcp/writeClient(\.ts)?$|^\./writeClient(\.ts)?$`,
+    'the WhatsApp read surface never imports mcp/writeClient.',
+  ),
+  re(
+    String.raw`(^|/)mcp/adminClient(\.ts)?$|^\./adminClient(\.ts)?$`,
+    'the WhatsApp read surface never imports mcp/adminClient.',
+  ),
+  re(String.raw`(^|/)mcp/host(\.ts)?$|^\./host(\.ts)?$`, 'the WhatsApp read surface never imports mcp/host.'),
+  re(String.raw`(^|/)exec(/|$)`, 'the WhatsApp read surface never imports exec/**.'),
+  re(String.raw`(^|/)llm(/|$)`, 'the WhatsApp read surface never imports llm/**.'),
+];
+/** llm/cli/**: T2 group 2 part D. */
+const LLM_CLI_V2 = [re(String.raw`(^|/)bridge(/|$)`, 'llm/cli/** never imports bridge/**.')];
+/** media/**: bytes only through media/fetch.ts (the only getMedia caller, I6'); nativeImage only through S-IMAGE (rule 12).
+ *  [W0 interpretation] lint approximates "only media/fetch.ts calls getMedia" by banning bridge/readClient in media/** except fetch.ts. */
+const MEDIA_V2 = [
+  re(
+    String.raw`(^|/)bridge/readClient(\.ts)?$`,
+    'only media/fetch.ts may import bridge/readClient (the one getMedia caller).',
+  ),
+  re(String.raw`(^|/)exec(/|$)`, 'media/** never imports exec/**.'),
+  re(String.raw`(^|/)llm(/|$)`, 'media/** never imports llm/**.'),
+  re(String.raw`(^|/)agent(/|$)`, 'media/** never imports agent/**.'),
+];
+
 /** Physical Tailwind classes are banned in src/renderer (logical utilities only: ms-*, me-*, ps-*, pe-*, start-*, end-*, text-start, text-end). */
 const PHYSICAL_CLASS_RE = String.raw`(^|\s)(ml|mr|pl|pr|left|right)-[^\s]+|(^|\s)text-(left|right)(\s|$)`;
 
@@ -166,6 +222,34 @@ export default tseslint.config(
         },
       ],
     },
+  },
+  // ----- [V2] rule 13 boundaries (each block is the union for its files; see the note at the top) -----
+  {
+    files: ['src/main/exec/autoGate.ts'],
+    rules: { 'no-restricted-imports': ['error', { paths: [noElectron], patterns: [...EXEC_V1, ...AUTOGATE_V2] }] },
+  },
+  {
+    files: ['src/main/agent/waTools.ts', 'src/main/agent/handles.ts'],
+    rules: {
+      'no-restricted-imports': ['error', { paths: [noElectron], patterns: [...AGENT_LLM_V1, ...WA_READ_SURFACE_V2] }],
+    },
+  },
+  {
+    files: ['src/main/mcp/toolServer.ts', 'src/main/bridge/waReadClient.ts'],
+    rules: { 'no-restricted-imports': ['error', { paths: [noElectron], patterns: WA_READ_SURFACE_V2 }] },
+  },
+  {
+    files: ['src/main/llm/cli/**/*.ts'],
+    rules: { 'no-restricted-imports': ['error', { paths: [noElectron], patterns: [...AGENT_LLM_V1, ...LLM_CLI_V2] }] },
+  },
+  {
+    files: ['src/main/media/**/*.ts'],
+    ignores: ['src/main/media/fetch.ts'],
+    rules: { 'no-restricted-imports': ['error', { paths: [noElectron], patterns: MEDIA_V2 }] },
+  },
+  {
+    files: ['src/main/media/fetch.ts'],
+    rules: { 'no-restricted-imports': ['error', { paths: [noElectron], patterns: MEDIA_V2.slice(1) }] },
   },
   // ----- src/renderer: React hooks, no electron / node, no physical Tailwind classes, no window.api outside api.ts -----
   {

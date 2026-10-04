@@ -1,0 +1,172 @@
+
+ RUN  v4.1.11 C:/dev/whatsapp agent
+
+ ✓ |renderer| src/renderer/src/views/Onboarding/LinkWhatsApp.test.tsx (18 tests) 1182ms
+     ✓ is step 2, shows the rail and three numbered text steps with no image  358ms
+ ✓ |renderer| src/renderer/src/components/AutoStrip.test.tsx (16 tests) 1352ms
+     ✓ shows an undoable row and a row written in the last 24 h (even when undone)  313ms
+ ✓ |renderer| src/renderer/src/components/HealthPill.v2.test.tsx (8 tests) 1675ms
+     ✓ one sub-line per row, facts joined with " · "; clicking it reports the part  759ms
+     ✓ CLOUD_QUOTA with a known reset uses the bodyReset variant and "Open usage page" for Claude  369ms
+ ✓ |renderer| src/renderer/src/components/DraftBox.test.tsx (12 tests) 1955ms
+     ✓ reports every keystroke so the card can send the text at click time  341ms
+     ✓ moves focus to the card's primary approve button and sends nothing  518ms
+ ✓ |renderer| src/renderer/src/components/UndoDismissDrawer.test.tsx (17 tests) 1683ms
+ ✓ |renderer| src/renderer/src/views/Onboarding/Ready.test.tsx (9 tests) 1671ms
+     ✓ explains the tray in two sentences next to the one inline glyph  402ms
+ ✓ |renderer| src/renderer/src/views/AutoActivity.test.tsx (11 tests) 1847ms
+     ✓ groups rows per day with Today / Yesterday headings; untrusted titles live only in a <bdi dir="auto">  580ms
+     ✓ Undo on a row sends exactly one auto:undo with that write id  304ms
+     ✓ shows the policy line with Pause (one click, fail-safe) and the back link; never an enable  321ms
+ ✓ |renderer| src/renderer/src/components/HealthPill.test.tsx (15 tests) 2259ms
+     ✓ opens on click, renders three rows and closes on Escape  569ms
+     ✓ an ErrorCode row shows its title, body and its ONE action and reports it  352ms
+     ✓ offers Link for an unpaired WhatsApp and Connect for a calendar that was skipped  444ms
+ ✓ |renderer| src/renderer/src/views/settings/ReadTools.test.tsx (11 tests) 2218ms
+     ✓ Off is settings:set readTools.enabled=false; the scope is never in a settings:set patch  475ms
+     ✓ a cancelled native confirmation leaves the scope where main says it is  368ms
+     ✓ with a cloud provider and no current consent: the consent dialog opens and the change is REFUSED  371ms
+     ✓ accepting the consent records the exact version, then asks main for the scope  383ms
+ ✓ |renderer| src/renderer/src/components/UndoControl.test.tsx (20 tests) 2242ms
+     ✓ available: Undo button + the deadline line it is described by  435ms
+     ✓ a failed answer shows "Could not undo" + Try again (a new click)  413ms
+ ✓ |renderer| src/renderer/src/views/Dashboard.v2.test.tsx (11 tests) 2071ms
+     ✓ Undo in the strip -> exactly one auto:undo {autoWriteId}  351ms
+     ✓ Pause -> auto:pause {reason:"user"}; Show opens the item sheet  652ms
+     ✓ nothing on the dashboard writes an `auto` settings key or enables automatic mode  397ms
+ ✓ |renderer| src/renderer/src/components/RawCard.media.test.tsx (20 tests) 2208ms
+     ✓ model missing + voice on: "Download (1.5 GB)" starts the resolved voice tier  478ms
+ ✓ |renderer| src/renderer/src/views/settings/CliLimits.test.tsx (7 tests) 2784ms
+     ✓ runs per hour: a valid number 1..60 is a settings:set patch the schema accepts; anything else is not sent  1357ms
+     ✓ the overage switch calls cli:setOverage - never settings:set - and shows what main stored  368ms
+     ✓ turning overage ON is focus-steal guarded; turning it OFF is not (fail-safe direction)  453ms
+ ✓ |renderer| src/renderer/src/views/Onboarding/GoogleWizard.test.tsx (27 tests) 2817ms
+     ✓ is step 3 of the rail and can be postponed  481ms
+     ✓ signs in, then offers the calendar list and Continue  747ms
+ ✓ |renderer| src/renderer/src/views/settings/VoiceNotes.test.tsx (9 tests) 2845ms
+     ✓ choosing a missing tier ASKS first; nothing is downloaded until Download is clicked  1331ms
+     ✓ choosing a READY tier enables voice with that tier; Off disables  431ms
+     ✓ a ready, unselected tier offers Delete behind a confirm that names the size  598ms
+ ✓ |renderer| src/renderer/src/views/settings/AutomaticMode.test.tsx (26 tests) 3116ms
+     ✓ renders the state card, the two columns, the scope toggles and two OUTLINE enable buttons (trial at the inline-end)  315ms
+     ✓ "Start a 24-hour trial" sends exactly one auto:requestEnable with the edited scope - never settings:set  991ms
+ ✓ |renderer| src/renderer/src/components/RawCard.test.tsx (15 tests) 3111ms
+     ✓ shows Send when a pending send_reply exists, disabled until the user writes something  1151ms
+     ✓ copies through clipboard:writeText and is disabled while empty  589ms
+ ✓ |renderer| src/renderer/src/components/ConnectCard.test.tsx (31 tests) 3943ms
+     ✓ not_installed: the install command as a read-only LTR field, Copy, Open install page, Check again  891ms
+     ✓ ready: version, usage reset time, model combobox, Run a test, the consent date and "Use"  1593ms
+ ✓ |renderer| src/renderer/src/views/Dashboard.test.tsx (36 tests) 4661ms
+     ✓ renders exactly three lists in the order Needs reply / In calendar / Information missing  405ms
+     ✓ opens a labelled modal dialog and loads the detail through item:get  301ms
+     ✓ asks "Discard your edits?" before closing a dirty card, and keeps it open on Cancel  901ms
+     ✓ [R2] has no Alt+P / Ctrl+, / Ctrl+L shortcut  311ms
+ ✓ |renderer| src/renderer/src/views/Onboarding/ChooseAi.v2.test.tsx (23 tests) 5377ms
+     ✓ "Show experimental" reveals the Antigravity card with its Experimental chip and the Gemini CLI note  639ms
+     ✓ opens the CLI consent (exact version) first; accepting records it, then llm:setProvider runs  510ms
+     ✓ declining the CLI consent changes nothing: the active provider stays active  541ms
+     ✓ Continue on a Ready subscription card runs consent -> llm:setProvider and then moves on  355ms
+     ✓ show / paste / replace the key, pick a Gemini model, type a model id  963ms
+ ✓ |renderer| src/renderer/src/components/QrPairing.test.tsx (15 tests) 774ms
+     ✓ offers a new code once the old one expired  325ms
+ ✓ |renderer| src/renderer/src/components/DownloadPill.v2.test.tsx (5 tests) 751ms
+     ✓ the popover lists every visible file in main's order with its own controls and target  586ms
+ ✓ |renderer| src/renderer/src/components/DownloadPill.test.tsx (8 tests) 1024ms
+ ✓ |renderer| src/renderer/src/views/Onboarding/Welcome.test.tsx (7 tests) 979ms
+ ✓ |renderer| src/renderer/src/components/EventEditor.test.tsx (20 tests) 1001ms
+     ✓ uses native date and time inputs and reports every edit as an EventEdit  373ms
+ ✓ |renderer| src/renderer/src/main.test.tsx (2 tests) 721ms
+     ✓ initialises i18n and mounts the app into #root  371ms
+     ✓ fails loudly when the mount point is missing  348ms
+ ✓ |renderer| src/renderer/src/components/LanguageToggle.test.tsx (4 tests) 409ms
+ ✓ |renderer| src/renderer/src/views/settings/Pictures.test.tsx (9 tests) 892ms
+     ✓ local provider: no cloud row; the projector size of the CURRENT tier; Download only on click  454ms
+ ✓ |renderer| src/renderer/src/components/ItemList.test.tsx (13 tests) 843ms
+ ✓ |renderer| src/renderer/src/App.test.tsx (32 tests) 5943ms
+     ✓ starts in onboarding when the bootstrap step is not done and walks the steps  441ms
+     ✓ ui:navigate switches the view and ui:languageChanged flips <html dir> without reload  308ms
+     ✓ the gear opens Settings and turns into "Back to dashboard"  430ms
+     ✓ a WhatsApp row action opens the linking step, a calendar row action opens the Google step  370ms
+     ✓ any other ErrorCode action opens Settings  376ms
+     ✓ wires the pill buttons to the model:* channels  562ms
+ ✓ |renderer| src/renderer/src/components/ItemList.v2.test.tsx (7 tests) 575ms
+     ✓ a raw card and a full card both open their item  333ms
+ ✓ |renderer| src/renderer/src/components/SetupStrip.v2.test.tsx (10 tests) 660ms
+     ✓ the trial row with >= 3 decisions offers "Turn on for real" + "Stop" (secondary)  378ms
+ ✓ |renderer| src/renderer/src/App.v2.test.tsx (20 tests) 6006ms
+     ✓ row 4 "Review" opens the v2 consent; accepting records the current version and re-reads health  777ms
+     ✓ paused row: Resume and Settings only NAVIGATE to Settings > Automatic mode (Resume needs a focused click there)  682ms
+     ✓ llm -> Settings > ai  373ms
+     ✓ calendar -> Settings > auto  429ms
+     ✓ pill resume / cancel / retry address the active file; health:changed and the consent review cancel  702ms
+     ✓ the gear opens Settings at General; an auto_expired row navigates to Automatic mode  710ms
+ ✓ |renderer| src/renderer/src/components/ItemCard.test.tsx (51 tests) 6215ms
+     ✓ sends exactly one action:approve carrying the shownHash of the rendered VM  502ms
+     ✓ sends the textarea content as it was at click time  1409ms
+     ✓ sends exactly one clipboard:writeText with the textarea value  445ms
+ ✓ |renderer| src/renderer/src/components/Badges.v2.test.tsx (10 tests) 417ms
+ ✓ |renderer| src/renderer/src/components/ConsentDialog.test.tsx (8 tests) 821ms
+ ✓ |renderer| src/renderer/src/components/SetupStrip.test.tsx (6 tests) 453ms
+ ✓ |renderer| src/renderer/src/components/Badges.test.tsx (9 tests) 509ms
+ ✓ |renderer| src/renderer/src/components/ChangeLine.test.tsx (17 tests) 408ms
+ ✓ |renderer| src/renderer/src/views/Onboarding/Ready.v2.test.tsx (4 tests) 253ms
+ ✓ |renderer| src/renderer/src/views/Settings.v2.test.tsx (13 tests) 7518ms
+     ✓ group order: ... Google Calendar - Automatic mode - Working rules ...; the AI group carries Voice notes and Pictures  596ms
+     ✓ opens at the Automatic mode group, and "See automatic activity" -> the sub-page -> back to the group  963ms
+     ✓ "Never" sends chat:setPolicy {chatRef, autoPolicy} and re-reads the list  418ms
+     ✓ every click in the Automatic mode group leaves settings:set untouched  594ms
+     ✓ nav, Google reconnect / replace key, target calendar, unknown senders, remove rule, pushes  1209ms
+     ✓ the licences dialog cancels; "Saved" clears itself after 2 s  2729ms
+ ✓ |renderer| src/renderer/src/components/VoiceBubble.test.tsx (11 tests) 190ms
+ ✓ |renderer| src/renderer/src/views/Onboarding/ChooseAi.test.tsx (26 tests) 7680ms
+     ✓ is step 1, offers the cards in the B12 order and recommends the local one  827ms
+     ✓ a different size can be chosen and its note explains the trade-off  538ms
+     ✓ choosing a cloud provider opens the blocking consent first and sets nothing  362ms
+     ✓ declining leaves Local selected and changes nothing in main  347ms
+     ✓ accepting records the versioned consent before the provider is switched  304ms
+     ✓ rejects a paste that cannot be a key without calling main  588ms
+     ✓ hands the key to main, validates it, and then shows only the last four characters  1513ms
+     ✓ a rejected key names the provider in the failure row  1348ms
+ ✓ |renderer| src/renderer/src/components/ItemCard.v2.test.tsx (110 tests) 7394ms
+     ✓ the card's accessible name gains "change proposed"  383ms
+     ✓ Approve change is refused while the focus guard is armed (mouse and keyboard) and on a double click  603ms
+     ✓ an edited `to` travels with Approve change and pins the card (dirty rule)  637ms
+ ✓ |renderer| src/renderer/src/v2-stubs.test.tsx (2 tests) 181ms
+ ✓ |renderer| src/renderer/src/components/ImageBubble.test.tsx (9 tests) 175ms
+ ✓ |renderer| src/renderer/src/components/QuotedBubble.v2.test.tsx (5 tests) 125ms
+ ✓ |renderer| src/renderer/src/components/EventEditor.v2.test.tsx (7 tests) 191ms
+ ✓ |renderer| src/renderer/src/components/QuotedBubble.test.tsx (9 tests) 156ms
+ ✓ |renderer| src/renderer/src/views/Dashboard.static.test.ts (58 tests) 148ms
+ ✓ |renderer| src/renderer/src/components/ItemCard.bdi.test.tsx (4 tests) 78ms
+ ✓ |renderer| src/renderer/src/components/ConsentDialog.v2.test.tsx (5 tests) 344ms
+ ✓ |renderer| src/renderer/src/styles.test.ts (45 tests) 95ms
+ ✓ |renderer| src/renderer/src/api.test.ts (12 tests) 56ms
+ ✓ |renderer| src/renderer/src/store/dashboard.test.ts (17 tests) 50ms
+ ✓ |renderer| src/renderer/src/store/cli.test.ts (3 tests) 10ms
+ ✓ |renderer| src/renderer/src/store/settings.test.ts (5 tests) 19ms
+ ✓ |renderer| src/renderer/src/store/dashboard.v2.test.ts (9 tests) 18ms
+ ✓ |renderer| src/renderer/src/store/health.test.ts (8 tests) 26ms
+ ✓ |renderer| src/renderer/src/store/auto.test.ts (10 tests) 32ms
+ ✓ |renderer| src/renderer/src/components/ChangeLine.format.test.ts (8 tests) 35ms
+ ✓ |renderer| src/renderer/src/i18n.usage.test.ts (7 tests) 29ms
+ ✓ |renderer| src/renderer/src/i18n.test.ts (4 tests) 12ms
+ ✓ |renderer| src/renderer/src/views/Settings.test.tsx (31 tests) 10787ms
+     ✓ [R2] the time zone is read-only, notifications are Off/On only and there is no share-titles toggle  402ms
+     ✓ every control sends a patch the zod schema accepts, and main answers with the merged settings  2332ms
+     ✓ the language choice keeps the endonyms untranslated  361ms
+     ✓ the cloud budget is only sent when it is a valid number  742ms
+     ✓ settings-relink only acts after the dialog is confirmed  717ms
+     ✓ settings-wipe only acts after the dialog is confirmed  671ms
+     ✓ settings-google-disconnect only acts after the dialog is confirmed  670ms
+     ✓ settings-purge only acts after the dialog is confirmed  621ms
+     ✓ settings-delete-model only acts after the dialog is confirmed  536ms
+     ✓ re-linking shows the QR panel, and the code is a data: URL from main  359ms
+     ✓ purging reports how much was removed  371ms
+
+ Test Files  64 passed (64)
+      Tests  1017 passed (1017)
+   Start at  08:55:52
+   Duration  18.11s (transform 33.32s, setup 68.66s, import 39.39s, tests 116.02s, environment 162.31s)
+
+JSON report written to C:/dev/whatsapp agent/ops/agent-notes/v2-audit/renderer.json
+EXIT=0

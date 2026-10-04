@@ -1,6 +1,8 @@
-// src/main/ipc/handlers/app.ts - handlers for the channels below (build-plan section 3; owner W1-13). Bodies return Result<T>, never throw.
+// src/main/ipc/handlers/app.ts - handlers for the channels below (build-plan section 3; owner W1-13; v2 V2-W1-10-main-platform).
+// Bodies return Result<T>, never throw. [V2] external:open serves the five new EXTERNAL_TARGETS from resources/links.json like the
+// v1 ones (hard-coded https table only); consent:* covers the two new kinds and the bumped versions with the unchanged exact-version rule.
 import { dirFor, resolveLanguage } from '../../../shared/i18n/languages';
-import { CONSENT_VERSIONS, LIMITS } from '../../../shared/types';
+import { ANTIGRAVITY_TERMS_READ_ON, CONSENT_VERSIONS, LIMITS } from '../../../shared/types';
 import type { Bootstrap, ConsentKind, ConsentState, EpochMs, ItemId, Result } from '../../../shared/types';
 import type { ExternalTarget, IpcHandlers } from '../../../shared/ipc';
 import { fail, ok, type HandlerDeps } from '../register';
@@ -133,7 +135,10 @@ export function createAppHandlers(deps: HandlerDeps): Pick<IpcHandlers, AppChann
         deps.log.warn('consent_version_mismatch', { kind: req.kind, sent: req.version, current });
         return fail('BAD_REQUEST', { kind: req.kind, version: current });
       }
-      deps.repos.consents.accept(req.kind, current, now);
+      // [V2] B14: the Antigravity consent text quotes Terms read on a fixed date; that date is stored in the consent record.
+      if (req.kind === 'cloud_antigravity_cli')
+        deps.repos.consents.accept(req.kind, current, now, ANTIGRAVITY_TERMS_READ_ON);
+      else deps.repos.consents.accept(req.kind, current, now);
       deps.audit('consent', req.kind, { version: current }, now);
       return ok(consentState(req.kind));
     },

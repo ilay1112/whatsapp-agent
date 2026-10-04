@@ -1,0 +1,19 @@
+{
+  "_unverified": true,
+  "_note": "messages.create response for V1 READ-IMAGE (output_config.format = IMAGE_READ_SCHEMA, no tools); synthetic flyer text only",
+  "id": "msg_TESTONLY_0005",
+  "type": "message",
+  "role": "assistant",
+  "model": "claude-opus-5",
+  "content": [
+    {
+      "type": "text",
+      "text": "{\"readable\":true,\"kind\":\"flyer\",\"readText\":\"Book club\\nTuesday Oct 6\\n7 pm\",\"language\":\"en\",\"title\":\"Book club\",\"dateText\":\"Tuesday Oct 6\",\"day\":6,\"month\":10,\"year\":0,\"weekday\":2,\"timeText\":\"7 pm\",\"hour\":19,\"minute\":0,\"timeAmbiguous\":false,\"endHour\":24,\"endMinute\":0,\"location\":\"\",\"confidence\":\"high\",\"suspicious\":false}"
+    }
+  ],
+  "stop_reason": "end_turn",
+  "usage": {
+    "input_tokens": 1650,
+    "output_tokens": 120
+  }
+}

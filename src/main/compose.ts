@@ -2,7 +2,7 @@
 // Wave 0 shipped the final types and a throwing body; W2-01 adds the body below the frozen block.
 // sendClient / writeClient VALUES are constructed here and nowhere else; host.callerFor('read'|'write'|'admin') hands out narrowed callers.
 import type { Clock, ClockTimer, ElectronFacade, FetchFn, Logger, ProcessQuery, RandomSource, SpawnFn } from './deps';
-import { childExeRoots } from './paths';
+import { childAndJobExeRoots } from './paths';
 import type { AppPaths } from './paths';
 import type { Seams } from './testSeams';
 import type { IpcContext, IpcHandlers } from '../shared/ipc';
@@ -37,8 +37,47 @@ export interface ComposeDeps {
   version: string;
   execPath: string; // process.execPath (ELECTRON_RUN_AS_NODE child for the MCP server)
   preferredLanguages: () => string[];
+  // ---- [V2 ADD] v2-build-plan section 3 seam (V2-W0-scaffold; V2-W2-01 wires them). [W0 refinement] optional so index.ts and the v1
+  //      harness keep compiling; `seams` above carries the v2 Seams fields (testSeams.ts readSeams v2).
+  image?: import('./deps').ImageFacade; // S-IMAGE: the real nativeImage facade (built in index.ts, the only electron importer besides app/**)
+  dialog?: import('./deps').ShowMessageBoxFn; // S-DIALOG
+  console?: import('./deps').OpenVisibleConsoleFn; // S-CONSOLE
+  // ---- [V2-W2-01, additive and optional] the remaining T2 4.3 seams compose() needs; each absent member takes its production value ----
+  /** S-JOB: the process primitives of proc/jobRunner.ts (default: node:child_process + taskkill). */
+  jobProc?: Partial<Pick<import('./deps').JobProcessDeps, 'spawn' | 'killPid' | 'setPriority'>>;
+  /** S-LOCATE: the CLI locator's view of the disk / PATH (default: node:fs stat + process.env + where.exe, production only). */
+  locate?: import('./deps').LocateDeps;
+  /** The env the CLI runner copies named values from (default process.env; never passed through wholesale). */
+  cliEnv?: Readonly<Record<string, string | undefined>>;
+  /** S-HOME (agy workspace trust + the agy sign-in console cwd). Default: os.homedir(). */
+  home?: import('./deps').HomeDirFn;
+  /** S-PROC: "is an agy process running" (default: a CLI job of the JobRunner is live). */
+  agyRunning?: import('./deps').AgyRunningFn;
+  /** Main-owned native OPEN dialog that returns a PATH (cli:pickExe). Absent => the channel answers INTERNAL (fail closed). */
+  pickExePath?: (opts: {
+    title: string;
+    filters: Array<{ name: string; extensions: string[] }>;
+  }) => Promise<string | null>;
+  /** A toast WITH action buttons (automatic-mode Undo / Show). Absent => the plain `electron.notify` toast without buttons. */
+  notifyWithActions?: (
+    toast: { title: string; body: string; actions: string[] },
+    onAction: (index: number) => void,
+    onClick: () => void,
+  ) => void;
 }
-export type AppRuntimeEvent = 'health' | 'dashboard' | 'pairing' | 'google' | 'model' | 'language' | 'navigate';
+/** [V2-W2-01] the v1 events plus the four v2 push events, named after their IpcEvent channel (C2 8). */
+export type AppRuntimeEvent =
+  | 'health'
+  | 'dashboard'
+  | 'pairing'
+  | 'google'
+  | 'model'
+  | 'language'
+  | 'navigate'
+  | 'auto:changed'
+  | 'cli:changed'
+  | 'queue:changed'
+  | 'voice:progress';
 export interface AppRuntime {
   handlers: IpcHandlers; // registered by index.ts via ipc/register.ts
   start(): Promise<void>; // recoverOnStartup, reaper, supervisor children (bridge only after ToS), queue, timers
@@ -144,8 +183,41 @@ import { createModelHandlers } from './ipc/handlers/model';
 import { createPairingHandlers } from './ipc/handlers/pairing';
 import { createGoogleHandlers } from './ipc/handlers/google';
 import { createDataHandlers } from './ipc/handlers/data';
-import type { HandlerDeps, SettingsBus } from './ipc/register';
+import type { HandlerDeps, HandlerDepsV2, SettingsBus } from './ipc/register';
+import { mergeHandlerGroups } from './ipc/register.handlers';
+import { createAutoHandlers } from './ipc/handlers/auto';
+import { createCliHandlers, createOpenVisibleConsole } from './ipc/handlers/cli';
+import { createVoiceHandlers } from './ipc/handlers/voice';
+import { createWaReadClient } from './bridge/waReadClient';
 import { isTrustedSender, type IpcEventLike } from './ipc/sender';
+
+// ---- [V2-W2-01] v2 collaborators (every one constructed HERE and nowhere else, C2 19 / build plan rule 13) ----
+import nodePath from 'node:path';
+import { createHash, randomBytes as nodeRandomBytes } from 'node:crypto';
+import { canonicalJson, type AutoSnapshotInput } from '../shared/schemas';
+import type { AutoState, CliProviderId } from '../shared/types';
+import { createJobRunner, type JobRunner } from './proc/jobRunner';
+import { createCliRunner } from './llm/cli/runner';
+import { createCliLocator, createCliStatus, seamArgsPrefix, type CliSeam } from './llm/cli/locator';
+import { makeClaudeCliFactory } from './llm/cli/claudeCli';
+import { createAgyProvider, createAgyWorkspace, listAgyModels, makeAgyFactory } from './llm/cli/antigravityCli';
+import { startToolServer } from './mcp/toolServer';
+import { parseCalendarRolesJson } from './mcp/adminClient';
+import { MMPROJ_FOR_TIER } from './llm/local/manifest';
+import { createMediaFetcher } from './media/fetch';
+import { createMediaCache, type MediaCache } from './media/mediaCache';
+import { createImageNormalizer } from './media/normalizeImage';
+import { createVoiceService, type VoiceServiceV2 } from './voice/service';
+import { mediaWindowFor } from './bridge/ingest';
+import { createPickImage, createReadImageStage, newestImageRow } from './agent/readImage';
+import { FEATURE_GATES } from './agent/gates';
+import { CONSENT_KIND_FOR } from './llm/consent';
+import type { NormalizedImage } from './media/normalizeImage';
+import { evaluateAutoGate } from './exec/autoGate';
+import { createAutoPolicyService, type AutoPolicyService } from './exec/autoPolicy';
+import { createUndo } from './exec/undo';
+import { createAutoDialog, type AutoDialog } from './app/autoDialog';
+import type { ImageFacade, ShowMessageBoxFn } from './deps';
 
 /**
  * The window slice `compose()` needs. `index.ts` hands the real `BrowserWindow` to `attachWindow()`; the integration
@@ -197,6 +269,17 @@ export interface AppRuntimeHandle extends AppRuntime {
   doorbellUrl(): string | null;
   /** Doorbell statistics (TESTS 8.2: `bytesDrained` after a 25 MB body on a wrong path). */
   doorbellStats(): { accepted: number; rejected: number; bytesDrained: number };
+  // ---- [V2-W2-01] read-only views for index.ts (`__wcaTest` v2 hooks) and the L3 harness ----
+  /** Live job pids per kind (JobRunner.jobPids()). */
+  jobPids(): Record<'cli' | 'voice', number[]>;
+  /** Every native dialog the app built (app/autoDialog.ts `recorded()`), app-built text only. */
+  dialogs(): import('./app/autoDialog').DialogRecord[];
+  /** Automatic-mode tray line ('pause' / 'disable' / 'open'): the tray's `onAuto`. */
+  trayAuto(action: 'pause' | 'disable' | 'open'): void;
+  /** Called by index.ts / the harness on every window focus (the unattended pause of automatic mode, B7). */
+  noteFocus(): void;
+  /** e2e: the argv the app WOULD have opened in a visible console for cli:signIn (the e2e build never opens one). */
+  consoles(): string[][];
 }
 
 /** The frozen `BridgeLauncher` plus what `compose()` needs from it; satisfied by the spawning and the attached launcher alike. */
@@ -213,6 +296,7 @@ const BACKUP_INTERVAL_MS = DAY_MS;
 const RETENTION_INTERVAL_MS = DAY_MS;
 const REAPER_TOLERANCE_MS = 2_000;
 const SYNCING_WINDOW_MS = 120_000; // ARCH 4.6: spawn .. first `history_sync_done` hint or 120 s
+const AUTO_TICK_MS = 10 * 60_000; // [V2] automatic-mode tick (expiry / unattended / reminder)
 
 /** Errors the user is told about with a toast (UX 12.3). */
 const ATTENTION_CODES: readonly ErrorCode[] = ['WA_LOGGED_OUT', 'KEY_INVALID', 'CAL_RECONNECT'];
@@ -331,6 +415,28 @@ export async function compose(deps: ComposeDeps): Promise<AppRuntimeHandle> {
       }
     }
   };
+  /** [V2] the automatic-mode service is built after the collaborators that report into it (host, executor): late-bound here. */
+  const v2Late: { autoPolicy: AutoPolicyService | null } = { autoPolicy: null };
+  /** auto:changed + AppHealth.auto + the tray line, from the policy service's CURRENT state (never from a caller's payload). */
+  const emitAutoChanged = (): void => {
+    const svc = v2Late.autoPolicy;
+    if (svc === null) return;
+    let state: AutoState;
+    try {
+      state = svc.getState();
+    } catch (err) {
+      log.warn('auto_state_failed', { reason: err instanceof Error ? err.name : 'unknown' });
+      return;
+    }
+    const p = state.policy;
+    const live = p !== null && (p.state === 'on' || p.state === 'shadow' || p.state === 'paused');
+    healthHub.setAuto(
+      live
+        ? { state: p.state, expiresAt: p.expiresAt, pausedReason: p.pausedReason }
+        : { state: 'off', expiresAt: null, pausedReason: null },
+    );
+    emit('auto:changed', state);
+  };
 
   // ---------------------------------------------------------------------------------------------------------------
   // 2. database -> repos (+ recovery, backup, retention)
@@ -343,6 +449,9 @@ export async function compose(deps: ComposeDeps): Promise<AppRuntimeHandle> {
     paths.bridgeCwd,
     paths.googleDir,
     paths.modelsDir,
+    paths.mediaCacheDir, // [V2]
+    paths.voiceTmpDir,
+    paths.cliRunsDir,
   ]) {
     nodeFs.mkdirSync(dir, { recursive: true });
   }
@@ -449,6 +558,24 @@ export async function compose(deps: ComposeDeps): Promise<AppRuntimeHandle> {
       showWindow();
       emit('navigate', { view: 'dashboard', ...(itemId === null ? {} : { itemId }) });
     },
+    // ---- [V2] automatic-mode toasts: action 0 = Undo (main-only, approved_by 'user_toast'), action 1 = Show ----
+    onUndo: (autoWriteId) => {
+      void executor
+        .undoAuto(autoWriteId, 'user_toast', null)
+        .then((r) => {
+          notifier.autoUndone(r.ok);
+          emitAutoChanged();
+        })
+        .catch((err: unknown) => {
+          log.warn('toast_undo_failed', { reason: err instanceof Error ? err.name : 'unknown' });
+          notifier.autoUndone(false);
+        });
+    },
+    onShow: (itemId) => {
+      showWindow();
+      emit('navigate', { view: 'dashboard', itemId });
+    },
+    ...(deps.notifyWithActions === undefined ? {} : { notifyWithActions: deps.notifyWithActions }),
   });
 
   // ---------------------------------------------------------------------------------------------------------------
@@ -459,17 +586,50 @@ export async function compose(deps: ComposeDeps): Promise<AppRuntimeHandle> {
   // Every directory a SHIPPED child executable lives in. Packaged these are all under <resources>; unpackaged llamaDir
   // (<appRoot>\vendor\llama\...) and mcpRoot (<appRoot>\build-resources\...) sit OUTSIDE <appRoot>\resources, so passing
   // resourcesDir alone made the reaper discard every dev/e2e llama.pid.json as forged and leak the orphan.
-  const ownResourcesDirs = childExeRoots(paths);
+  // [V2] B2/B31: the job class adds whisper-cli.exe (unpackaged: <appRoot>\vendor\whisper, outside every v1 root).
+  const ownResourcesDirs = childAndJobExeRoots(paths);
   // parsePidFile also accepts an exePath equal to one of these exact paths: execPath (the ELECTRON_RUN_AS_NODE MCP child)
   // and - in e2e builds only, where `seams` is non-null - the seam commands that stand in for the real child exes.
-  const seamExePaths = [seams?.bridgeCmd?.command, seams?.mcpCmd?.command, seams?.llamaCmd?.command].filter(
-    (c): c is string => typeof c === 'string' && c.length > 0,
-  );
+  const seamExePaths = [
+    seams?.bridgeCmd?.command,
+    seams?.mcpCmd?.command,
+    seams?.llamaCmd?.command,
+    seams?.whisperCmd?.command, // [V2] the e2e whisper fake runs under node.exe
+  ].filter((c): c is string => typeof c === 'string' && c.length > 0);
+  /** [V2, B31] meta.cli_exe_paths_json = {claude_cli?: string, antigravity_cli?: string}: the ONLY CLI paths a job pid file may name. */
+  const recordedCliExePaths = (): Partial<Record<CliProviderId, string>> => {
+    try {
+      const parsed: unknown = JSON.parse(repos.meta.get('cli_exe_paths_json') ?? '{}');
+      if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) return {};
+      const out: Partial<Record<CliProviderId, string>> = {};
+      for (const k of ['claude_cli', 'antigravity_cli'] as const) {
+        const v = (parsed as Record<string, unknown>)[k];
+        if (typeof v === 'string' && v.length > 0) out[k] = v;
+      }
+      return out;
+    } catch {
+      return {};
+    }
+  };
+  const recordCliExePath = (provider: CliProviderId, exePath: string): void => {
+    const current = recordedCliExePaths();
+    if (current[provider] === exePath) return;
+    repos.meta.set('cli_exe_paths_json', JSON.stringify({ ...current, [provider]: exePath }));
+  };
   await reapOrphans(paths.runDir, ownResourcesDirs, {
     processQuery,
     execPath: [execPath, ...seamExePaths],
     log: (event, meta) => log.info(event, meta),
     toleranceMs: REAPER_TOLERANCE_MS,
+    acceptedCliExePaths: Object.values(recordedCliExePaths()),
+  });
+
+  /** [V2] B2: one JobRunner for every whisper / vendor-CLI job; killed BEFORE the supervised children on quit. */
+  const jobs: JobRunner = createJobRunner({
+    runDir: paths.runDir,
+    now,
+    log: (event, meta) => log.info(event, meta),
+    ...(deps.jobProc === undefined ? {} : { proc: deps.jobProc }),
   });
 
   const supervisor: Supervisor = createSupervisor({
@@ -480,6 +640,7 @@ export async function compose(deps: ComposeDeps): Promise<AppRuntimeHandle> {
     processQuery,
     killSync,
     random,
+    jobs,
   });
 
   // ---------------------------------------------------------------------------------------------------------------
@@ -618,7 +779,13 @@ export async function compose(deps: ComposeDeps): Promise<AppRuntimeHandle> {
     clock,
     log,
     appVersion: version,
+    // [V2] B4: AppHealth.calendar.updatesAvailable follows the startup guard and the F12 pre-flight observation.
+    onUpdateSurface: (s) => {
+      healthHub.setCalendarUpdates(s.available);
+      emitAutoChanged(); // AutoState.preconditions.updatesAvailable moved with it
+    },
   });
+  const updateSurfaceAvailable = (): boolean => mcpHost.updateSurface().available;
   const mcpRead = createMcpReadClient(mcpHost.callerFor('read'));
   const mcpWrite = createMcpWriteClient(mcpHost.callerFor('write'));
   const mcpAdmin = createMcpAdminClient(mcpHost.callerFor('admin'));
@@ -648,8 +815,12 @@ export async function compose(deps: ComposeDeps): Promise<AppRuntimeHandle> {
     log,
     audit,
     targetCalendarId: () => settings().calendar.targetCalendarId,
+    // [V2] B7: {[calendarId]: accessRole} of the last list-calendars; automatic mode needs 'owner' for the target calendar.
+    persistCalendarRoles: (roles) => repos.meta.set('calendar_roles_json', JSON.stringify(roles)),
   });
   googleAuth.onChange((s) => emit('google', s));
+  const calendarRoles = (): ReturnType<typeof parseCalendarRolesJson> =>
+    parseCalendarRolesJson(repos.meta.get('calendar_roles_json'));
 
   // ---------------------------------------------------------------------------------------------------------------
   // 11. LLM: model manager -> lazy llama runtime -> provider factory
@@ -743,6 +914,9 @@ export async function compose(deps: ComposeDeps): Promise<AppRuntimeHandle> {
     exists: (p) => nodeFs.existsSync(p),
     totalMemBytes: () => nodeOs.totalmem(),
     preferredDevice: () => preferredDeviceArg([], null),
+    // [V2] B19: the selected tier's projector (--mmproj) once downloaded and verified, only while pictures are on
+    imagesEnabled: () => settings().images.enabled,
+    mmprojPath: () => modelManager.readyPath(MMPROJ_FOR_TIER[resolvedTier]),
   });
   // Starting llama through the Supervisor is what writes <userData>\run\llama.pid.json for the reaper (ARCH 3) and what
   // enforces the section 14 breaker/backoff: a refused start is reported as LLM_LOCAL_FAILED, never re-spawned raw.
@@ -758,6 +932,120 @@ export async function compose(deps: ComposeDeps): Promise<AppRuntimeHandle> {
     });
 
   const seamProvider = deps.providerOverride;
+
+  // ---- [V2] vendor CLIs: ONE CliRunner over the JobRunner, the locator (S-LOCATE / the e2e WCA_CLI_CMD seam), the status service ----
+  const cliEnv: Readonly<Record<string, string | undefined>> = deps.cliEnv ?? process.env;
+  const cliSeam: CliSeam =
+    seams === null
+      ? null
+      : {
+          claude_cli: seams.cliCmd?.claude_cli ?? null,
+          antigravity_cli: seams.cliCmd?.antigravity_cli ?? null,
+        };
+  const locate = deps.locate ?? {
+    statFile: (p: string) => {
+      try {
+        return { isFile: nodeFs.statSync(p).isFile() };
+      } catch {
+        return null;
+      }
+    },
+    env: cliEnv,
+    // where.exe: production only (the e2e seam and every test answer before the locator reaches it, T8)
+    runWhere: (name: string) =>
+      new Promise<string[]>((resolve) => {
+        if (e2e) {
+          resolve([]);
+          return;
+        }
+        const out: Buffer[] = [];
+        const child = spawn('where.exe', [name], {
+          shell: false,
+          windowsHide: true,
+          stdio: ['ignore', 'pipe', 'ignore'],
+        });
+        child.stdout?.on('data', (b: Buffer) => out.push(b));
+        child.once('error', () => resolve([]));
+        child.once('close', () =>
+          resolve(
+            Buffer.concat(out)
+              .toString('utf8')
+              .split(/\r?\n/)
+              .map((l) => l.trim())
+              .filter((l) => l.length > 0)
+              .slice(0, 16),
+          ),
+        );
+      }),
+  };
+  const cliRunner = createCliRunner({
+    jobs,
+    userDataDir: paths.userData,
+    now,
+    audit: (kind, ref, detail) => audit(kind, ref, detail, now()),
+    processEnv: cliEnv,
+    budget: {
+      maxRunsPerHour: () => settings().llm.cli.maxRunsPerHour,
+      countSince: (since) => repos.rate.countSince('cli_global', 'global', since),
+      record: (at) => repos.rate.record('cli_global', 'global', at),
+    },
+    allowOverage: () => settings().llm.cli.allowOverage,
+    argsPrefix: (exe) => seamArgsPrefix(cliSeam, exe),
+    ...(seamTimers?.jobGraceMs?.cli === undefined ? {} : { graceMs: seamTimers.jobGraceMs.cli }),
+  });
+  const cliLocator = createCliLocator({
+    ...locate,
+    settingsClaudeExePath: () => settings().llm.cli.claudeExePath,
+    seam: cliSeam,
+    jobs,
+  });
+  const cliStatus = createCliStatus({
+    locator: cliLocator,
+    runner: cliRunner,
+    clock,
+    cacheMs: seamTimers?.cliStatusCacheMs ?? LIMITS.cliStatusCacheMs,
+  });
+  const onCliQuota = (provider: CliProviderId, q: import('../shared/types').LlmQuota): void => {
+    cliStatus.recordQuota(provider, q);
+    healthHub.setLlmQuota(q);
+    const peek = cliStatus.peek(provider);
+    if (peek !== null) emit('cli:changed', peek);
+  };
+  const onCliSmoke = (provider: CliProviderId, r: { ok: boolean; at: EpochMs; ms: number | null }): void => {
+    cliStatus.recordTest(provider, r);
+    const peek = cliStatus.peek(provider);
+    if (peek !== null) emit('cli:changed', peek);
+  };
+  /** Late-bound: the per-run loopback tool server serves the ToolGate built in step 12. */
+  const startCliToolServer: Parameters<typeof makeClaudeCliFactory>[0]['startToolServer'] = (input) =>
+    startToolServer({
+      gate: input.gate,
+      ctx: input.ctx,
+      specs: input.specs,
+      randomBytes: (n) => new Uint8Array(nodeRandomBytes(n)),
+      freePort: () => freePort(),
+      appVersion: version,
+    });
+  const makeClaudeCli = makeClaudeCliFactory({
+    locator: cliLocator,
+    runner: cliRunner,
+    startToolServer: startCliToolServer,
+    now,
+    onLocated: (exe) => recordCliExePath('claude_cli', exe),
+    onSmoke: (r) => onCliSmoke('claude_cli', r),
+    onQuota: (q) => onCliQuota('claude_cli', q),
+  });
+  const makeAgy = makeAgyFactory({
+    locator: cliLocator,
+    runner: cliRunner,
+    userDataDir: paths.userData,
+    now,
+    onLocated: (exe) => recordCliExePath('antigravity_cli', exe),
+    onSmoke: (r) => onCliSmoke('antigravity_cli', r),
+    onQuota: (q) => onCliQuota('antigravity_cli', q),
+  });
+  const homeDir = deps.home ?? ((): string => nodeOs.homedir());
+  const agyRunning = deps.agyRunning ?? ((): Promise<boolean> => Promise.resolve(jobs.jobPids().cli.length > 0));
 
   const providerFactory = createProviderFactory({
     settings,
@@ -780,6 +1068,12 @@ export async function compose(deps: ComposeDeps): Promise<AppRuntimeHandle> {
     makeLocal,
     ...(seamProvider === undefined ? {} : { seamProvider }),
     log,
+    // [V2] B12: the two CLI providers (usable() = exe found + floor + consent + a smoke within 24 h)
+    makeClaudeCli,
+    makeAgy,
+    cliStatus,
+    jobs,
+    now,
   });
 
   /** ARCH section 8: the `usable()` ErrorCode decides WHICH non-ready `LlmStatus` the health pill shows. */
@@ -826,9 +1120,167 @@ export async function compose(deps: ComposeDeps): Promise<AppRuntimeHandle> {
   // ---------------------------------------------------------------------------------------------------------------
   const gate = createToolGate({
     read: mcpRead,
+    // [V2] the WhatsApp READ facade (only compose constructs it, C2 19): available while the user keeps the read tools on and the
+    // bridge's messages.db is open (B17).
+    wa: createWaReadClient({ bridgeDb, chats: repos.chats, transcripts: repos.transcripts, settings }),
     settings,
     calendarConnected,
+    waAvailable: () => settings().whatsapp.readTools.enabled && bridgeDb.open(),
     audit: (kind, ref, detail) => audit(kind, ref, detail, now()),
+  });
+
+  // ---- [V2] media: the ONE BridgeReadClient media/fetch.ts uses (B5), normaliser (S-IMAGE), cache ----
+  const mediaRead = createBridgeReadClient(() => launcher?.endpoint() ?? null, fetch);
+  const clockSleep = (ms: number, signal?: AbortSignal): Promise<void> =>
+    new Promise<void>((done) => {
+      const timer = clock.setTimeout(() => {
+        signal?.removeEventListener('abort', onAbort);
+        done();
+      }, ms);
+      function onAbort(): void {
+        clock.clearTimeout(timer);
+        done();
+      }
+      signal?.addEventListener('abort', onAbort, { once: true });
+    });
+  const mediaFetcher = createMediaFetcher({ read: mediaRead, sleep: clockSleep });
+  const sha256Hex = (data: string | Uint8Array): import('../shared/types').Sha256Hex =>
+    createHash('sha256').update(data).digest('hex') as import('../shared/types').Sha256Hex;
+  /** S-IMAGE: the real nativeImage facade comes from index.ts; without it every picture is rejected 'decode' (fail closed). */
+  const imageFacade: ImageFacade = deps.image ?? {
+    fromBuffer: () => ({
+      isEmpty: () => true,
+      getSize: () => ({ width: 0, height: 0 }),
+      resize() {
+        return this;
+      },
+      toJPEG: () => new Uint8Array(0),
+    }),
+  };
+  const normalizeImage = createImageNormalizer({ image: imageFacade, hash: (b) => sha256Hex(b) });
+  const mediaCache: MediaCache = createMediaCache({
+    dir: paths.mediaCacheDir,
+    repos,
+    fs: {
+      writeFileSync: (p, data) => nodeFs.writeFileSync(p, data),
+      readFileSync: (p) => nodeFs.readFileSync(p),
+      rmSync: (p, o) => nodeFs.rmSync(p, o),
+      mkdirSync: (p, o) => nodeFs.mkdirSync(p, o),
+    },
+    hash: (text) => sha256Hex(text),
+  });
+
+  // ---- [V2] voice (V0): fetch -> demux -> decode -> WAV -> whisper job -> transcripts row ----
+  let transcribingSeconds: number | null = null;
+  const pushQueue = (): void => {
+    const q = healthHub.get().queue;
+    emit('queue:changed', {
+      pending: q.pending,
+      running: q.running,
+      transcribing: transcribingSeconds === null ? null : { seconds: transcribingSeconds },
+    });
+  };
+  const whisperSeam =
+    seams === null
+      ? null
+      : seams.whisperCmd === undefined
+        ? undefined
+        : {
+            command: seams.whisperCmd.command,
+            args: [...seams.whisperCmd.args],
+            cwd: nodePath.dirname(seams.whisperCmd.args[0] ?? seams.whisperCmd.command),
+          };
+  const voice: VoiceServiceV2 = createVoiceService({
+    repos,
+    jobs,
+    fetchMedia: mediaFetcher,
+    models: { pathOf: (id) => modelManager.readyPath(id) },
+    settings,
+    clock,
+    log,
+    paths: { voiceTmpDir: paths.voiceTmpDir, whisperDir: paths.whisperDir, whisperCliExe: paths.whisperCliExe },
+    onProgress: (p) => emit('voice:progress', p),
+    window: (chatId) => mediaWindowFor({ bridgeDb, repos }, chatId, LIMITS.contextMessages),
+    // e2e without the whisper command seam: voice is disabled (null = no whisper at all); production: the shipped whisper exe
+    ...(whisperSeam === undefined ? (e2e ? { whisperSeam: null } : {}) : { whisperSeam }),
+  });
+  const voiceReady = (): boolean => {
+    try {
+      const v = voice.state();
+      return v.model?.status === 'ready' && v.vad.status === 'ready';
+    } catch {
+      return false;
+    }
+  };
+  const refreshVoiceHealth = (): void => {
+    let v: ReturnType<VoiceServiceV2['state']>;
+    try {
+      v = voice.state();
+    } catch {
+      return;
+    }
+    const state: import('../shared/health').VoiceStatus = !v.enabled
+      ? 'off'
+      : transcribingSeconds !== null
+        ? 'transcribing'
+        : v.model === null
+          ? 'off'
+          : v.model.status === 'ready' && v.vad.status === 'ready'
+            ? 'ready'
+            : v.model.status === 'failed'
+              ? 'failed'
+              : 'downloading';
+    healthHub.setVoice({ state });
+  };
+
+  // ---- [V2] V1 READ-IMAGE: the picture of a run (pickImage) and the tool-less reading stage (readImage) ----
+  const mmprojReady = (): boolean =>
+    settings().images.enabled &&
+    modelManager.readyPath(resolvedTier) !== null &&
+    modelManager.readyPath(MMPROJ_FOR_TIER[resolvedTier]) !== null;
+  const pickImageRaw = createPickImage({
+    images: () => ({ enabled: settings().images.enabled }),
+    chatJidOf: (chatId) => repos.chats.byId(chatId)?.jid ?? null,
+    media: mediaFetcher,
+    normalize: normalizeImage,
+    cache: mediaCache,
+    alreadyRead: (chatId, waMsgId) => {
+      const row = repos.db
+        .prepare<{ n: number }>(
+          `SELECT COUNT(*) AS n FROM proposals p JOIN items i ON i.id = p.item_id
+            WHERE i.chat_id = ? AND p.image_json IS NOT NULL AND json_extract(p.image_json, '$.waMsgId') = ?
+              AND json_extract(p.image_json, '$.read') IS NOT NULL`,
+        )
+        .get(chatId, waMsgId);
+      return (row?.n ?? 0) > 0;
+    },
+    audit: (kind, detail) => audit(kind, null, detail, now()),
+  });
+  /** Links the cached picture to the chat's open item so Dismiss / retention delete its files (mediaCache.deleteForItem). */
+  const pickImage = async (
+    chatId: import('../shared/types').ChatRef,
+    window: readonly import('../shared/types').Message[],
+  ): Promise<NormalizedImage | null> => {
+    const img = await pickImageRaw(chatId, window);
+    if (img === null) return null;
+    const row = newestImageRow(window);
+    const item = repos.items.openForChat(chatId);
+    if (row !== null && item !== null) {
+      const cached = repos.mediaCache.get(chatId, row.waMsgId);
+      if (cached !== null && cached.itemId !== item.id) repos.mediaCache.upsert({ ...cached, itemId: item.id });
+    }
+    return img;
+  };
+  const readImage = createReadImageStage({
+    images: () => ({ enabled: settings().images.enabled, cloud: settings().images.cloud }),
+    activeProvider: () => providerFactory.get(),
+    // B21: the provider's consent at the CURRENT version (whose text names pictures); Local needs none
+    consentCurrent: (p) => p === 'local' || repos.consents.isCurrent(CONSENT_KIND_FOR[p]),
+    local: { mmprojReady, provider: () => seamProvider?.('local') ?? makeLocal() },
+    imagesPassed: (p) => FEATURE_GATES[p].imagesPassed,
+    repos,
+    clock,
+    log,
   });
 
   /** [R2] W1-10's wiring contract: tokens REMAINING today, never the configured ceiling. */
@@ -850,6 +1302,7 @@ export async function compose(deps: ComposeDeps): Promise<AppRuntimeHandle> {
       cloudDailyTokenBudget,
     },
     now,
+    voiceReady, // [V2] a voice note triggers only when the resolved voice tier + VAD are ready (P2 2 item 1)
   });
 
   const ingest: Ingest = createIngest({
@@ -882,6 +1335,19 @@ export async function compose(deps: ComposeDeps): Promise<AppRuntimeHandle> {
     log,
     notifyChanged,
     onItemCreated: (itemId) => notifier.itemCreated(itemId as ItemId),
+    // ---- [V2] OrchestratorDepsV2 (v2-build-plan section 3) ----
+    voice,
+    readImage,
+    pickImage,
+    tryAuto: (actionId) => executor.tryAuto(actionId),
+    onTranscribing: (seconds) => {
+      transcribingSeconds = seconds;
+      refreshVoiceHealth();
+      pushQueue();
+    },
+    featureGates: (p) => FEATURE_GATES[p],
+    updateSurfaceAvailable,
+    audioWindow: (chatId) => mediaWindowFor({ bridgeDb, repos }, chatId, LIMITS.contextMessages),
   });
 
   const theQueue: TriageQueue = createTriageQueue({
@@ -899,7 +1365,10 @@ export async function compose(deps: ComposeDeps): Promise<AppRuntimeHandle> {
           },
         }),
   });
-  theQueue.onStats((s) => healthHub.setQueue(s));
+  theQueue.onStats((s) => {
+    healthHub.setQueue(s);
+    pushQueue(); // [V2] queue:changed carries the transcribing seconds for the header line
+  });
   later.pokeIngest = () => ingest.poke();
   later.queuePoke = () => theQueue.poke();
 
@@ -913,6 +1382,8 @@ export async function compose(deps: ComposeDeps): Promise<AppRuntimeHandle> {
     calendarConnected,
     notifyChanged,
     enqueueRetriage: () => theQueue.poke(), // [R2] a doorbell, never a second enqueue (W1-10)
+    updatesAvailable: updateSurfaceAvailable, // [V2] B4
+    mediaCache, // [V2] thumbnails + item:getImage
   });
 
   // ---------------------------------------------------------------------------------------------------------------
@@ -932,6 +1403,27 @@ export async function compose(deps: ComposeDeps): Promise<AppRuntimeHandle> {
       signal?.addEventListener('abort', onAbort, { once: true });
     });
 
+  /** C2 5 AutoSnapshotInput -> auto_policies.snapshot_sha: a policy is bound to the calendar, the account, the provider and the app
+   *  major.minor it was granted under; any change => snapshot_changed (pause). The account is the wizard's last known e-mail. */
+  const snapshotSha = (): string => {
+    const email = googleAuth.wizardState().accountEmail;
+    const input: AutoSnapshotInput = {
+      targetCalendarId: settings().calendar.targetCalendarId,
+      googleAccountEmailSha8: email === null ? '' : sha256Hex(email.toLowerCase()).slice(0, 8),
+      provider: settings().llm.provider,
+      appMajorMinor: version.split('.').slice(0, 2).join('.'),
+    };
+    return sha256Hex(canonicalJson(input));
+  };
+  /** RFC 4122 v4 from S-RAND bytes (auto_decisions / auto_writes ids). */
+  const randomUuidOf = (bytes: Uint8Array): string => {
+    const b = Array.from(bytes.slice(0, 16));
+    b[6] = (b[6]! & 0x0f) | 0x40;
+    b[8] = (b[8]! & 0x3f) | 0x80;
+    const hex = b.map((x) => x.toString(16).padStart(2, '0')).join('');
+    return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20, 32)}`;
+  };
+
   const executor: ActionExecutorHandle = createActionExecutor({
     repos,
     send: sendClient,
@@ -948,6 +1440,67 @@ export async function compose(deps: ComposeDeps): Promise<AppRuntimeHandle> {
       const r = items.detail(itemId);
       return r.ok ? r.value : null;
     },
+    // ---- [V2] C2 14 ----
+    updateSurfaceAvailable,
+    autoGate: evaluateAutoGate,
+    snapshotSha,
+    notifyAuto: (e) => {
+      emitAutoChanged();
+      if (e.autoWriteId === undefined) return;
+      const w = repos.autoWrites.byId(e.autoWriteId);
+      if (w === null) return;
+      if (e.kind === 'write') {
+        notifier.autoWrite({ kind: w.kind, autoWriteId: w.id, burstCount: 0, itemId: w.itemId });
+      } else if (e.kind === 'undo') {
+        notifier.autoUndone(w.undoState === 'undone');
+      }
+    },
+    randomUuid: () => randomUuidOf(random.bytes(16)),
+    featureGates: (p) => FEATURE_GATES[p],
+    calendarRoles,
+  });
+
+  // ---- [V2] automatic mode: the main-owned native dialog (S-DIALOG / WCA_DIALOG_SCRIPT), the policy service, undo ----
+  const showMessageBox: ShowMessageBoxFn =
+    deps.dialog ??
+    ((): Promise<{ response: number; checkboxChecked: boolean }> =>
+      Promise.resolve({ response: 0, checkboxChecked: false })); // no dialog facade => every question answers Cancel
+  const autoDialog: AutoDialog = createAutoDialog({
+    showMessageBox,
+    t: () => t,
+    ...(seams?.dialogScript === undefined ? {} : { script: seams.dialogScript }),
+  });
+  /** The dialog parent: the attached main window (never a renderer-supplied value). */
+  const dialogParent = (): unknown => windowRef;
+  let lastFocusAt: EpochMs | null = null;
+  const autoPolicy: AutoPolicyService = createAutoPolicyService({
+    repos,
+    clock,
+    random,
+    dialog: autoDialog,
+    rate: {
+      record: (bucket, key, at) => repos.rate.record(bucket, key, at),
+      countSince: (bucket, key, since) => repos.rate.countSince(bucket, key, since),
+    },
+    calendarRoles,
+    updateSurfaceAvailable,
+    snapshotSha,
+    audit: (kind, ref, detail) => audit(kind, ref, detail, now()),
+    notify: () => emitAutoChanged(),
+    calendarConnected,
+    calendarName: () => '', // no calendar display name is stored main-side (REQUEST in V2-W2-01 notes); the dialog still names the account's calendar generically
+    versions: () => ({ app: version, electron: process.versions.electron ?? '' }),
+    lastFocusAt: () => lastFocusAt,
+    onAppPause: () => notifier.autoPolicy('paused'),
+    onExpiring: () => notifier.autoExpiring(),
+  });
+  v2Late.autoPolicy = autoPolicy;
+  const undo = createUndo({
+    repos,
+    executor,
+    clock,
+    audit: (kind, ref, detail) => audit(kind, ref, detail, now()),
+    windowState: () => runtimeWindowState(),
   });
 
   // ---------------------------------------------------------------------------------------------------------------
@@ -1003,13 +1556,31 @@ export async function compose(deps: ComposeDeps): Promise<AppRuntimeHandle> {
     const raw = repos.meta.get('onboarding_step');
     return raw === null ? 'welcome' : (raw as OnboardingStep);
   };
+  /** [V2] the onboarding "Voice notes" line from the voice service (numbers and enums only). */
+  const voiceChecklist = (): { voice: 'off' | 'downloading' | 'ready'; voicePercent: number | null } => {
+    try {
+      const v = voice.state();
+      if (!v.enabled || v.model === null) return { voice: 'off', voicePercent: null };
+      if (v.model.status === 'ready' && v.vad.status === 'ready') return { voice: 'ready', voicePercent: null };
+      if (v.model.status === 'downloading' || v.model.status === 'paused' || v.model.status === 'verifying')
+        return {
+          voice: 'downloading',
+          voicePercent: v.model.sizeBytes > 0 ? Math.round((v.model.bytesDone / v.model.sizeBytes) * 100) : null,
+        };
+      return { voice: 'off', voicePercent: null };
+    } catch {
+      return { voice: 'off', voicePercent: null };
+    }
+  };
   const onboardingState = (): OnboardingState => {
     const s = settings();
     const step = onboardingStep();
     const aiReady =
       s.llm.provider === 'local'
         ? modelManager.readyPath(resolvedTier) !== null
-        : secrets.has(s.llm.provider === 'claude' ? 'anthropic_api_key' : 'gemini_api_key').present;
+        : s.llm.provider === 'claude_cli' || s.llm.provider === 'antigravity_cli'
+          ? providerFactory.usable().ok // [V2] B12: exe + floor + consent + a smoke within 24 h
+          : secrets.has(s.llm.provider === 'claude' ? 'anthropic_api_key' : 'gemini_api_key').present;
     const mcp = mcpHost.status();
     return {
       step,
@@ -1017,6 +1588,7 @@ export async function compose(deps: ComposeDeps): Promise<AppRuntimeHandle> {
         ai: aiReady ? 'ready' : downloadPercent === null ? 'pending' : 'downloading',
         aiPercent: aiReady ? null : downloadPercent,
         whatsapp: bridgeOnline() ? 'ready' : 'pending',
+        ...voiceChecklist(), // [V2] C2 1.5
         calendar:
           mcp === 'connected'
             ? 'ready'
@@ -1163,18 +1735,89 @@ export async function compose(deps: ComposeDeps): Promise<AppRuntimeHandle> {
     exportDiagnostics,
   };
 
-  const baseHandlers: IpcHandlers = {
-    ...createAppHandlers(handlerDeps),
-    ...createItemsHandlers(handlerDeps),
-    ...createActionsHandlers(handlerDeps),
-    ...createSettingsHandlers(handlerDeps),
-    ...createSecretsHandlers(handlerDeps),
-    ...createLlmHandlers(handlerDeps),
-    ...createModelHandlers(handlerDeps),
-    ...createPairingHandlers(handlerDeps),
-    ...createGoogleHandlers(handlerDeps),
-    ...createDataHandlers(handlerDeps),
+  // ---- [V2] the collaborators HandlerDepsV2 carries (v2-build-plan section 3) ----
+  const agyWorkspace = createAgyWorkspace({
+    home: homeDir,
+    proc: agyRunning,
+    fs: {
+      readFileSync: (p, enc) => nodeFs.readFileSync(p, enc),
+      writeFileSync: (p, text) => nodeFs.writeFileSync(p, text, 'utf8'),
+      existsSync: (p) => nodeFs.existsSync(p),
+    },
+    userDataDir: paths.userData,
+    mkdirSync: (p, o) => {
+      nodeFs.mkdirSync(p, o);
+    },
+  });
+  /** S-CONSOLE: production spawns the vendor exe in its own visible console; an e2e build only RECORDS the argv (T2 4.2). */
+  const consoleCalls: string[][] = [];
+  const cliConsole: import('./deps').OpenVisibleConsoleFn =
+    deps.console ??
+    (e2e
+      ? async (exe, args) => {
+          consoleCalls.push([exe, ...args]);
+        }
+      : createOpenVisibleConsole({ spawn }));
+  const handlerDepsV2: HandlerDepsV2 = {
+    ...handlerDeps,
+    autoPolicy,
+    undo,
+    cliStatus,
+    cliConsole,
+    agyWorkspace,
+    voice,
+    mediaCache,
+    jobs,
   };
+  /** `llm:listModels {provider:'antigravity_cli'}`: `agy models` under the isolated profile; an empty list keeps the current setting. */
+  const listAgyModelsNow = async (): Promise<string[]> => {
+    const loc = await cliLocator.find('antigravity_cli').catch(() => null);
+    if (loc === null) return [];
+    recordCliExePath('antigravity_cli', loc.exePath);
+    return listAgyModels(cliRunner, {
+      jobs,
+      exePath: loc.exePath,
+      userDataDir: paths.userData,
+      processEnv: cliEnv,
+      argsPrefix: seamArgsPrefix(cliSeam, loc.exePath),
+    });
+  };
+  const baseHandlers: IpcHandlers = mergeHandlerGroups([
+    createAppHandlers(handlerDepsV2),
+    createItemsHandlers(handlerDepsV2, { undo }),
+    createActionsHandlers(handlerDepsV2),
+    createSettingsHandlers(handlerDepsV2, { voice, autoDialog, dialogParent }),
+    createSecretsHandlers(handlerDepsV2),
+    createLlmHandlers(handlerDepsV2, { cliStatus, listAgyModels: listAgyModelsNow }),
+    createModelHandlers(handlerDepsV2),
+    createPairingHandlers(handlerDepsV2),
+    createGoogleHandlers(handlerDepsV2),
+    createDataHandlers(handlerDepsV2, { autoPolicy }),
+    createAutoHandlers(handlerDepsV2, { dialogParent }),
+    createCliHandlers({
+      ...handlerDepsV2,
+      cliLocator,
+      cliRunner,
+      autoDialog,
+      window: dialogParent,
+      ...(deps.pickExePath === undefined ? {} : { pickExePath: deps.pickExePath }),
+      homeDir,
+      agyRunning,
+      agySettingsExists: () =>
+        nodeFs.existsSync(nodePath.win32.join(homeDir(), '.gemini', 'antigravity-cli', 'settings.json')),
+      makeAgyForTest: (exePath, observedVersion) =>
+        createAgyProvider({
+          runner: cliRunner,
+          locator: cliLocator,
+          model: settings().llm.cli.agyModel,
+          exePath,
+          userDataDir: paths.userData,
+          observedVersion,
+          now,
+        }),
+    }),
+    createVoiceHandlers(handlerDepsV2),
+  ]);
 
   /**
    * PRODUCT DEFECT FIX (fresh profile could never pair): `start()` runs before the user has read the WhatsApp
@@ -1196,6 +1839,18 @@ export async function compose(deps: ComposeDeps): Promise<AppRuntimeHandle> {
         void startBridge().catch((err: unknown) => {
           log.warn('bridge_start_after_consent_failed', { reason: err instanceof Error ? err.name : 'unknown' });
         });
+      }
+      return res;
+    },
+    // [V2] B19: Dismiss deletes the item's cached picture + thumbnail at once (mediaCache.deleteForItem), after the dismiss itself.
+    'item:dismiss': async (req, ctx) => {
+      const res = await baseHandlers['item:dismiss'](req, ctx);
+      if (res.ok) {
+        try {
+          mediaCache.deleteForItem(req.itemId);
+        } catch (err) {
+          log.warn('media_cache_delete_failed', { reason: err instanceof Error ? err.name : 'unknown' });
+        }
       }
       return res;
     },
@@ -1230,6 +1885,8 @@ export async function compose(deps: ComposeDeps): Promise<AppRuntimeHandle> {
     } else {
       refreshLlmHealth();
     }
+    refreshVoiceHealth(); // [V2] voice.enabled / tier
+    emitAutoChanged(); // [V2] a settings change can move an automatic-mode precondition
   });
 
   // ---------------------------------------------------------------------------------------------------------------
@@ -1320,11 +1977,6 @@ export async function compose(deps: ComposeDeps): Promise<AppRuntimeHandle> {
       });
     }
     if (abortStart('reconcile')) return;
-    // Only now, after BOTH reconcile passes, is it known which recovered actions are genuinely unresolved. Those get a
-    // fresh pending clone so the card offers "Send again" / "Add again" - a new approval, never a replay (TESTS 6).
-    const clones = executor.offerRetryForUnknown();
-    if (clones > 0) log.info('recovery_retry_offered', { clones });
-
     // children: the Supervisor owns all three (ARCH 3 "Supervisor x3 + Reaper (PID files)").
     // In attach mode there is no `childSpec()` - the bridge process is not ours, so it is neither supervised nor reaped.
     if (spawningLauncher !== null) supervisor.register(spawningLauncher.childSpec());
@@ -1348,7 +2000,31 @@ export async function compose(deps: ComposeDeps): Promise<AppRuntimeHandle> {
     }
     if (abortStart('children')) return; // no autostart flag, no queue, no periodic timers on a quitting app
 
+    // [V2-W2-01] The two passes above run before the calendar child exists, so a calendar-side unknown_outcome (a create, or an
+    // update_event whose PATCH may have landed - crash_after_patch) could not be read yet. Now that the calendar is connected,
+    // one more READ-ONLY pass (get-event / findAppEvent only - never list-events, never a re-patch) resolves what really landed.
+    if (calendarConnected()) {
+      await reconcileUnknown({
+        repos,
+        bridgeDb: bridgeDb.open() ? bridgeDb : null,
+        read: mcpRead,
+        now,
+        timeZone: () => settings().general.timeZone,
+      }).catch((err: unknown) => {
+        log.warn('reconcile_failed', { reason: err instanceof Error ? err.name : 'unknown' });
+        return undefined;
+      });
+      if (abortStart('reconcile_calendar')) return;
+    }
+    // Only now, after EVERY reconcile pass, is it known which recovered actions are genuinely unresolved. Those get a
+    // fresh pending clone so the card offers "Send again" / "Add again" - a new approval, never a replay (TESTS 6).
+    const clones = executor.offerRetryForUnknown();
+    if (clones > 0) log.info('recovery_retry_offered', { clones });
+
     refreshLlmHealth();
+    refreshVoiceHealth(); // [V2]
+    healthHub.setCalendarUpdates(updateSurfaceAvailable()); // [V2] after the calendar startup guard ran
+    emitAutoChanged(); // [V2] AppHealth.auto + the tray line from the stored policy
     applyAutostart({ electron, enabled: settings().general.autostart, isPackaged });
 
     theQueue.setPaused(settings().agent.paused);
@@ -1364,8 +2040,21 @@ export async function compose(deps: ComposeDeps): Promise<AppRuntimeHandle> {
         /* the store may not exist yet */
       }
     });
+    // [V2] B7: expiry, the 7-day unattended pause and the expiry reminder of automatic mode
+    every(AUTO_TICK_MS, () => {
+      autoPolicy.tick(now());
+    });
     every(RETENTION_INTERVAL_MS, () => {
-      runRetention({ repos, settings, now });
+      const run = runRetention({ repos, settings, now });
+      // [V2] C2 16.1: the purged media_cache rows' files are unlinked here (the DB job only names them)
+      for (const name of run.mediaFiles) {
+        if (nodePath.basename(name) !== name || name.includes('..')) continue; // plain file names only
+        try {
+          nodeFs.rmSync(nodePath.join(paths.mediaCacheDir, name), { force: true });
+        } catch {
+          /* already gone */
+        }
+      }
     });
     every(BACKUP_INTERVAL_MS, () => {
       const last = Number(repos.meta.get('last_backup_at') ?? 0);
@@ -1392,6 +2081,7 @@ export async function compose(deps: ComposeDeps): Promise<AppRuntimeHandle> {
         theQueue.abortInFlight();
         await theQueue.stop();
       },
+      killJobs: () => jobs.killAll(), // [V2] B2: every whisper / CLI job dies BEFORE the supervised children
       drainExecutor: (ms) => executor.drain(ms),
       stopChildren: async (opts) => {
         await providerFactory.invalidate(); // disposes the local provider => stops llama-server
@@ -1498,13 +2188,45 @@ export async function compose(deps: ComposeDeps): Promise<AppRuntimeHandle> {
   const trayState = (): TrayState => {
     const h = healthHub.get();
     const counts = repos.items.counts();
+    // [V2] B11: the automatic-mode line, from the live policy (absent when there is none)
+    let auto: TrayState['auto'] = null;
+    try {
+      const p = autoPolicy.getState().policy;
+      if (p !== null && (p.state === 'on' || p.state === 'shadow' || p.state === 'paused'))
+        auto = { state: p.state, pausedReason: p.pausedReason };
+    } catch {
+      auto = null;
+    }
     return {
       health: h,
       paused: h.paused,
       waiting: counts.needsReply + counts.infoMissing,
       setupDone: onboardingStep() === 'done',
+      auto,
     };
   };
+
+  /** The tray's automatic-mode line (B11): pause / disable from main (no window, no dialog), or open the settings group. */
+  const trayAuto = (action: 'pause' | 'disable' | 'open'): void => {
+    if (action === 'pause') autoPolicy.pause('user');
+    else if (action === 'disable') autoPolicy.disable('user');
+    else {
+      showWindow();
+      emit('navigate', { view: 'settings' });
+    }
+  };
+
+  /** `RegisterIpcOptions.windowState`, sampled once per invoke; a focused sample also feeds the unattended pause (B7). */
+  function runtimeWindowState(): IpcContext {
+    const live = windowRef !== null && !windowRef.isDestroyed() ? windowRef : null;
+    const windowVisible = live !== null && live.isVisible();
+    // TESTS 4.2 `WCA_FOCUS_CHECK=visible-only`: Windows foreground-lock makes `isFocused()` flaky under automation,
+    // so an e2e run may treat a VISIBLE window as focused. The hidden-window rejection is untouched (it is
+    // `windowVisible` that carries it), and the seam is unreachable in production (`seams` is null there).
+    const windowFocused = visibleOnlyFocus ? windowVisible : live !== null && live.isFocused();
+    if (windowFocused && windowVisible) lastFocusAt = now();
+    return { windowFocused, windowVisible, shownByNotificationAt: notifier.shownByNotificationAt() };
+  }
 
   const togglePause = (): void => {
     const next = !settings().agent.paused;
@@ -1522,18 +2244,7 @@ export async function compose(deps: ComposeDeps): Promise<AppRuntimeHandle> {
     paths,
     recovery: { recovered: opened.recovered, restoredFrom: opened.restoredFrom },
     attachWindow,
-    windowState: (): IpcContext => {
-      const live = windowRef !== null && !windowRef.isDestroyed() ? windowRef : null;
-      const windowVisible = live !== null && live.isVisible();
-      return {
-        // TESTS 4.2 `WCA_FOCUS_CHECK=visible-only`: Windows foreground-lock makes `isFocused()` flaky under automation,
-        // so an e2e run may treat a VISIBLE window as focused. The hidden-window rejection is untouched (it is
-        // `windowVisible` that carries it), and the seam is unreachable in production (`seams` is null there).
-        windowFocused: visibleOnlyFocus ? windowVisible : live !== null && live.isFocused(),
-        windowVisible,
-        shownByNotificationAt: notifier.shownByNotificationAt(),
-      };
-    },
+    windowState: runtimeWindowState,
     isTrusted: (event: IpcEventLike) =>
       isTrustedSender(event, () =>
         windowRef === null
@@ -1557,6 +2268,13 @@ export async function compose(deps: ComposeDeps): Promise<AppRuntimeHandle> {
     started: () => isStarted,
     doorbellUrl: () => webhookUrl,
     doorbellStats: () => doorbell.stats(),
+    jobPids: () => jobs.jobPids(),
+    dialogs: () => autoDialog.recorded(),
+    consoles: () => consoleCalls.map((c) => [...c]),
+    trayAuto,
+    noteFocus: () => {
+      lastFocusAt = now();
+    },
   };
 }
 

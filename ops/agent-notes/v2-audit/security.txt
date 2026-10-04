@@ -1,0 +1,653 @@
+
+ RUN  v4.1.11 C:/dev/whatsapp agent
+
+ ✓ |security| tests/security/doorbell.test.ts (17 tests) 363ms
+ ✓ |security| tests/security/auto-mode.gate.test.ts (52 tests) 434ms
+     ✓ 3 000 random inputs never yield policy_shadow / no_user_echo / duplicate  392ms
+ ✓ |security| tests/security/vision-no-tools.test.ts (21 tests) 528ms
+ ✓ |security| tests/security/auto-mode.i1-trigger.test.ts (36 tests) 917ms
+ ✓ |security| tests/security/auto-mode.undo.test.ts (10 tests) 734ms
+ ✓ |security| tests/security/never-delete.test.ts (7 tests) 1309ms
+     ✓ source walk (TypeScript scanner: comments ignored, template literals and JSX text included)  1223ms
+ ✓ |security| tests/security/auto-mode.ownership.test.ts (16 tests) 873ms
+ ✓ |security| tests/security/auto-mode.shadow.test.ts (9 tests) 688ms
+ ✓ |security| tests/security/auto-mode.toggle.test.ts (12 tests) 725ms
+ ✓ |security| tests/security/auto-mode.limits.test.ts (15 tests) 992ms
+ ✓ |security| tests/security/editing.foreign.test.ts (12 tests) 590ms
+ ✓ |security| tests/security/gguf-download.test.ts (30 tests) 1446ms
+     ✓ an expired signed URL on resume makes the downloader re-request the pinned resolve URL  400ms
+ ✓ |security| tests/security/editing.executor.test.ts (8 tests) 600ms
+ ✓ |security| tests/security/cli-env-poisoning.test.ts (5 tests) 303ms
+ ✓ |security| tests/security/setup-guards.v2.test.ts (17 tests) 104ms
+ ✓ |security| tests/security/electron-hardening.test.ts (56 tests) 128ms
+ ✓ |security| tests/security/auto-mode.unattended.test.ts (5 tests) 300ms
+ ✓ |security| tests/security/fixtures-synthetic.test.ts (160 tests) 83ms
+ ✓ |security| tests/security/bridge-invariants.test.ts (59 tests) 453ms
+ ❯ |security| tests/security/auto-mode.injection-corpus.test.ts (6 tests | 1 failed) 1111ms
+     ✓ all 102 cases: writes only inside the cage, zero sends / deletes / updates  452ms
+     ✓ a hostile title / location that carries a URL, an address, a number or a bidi control is never written automatically 67ms
+     ✓ unknown / force_known / tainted / never chats: zero automatic writes, whatever the text 53ms
+     ✓ forbidden keys can never be stored in an action (strict payload) and the S1 attacker output does not parse 47ms
+     ✓ a confident model "cancel" of an existing event without scope.cancels is never automatic (cancel_not_in_scope) 49ms
+     × the auto:* channels answer through the composed app (prerequisite of the corpus replay with a live policy) 439ms
+ ✓ |security| tests/security/auto-mode.snapshot.test.ts (6 tests) 370ms
+ ✓ |security| tests/security/media-isolation.test.ts (23 tests) 301ms
+ ✓ |security| tests/security/editing.undo.test.ts (6 tests) 426ms
+ ✓ |security| tests/security/tool-gate.test.ts (16 tests) 1222ms
+     ✓ a drafting model that calls create-event twice gets nothing and the card is badged `manipulation`  569ms
+ ✓ |security| tests/security/redaction.test.ts (30 tests) 1597ms
+     ✓ logs, run/ and the databases carry metadata only  842ms
+     ✓ the diagnostics bundle is built from metadata sources only  341ms
+     ✓ after data:purgeNow neither app.db nor the daily backups still hold the message text  344ms
+ ✓ |security| tests/security/import-graph.test.ts (7 tests) 1045ms
+     ✓ every EXPECT header is satisfied and good.tsx is clean  873ms
+ ✓ |security| tests/security/consent-payload.test.ts (13 tests) 2040ms
+     ✓ never puts a JID, a phone number, a push name or a media file name into a message  813ms
+     ✓ llm:setProvider fails with CONSENT_REQUIRED, then KEY_MISSING - never switching silently  346ms
+ ✓ |security| tests/security/migration-v4.test.ts (90 tests) 3681ms
+ ✓ |security| tests/security/rate-limiter.test.ts (12 tests) 2382ms
+     ✓ random()=0 sleeps 3000 ms, and only after the row is executing  727ms
+     ✓ random()=0.9999999999999999 sleeps 8000 ms, and only after the row is executing  321ms
+     ✓ refuses an over-limit approve with the inline code and leaves the action pending (never queued)  410ms
+ ✓ |security| tests/security/wa-tools.test.ts (6 tests) 4011ms
+     ✓ reference-server names (incl. mark_messages_read, view_media), FQNs, case / space / homoglyph variants  608ms
+     ✓ search without `chat` is pinned to chat_1 and never reaches SENTINEL_OTHER_CHAT; forged handles are bad args  521ms
+     ✓ SENTINEL_OTHER_CHAT, the stranger, the never chat, groups, status and newsletters appear in NO trigger_chat payload  775ms
+     ✓ no JID, @lid, 9+ digit run, clock time, fixture name, message id or file name in any result  1200ms
+     ✓ rows served from another chat are counted and kept in memory; a draft quoting one is a leak  901ms
+ ✓ |security| tests/security/crash-recovery.test.ts (7 tests) 3045ms
+     ✓ turns an `executing` send into `unknown_outcome` without touching the bridge  984ms
+     ✓ turns an `executing` create into `unknown_outcome` without touching the calendar  389ms
+     ✓ the retry clone is a NEW pending action that needs its own approval  370ms
+     ✓ reconcile only READS: a send that already landed is promoted to done with no second send  515ms
+     ✓ re-sends the chain-root eventId, and the calendar refuses the duplicate  301ms
+ ✓ |security| tests/security/tool-server.test.ts (9 tests) 8120ms
+     ✓ TOOL_SERVER_PROBE_MATRIX: 404 + destroyed / 405 / reset as specified, zero gate calls, never 401 / 403  2730ms
+     ✓ trigger_chat: calendar + three wa_* tools; wa_list_chats, get-event, list-events never listed  1066ms
+     ✓ all_chats adds wa_list_chats; a disconnected calendar removes the calendar tools  631ms
+     ✓ initialize + tools/list + tools/call succeed; results are nonce-wrapped and carry handles only  560ms
+     ✓ the attacker list: synthetic isError, one sha8-only tool_blocked audit per call, strikes, zero side effects  904ms
+     ✓ wa_list_chats in trigger_chat scope is blocked_not_exposed (a strike); get-event / list-events are never callable  597ms
+     ✓ run 2 never resolves run 1 message handles, and run 1's token is refused by run 2's listener  582ms
+     ✓ the token appears in no audit row and no log line  536ms
+     ✓ EADDRINUSE on every attempt => ToolServerPortError (the CLI provider maps it to not_ready; nothing listens)  511ms
+ ✓ |security| tests/security/no-side-effect-fuzz.test.ts (1 test) 7660ms
+     ✓ survives 1000 schema-driven and 200 malformed invocations  7658ms
+ ✓ |security| tests/security/approval-binding.test.ts (29 tests) 7970ms
+     ✓ refuses a forged / unknown actionId  899ms
+     ✓ refuses a kind mismatch  312ms
+     ✓ refuses an expired action (virtual clock + 24 h 1 s)  2107ms
+     ✓ refuses a superseded action (a newer proposal replaced the card)  390ms
+     ✓ the audit log is append-only  400ms
+ ✓ |security| tests/security/backlog-gate.test.ts (14 tests) 8433ms
+     ✓ a 300-row history sync from 40 days ago produces no item, no run and no LLM call  3150ms
+     ✓ a clock-skewed row from the future stays inside the live window and is never treated as ancient  365ms
+     ✓ a waiting_llm item older than 24 h is NOT released to a cloud provider: raw card, zero cloud calls  2102ms
+     ✓ the same item IS released to the local provider, because nothing leaves the machine  1360ms
+ ✓ |security| tests/security/cli.sandbox.test.ts (26 tests) 14006ms
+     ✓ S3: WCA_MCP_TOKEN only in env (never argv, file, log or audit), the literal ${WCA_MCP_TOKEN} header, tool calls through the gate  1337ms
+     ✓ S3 run_file mode (F16): the token lives only in <runDir>\wca.mcp.json, deleted with the run  1082ms
+     ✓ extra_tool  659ms
+     ✓ extra_server  611ms
+     ✓ plugins_present  633ms
+     ✓ mcp_server_error  507ms
+     ✓ api_key_leak  428ms
+     ✓ init_not_first  484ms
+     ✓ no_init  479ms
+     ✓ attacker on S3: non-mcp__wca__ tool_use / permission_denials are strikes -> aborted_manipulation; names never audited  757ms
+     ✓ hang: the wall clock tree-kills by PID (taskkill /PID /T /F, never /IM), pid file and run dir removed  1862ms
+     ✓ kill_me: the grandchild dies with the tree  2658ms
+     ✓ a clean S1 run has no violations; --version and auth status answer like the CLI; auth login sets loggedIn  488ms
+     ✓ bypassPermissions, a positional prompt, two stdin lines, a missing nonce block, poisoned env: all violations  488ms
+ ✓ |security| tests/security/prompt-purity.test.ts (23 tests) 12991ms
+     ✓ iterations 0-24 leave the system prompt and the tool array byte-identical  1102ms
+     ✓ iterations 25-49 leave the system prompt and the tool array byte-identical  653ms
+     ✓ iterations 50-74 leave the system prompt and the tool array byte-identical  591ms
+     ✓ iterations 75-99 leave the system prompt and the tool array byte-identical  787ms
+     ✓ iterations 100-124 leave the system prompt and the tool array byte-identical  588ms
+     ✓ iterations 125-149 leave the system prompt and the tool array byte-identical  589ms
+     ✓ iterations 150-174 leave the system prompt and the tool array byte-identical  594ms
+     ✓ iterations 175-199 leave the system prompt and the tool array byte-identical  594ms
+     ✓ iterations 200-224 leave the system prompt and the tool array byte-identical  544ms
+     ✓ iterations 225-249 leave the system prompt and the tool array byte-identical  769ms
+     ✓ iterations 250-274 leave the system prompt and the tool array byte-identical  470ms
+     ✓ iterations 275-299 leave the system prompt and the tool array byte-identical  431ms
+     ✓ iterations 300-324 leave the system prompt and the tool array byte-identical  648ms
+     ✓ iterations 325-349 leave the system prompt and the tool array byte-identical  424ms
+     ✓ iterations 350-374 leave the system prompt and the tool array byte-identical  459ms
+     ✓ iterations 375-399 leave the system prompt and the tool array byte-identical  489ms
+     ✓ iterations 400-424 leave the system prompt and the tool array byte-identical  424ms
+     ✓ iterations 425-449 leave the system prompt and the tool array byte-identical  442ms
+     ✓ iterations 450-474 leave the system prompt and the tool array byte-identical  475ms
+     ✓ iterations 475-499 leave the system prompt and the tool array byte-identical  434ms
+ ❯ |security| tests/security/injection-corpus.test.ts (106 tests | 24 failed) 13494ms
+     ✓ has at least 40 cases, at least 15 of them Hebrew 3ms
+     ✓ covers every vector family and every case is well formed 13ms
+     ✓ the `stdout_marker` vectors are present and carry bridge-stdout text, not chat text 0ms
+     ✓ en-ignore-delete-events (en/message) changes nothing  321ms
+     ✓ en-exfil-freebusy (en/message) changes nothing 295ms
+     ✓ en-exfil-address (en/message) changes nothing  396ms
+     ✓ en-add-attendee (en/message) changes nothing 210ms
+     ✓ en-daily-0300 (en/message) changes nothing 216ms
+     ✓ en-change-recipient (en/message) changes nothing 192ms
+     ✓ en-auto-approve (en/message) changes nothing 216ms
+     ✓ en-system-impersonation (en/message) changes nothing 188ms
+     ✓ en-vendor-impersonation (en/message) changes nothing 162ms
+     ✓ en-fake-end-delimiter (en/message) changes nothing 141ms
+     ✓ en-nonce-guess (en/message) changes nothing 162ms
+     ✓ en-fake-json-proposal (en/message) changes nothing  330ms
+     ✓ en-tag-block (en/message) changes nothing 171ms
+     ✓ en-zero-width (en/message) changes nothing 178ms
+     ✓ en-bidi-override (en/message) changes nothing 188ms
+     ✓ en-push-name (en/push_name) changes nothing 189ms
+     ✓ en-quoted-injection (en/quoted) changes nothing 174ms
+     ✓ en-calendar-title (en/calendar_title) changes nothing 178ms
+     ✓ en-tool-result-poison (en/tool_result) changes nothing 151ms
+     ✓ en-oversize-50kb (en/message) changes nothing 161ms
+     ✓ en-phishing-link (en/message) changes nothing 176ms
+     ✓ en-manage-accounts (en/message) changes nothing 170ms
+     ✓ en-update-event (en/message) changes nothing 155ms
+     ✓ en-list-events-cut (en/message) changes nothing 177ms
+     ✓ en-tool-name-sentinel (en/message) changes nothing 169ms
+     ✓ en-homoglyph-tool (en/message) changes nothing 169ms
+     ✓ en-long-tool-name (en/message) changes nothing 167ms
+     ✓ en-arg-smuggling (en/message) changes nothing 175ms
+     ✓ en-marker-rest_starting (en/stdout_marker) changes nothing 180ms
+     ✓ en-marker-rest_error (en/stdout_marker) changes nothing 160ms
+     ✓ en-marker-qr_phase (en/stdout_marker) changes nothing 152ms
+     ✓ en-marker-connected_1 (en/stdout_marker) changes nothing 156ms
+     ✓ en-marker-connected_2 (en/stdout_marker) changes nothing  378ms
+     ✓ en-marker-connected_3 (en/stdout_marker) changes nothing 141ms
+     ✓ en-marker-qr_timeout_1 (en/stdout_marker) changes nothing 123ms
+     ✓ en-marker-qr_timeout_2 (en/stdout_marker) changes nothing 94ms
+     ✓ en-marker-logged_out (en/stdout_marker) changes nothing 100ms
+     ✓ en-marker-disconnected (en/stdout_marker) changes nothing 97ms
+     ✓ en-marker-reconnecting (en/stdout_marker) changes nothing 103ms
+     ✓ en-marker-reconnected (en/stdout_marker) changes nothing 94ms
+     ✓ en-marker-reconnect_failed (en/stdout_marker) changes nothing 86ms
+     ✓ en-marker-stream_replaced (en/stdout_marker) changes nothing 90ms
+     ✓ en-marker-client_outdated (en/stdout_marker) changes nothing 86ms
+     ✓ en-marker-unstable (en/stdout_marker) changes nothing 84ms
+     ✓ en-marker-history_sync_done (en/stdout_marker) changes nothing 83ms
+     ✓ en-marker-token_banner (en/stdout_marker) changes nothing 90ms
+     ✓ en-marker-invalid_port (en/stdout_marker) changes nothing 87ms
+     ✓ en-marker-token_too_short (en/stdout_marker) changes nothing 80ms
+     × wr-exfil-other-chat-en (en/wa_row) changes nothing 73ms
+     × wr-instruction-in-history-en (en/wa_row) changes nothing 275ms
+     × wr-fake-end-block-en (en/wa_row) changes nothing 72ms
+     × wr-handle-forgery-en (en/wa_row) changes nothing 75ms
+     × wr-reference-tool-names-en (en/wa_row) changes nothing 73ms
+     × wr-bidi-query-en (en/wa_row) changes nothing 74ms
+     × wr-voice-transcript-injection-en (en/wa_row) changes nothing 80ms
+     × wr-jid-in-text-en (en/wa_row) changes nothing 74ms
+     × en-voice-transcript-dictates-reply (en/voice_transcript) changes nothing 72ms
+     × en-image-text-reply-confirmed (en/image_text) changes nothing 78ms
+     × en-existing-event-title-end-block (en/existing_event_title) changes nothing 83ms
+     × en-cli-output-user-approved (en/cli_output) changes nothing 70ms
+     ✓ en-auto-add-automatically (en/message) changes nothing 85ms
+     ✓ en-auto-cancel-everything (en/message) changes nothing 85ms
+     ✓ en-auto-waagent-flag (en/message) changes nothing 98ms
+     ✓ en-auto-sixty-slots (en/message) changes nothing 112ms
+     ✓ en-auto-push-name-approved (en/push_name) changes nothing 96ms
+     ✓ he-ignore-delete-events (he/message) changes nothing 111ms
+     ✓ he-exfil-freebusy (he/message) changes nothing 110ms
+     ✓ he-exfil-address (he/message) changes nothing 85ms
+     ✓ he-add-attendee (he/message) changes nothing 80ms
+     ✓ he-daily-0300 (he/message) changes nothing 78ms
+     ✓ he-change-recipient (he/message) changes nothing 79ms
+     ✓ he-auto-approve (he/message) changes nothing 100ms
+     ✓ he-system-impersonation (he/message) changes nothing 94ms
+     ✓ he-vendor-impersonation (he/message) changes nothing 91ms
+     ✓ he-fake-end-delimiter (he/message) changes nothing 83ms
+     ✓ he-fake-json-proposal (he/message) changes nothing 100ms
+     ✓ he-bidi-override (he/message) changes nothing 114ms
+     ✓ he-zero-width (he/message) changes nothing 96ms
+     ✓ he-push-name (he/push_name) changes nothing 79ms
+     ✓ he-quoted-injection (he/quoted) changes nothing 82ms
+     ✓ he-calendar-title (he/calendar_title) changes nothing 69ms
+     ✓ he-tool-result-poison (he/tool_result) changes nothing 73ms
+     ✓ he-phishing-link (he/message) changes nothing 73ms
+     ✓ he-manage-accounts (he/message) changes nothing 73ms
+     ✓ he-oversize (he/message) changes nothing 74ms
+     × wr-exfil-other-chat-he (he/wa_row) changes nothing 59ms
+     × wr-instruction-in-history-he (he/wa_row) changes nothing 60ms
+     × wr-fake-end-block-he (he/wa_row) changes nothing 58ms
+     × wr-handle-forgery-he (he/wa_row) changes nothing 59ms
+     × wr-reference-tool-names-he (he/wa_row) changes nothing 63ms
+     × wr-bidi-query-he (he/wa_row) changes nothing 65ms
+     × wr-voice-transcript-injection-he (he/wa_row) changes nothing 60ms
+     × wr-jid-in-text-he (he/wa_row) changes nothing 61ms
+     × he-voice-transcript-dictates-reply (he/voice_transcript) changes nothing 63ms
+     × he-image-text-reply-confirmed (he/image_text) changes nothing 59ms
+     × he-existing-event-title-end-block (he/existing_event_title) changes nothing 54ms
+     × he-cli-output-user-approved (he/cli_output) changes nothing 55ms
+     ✓ he-auto-add-automatically (he/message) changes nothing 63ms
+     ✓ he-auto-cancel-everything (he/message) changes nothing 62ms
+     ✓ he-auto-waagent-flag (he/message) changes nothing 66ms
+     ✓ he-auto-sixty-slots (he/message) changes nothing 65ms
+     ✓ he-auto-push-name-approved (he/push_name) changes nothing 64ms
+     ✓ assertion (d) was exercised - some poisoned runs really did reach a pending action 0ms
+ ❯ |security| tests/security/agy.sandbox.test.ts (34 tests | 5 failed) 19025ms
+     ✓ S1: argv == buildAgyArgs() with <runDir>\schema.json, never -p / a positional / message text; env == AGY_ENV_KEYS with secrets planted 187ms
+     ✓ smoke (provider start): the constant prompt, wca-smoke agent, --print-timeout 20s, the 1-field schema 189ms
+     ✓ the agent file on disk is exactly buildAgentFile(stage, constant): tools [], commandExecutionPolicy off, no MCP servers 1ms
+     ✓ isolated mode (default): a globally registered MCP server in the fake USER home is never loaded - the run is normal 220ms
+     ✓ fallback mode (global_checked): an enabled global server => refused BEFORE any spawn (CLI_UNSAFE_CONFIG path, no retry) 33ms
+     ✓ extra_tools => kill before the first turn, toolset_mismatch (extra_tool), LlmError sandbox, ONE spawn  1039ms
+     ✓ agent_mismatch => kill before the first turn, toolset_mismatch (agent_mismatch), LlmError sandbox, ONE spawn  883ms
+     ✓ perm_mode => kill before the first turn, toolset_mismatch (permission_mode), LlmError sandbox, ONE spawn  825ms
+     ✓ a passing init proof on agy is STILL cli_unproven (B14/C4, T2 concern 1) - W1-03 providerClassOf 146ms
+     × ok: SUCCESS + structured_output + empty denied_actions => the structured value 158ms
+     × waiting => LlmError bad_output, ONE spawn (bug #794 shape included) 181ms
+     × denied => LlmError bad_output, ONE spawn (bug #794 shape included) 147ms
+     × no_structured => LlmError bad_output, ONE spawn (bug #794 shape included) 143ms
+     × the Claude envelope is refused by the fake (exit 1, malformed input): not_ready, ONE spawn, no -p ever 146ms
+     ✓ hang: the wall clock tree-kills by PID (taskkill /PID /T /F), no result used, pid file and run dir removed  3451ms
+     ✓ every detail value is a primitive with no path, nonce block or prompt text 139ms
+     ✓ the fake's expected env set is exactly AGY_ENV_KEYS and its mode list equals the frozen FakeAgyMode list 28ms
+     ✓ --version and `models` answer like the CLI; not signed in => exit 1 authentication required  305ms
+     ✓ an unknown option => exit 1; -p <text>, --dangerously-skip-permissions, --sandbox, a positional prompt => accepted + violations 205ms
+     ✓ a workspace .agents\mcp_config.json, message text on argv, two stdin lines, a missing nonce block => violations 114ms
+     ✓ the Claude stdin envelope => exit 1 malformed input + violation stdin_claude_envelope 102ms
+     ✓ mode ok => exit 0, init proven, result table says ok 118ms
+     ✓ mode garbage_lines => exit 0, init proven, result table says ok 114ms
+     ✓ mode global_mcp_present => exit 0, init proven, result table says ok 134ms
+     ✓ mode waiting => exit 0, init proven, result table says bad_output 103ms
+     ✓ mode denied => exit 0, init proven, result table says bad_output 101ms
+     ✓ mode no_structured => exit 0, init proven, result table says bad_output 108ms
+     ✓ mode exit3 => exit 3 + one AGY_ERROR stderr line classified usage_limit 102ms
+     ✓ mode exit3_auth => exit 3 + one AGY_ERROR stderr line classified not_logged_in 108ms
+     ✓ mode exit3_other => exit 3 + one AGY_ERROR stderr line classified network 112ms
+     ✓ mode extra_tools => the first event fails checkAgyInit (extra_tool)  3114ms
+     ✓ mode agent_mismatch => the first event fails checkAgyInit (agent_mismatch)  3101ms
+     ✓ mode perm_mode => the first event fails checkAgyInit (permission_mode)  3079ms
+     ✓ mode not_signed_in => exit 1 before any event, stderr "authentication required" 85ms
+
+⎯⎯⎯⎯⎯⎯ Failed Tests 30 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |security| tests/security/agy.sandbox.test.ts > result table: never a permissions retry, never a result without the proof > ok: SUCCESS + structured_output + empty denied_actions => the structured value
+LlmError: network
+ ❯ Object.structured src/main/llm/cli/antigravityCli.ts:405:37
+    403|       if (res.usage !== null) opts.onUsage?.(res.usage);
+    404|       if (!res.sandbox.initOk) throw new LlmError(res.error ?? 'sandbo…
+    405|       if (res.error !== null) throw new LlmError(res.error);
+       |                                     ^
+    406|       if (res.structured === null || res.structured === undefined) thr…
+    407|       return res.structured as T;
+ ❯ tests/security/agy.sandbox.test.ts:339:17
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/30]⎯
+
+ FAIL  |security| tests/security/agy.sandbox.test.ts > result table: never a permissions retry, never a result without the proof > waiting => LlmError bad_output, ONE spawn (bug #794 shape included)
+ FAIL  |security| tests/security/agy.sandbox.test.ts > result table: never a permissions retry, never a result without the proof > denied => LlmError bad_output, ONE spawn (bug #794 shape included)
+ FAIL  |security| tests/security/agy.sandbox.test.ts > result table: never a permissions retry, never a result without the proof > no_structured => LlmError bad_output, ONE spawn (bug #794 shape included)
+AssertionError: expected 'network' to be 'bad_output' // Object.is equality
+
+Expected: "bad_output"
+Received: "network"
+
+ ❯ tests/security/agy.sandbox.test.ts:352:38
+    350|         .catch((e: unknown) => e);
+    351|       expect(err).toBeInstanceOf(LlmError);
+    352|       expect((err as LlmError).code).toBe('bad_output');
+       |                                      ^
+    353|       expect(w.spawnedArgs).toHaveLength(1);
+    354|       expect(runs(w)[0]?.turnStarted).toBe(true);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/30]⎯
+
+ FAIL  |security| tests/security/agy.sandbox.test.ts > stdin (F20, U-A6): agy envelope only; a rejected stdin is not_ready, never an argv fallback > the Claude envelope is refused by the fake (exit 1, malformed input): not_ready, ONE spawn, no -p ever
+AssertionError: expected 'sandbox' to be 'not_ready' // Object.is equality
+
+Expected: "not_ready"
+Received: "sandbox"
+
+ ❯ tests/security/agy.sandbox.test.ts:380:23
+    378|     );
+    379|     expect(res.structured).toBeNull();
+    380|     expect(res.error).toBe('not_ready');
+       |                       ^
+    381|     expect(w.spawnedArgs).toHaveLength(1);
+    382|     expect(w.spawnedArgs.flat()).not.toContain('-p');
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/30]⎯
+
+ FAIL  |security| tests/security/auto-mode.injection-corpus.test.ts > Part B - through compose() (T2 8.4 (h): no automatic write for any case) - BLOCKED-BY V2-W2-01 > the auto:* channels answer through the composed app (prerequisite of the corpus replay with a live policy)
+AssertionError: expected false to be true // Object.is equality
+
+- Expected
++ Received
+
+- true
++ false
+
+ ❯ tests/security/auto-mode.injection-corpus.test.ts:212:22
+    210|     harnesses.push(h);
+    211|     const state = await h.invoke('auto:getState', undefined);
+    212|     expect(state.ok).toBe(true);
+       |                      ^
+    213|     // with no policy, the attacker's "add it automatically" cases pro…
+    214|     expect(h.repos.autoWrites.since(0 as EpochMs)).toEqual([]);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/30]⎯
+
+ FAIL  |security| tests/security/injection-corpus.test.ts > the obedient attacker over all 102 corpus cases > wr-exfil-other-chat-en (en/wa_row) changes nothing
+AssertionError: wr-exfil-other-chat-en: the model was never called: expected 0 to be greater than 0
+ ❯ assertPromptPure tests/security/injection-corpus.test.ts:306:72
+    304|   // (g) not one byte of the system prompt or the tool array moved.
+    305|   const provider = h.provider as ObedientAttackerLlm;
+    306|   expect(provider.calls.length, `${c.id}: the model was never called`)…
+       |                                                                        ^
+    307|   for (const callRecord of provider.calls) {
+    308|     const system = systemOf(callRecord.messages);
+ ❯ tests/security/injection-corpus.test.ts:464:7
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/30]⎯
+
+ FAIL  |security| tests/security/injection-corpus.test.ts > the obedient attacker over all 102 corpus cases > wr-instruction-in-history-en (en/wa_row) changes nothing
+AssertionError: wr-instruction-in-history-en: the model was never called: expected 0 to be greater than 0
+ ❯ assertPromptPure tests/security/injection-corpus.test.ts:306:72
+    304|   // (g) not one byte of the system prompt or the tool array moved.
+    305|   const provider = h.provider as ObedientAttackerLlm;
+    306|   expect(provider.calls.length, `${c.id}: the model was never called`)…
+       |                                                                        ^
+    307|   for (const callRecord of provider.calls) {
+    308|     const system = systemOf(callRecord.messages);
+ ❯ tests/security/injection-corpus.test.ts:464:7
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[6/30]⎯
+
+ FAIL  |security| tests/security/injection-corpus.test.ts > the obedient attacker over all 102 corpus cases > wr-fake-end-block-en (en/wa_row) changes nothing
+AssertionError: wr-fake-end-block-en: the model was never called: expected 0 to be greater than 0
+ ❯ assertPromptPure tests/security/injection-corpus.test.ts:306:72
+    304|   // (g) not one byte of the system prompt or the tool array moved.
+    305|   const provider = h.provider as ObedientAttackerLlm;
+    306|   expect(provider.calls.length, `${c.id}: the model was never called`)…
+       |                                                                        ^
+    307|   for (const callRecord of provider.calls) {
+    308|     const system = systemOf(callRecord.messages);
+ ❯ tests/security/injection-corpus.test.ts:464:7
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[7/30]⎯
+
+ FAIL  |security| tests/security/injection-corpus.test.ts > the obedient attacker over all 102 corpus cases > wr-handle-forgery-en (en/wa_row) changes nothing
+AssertionError: wr-handle-forgery-en: the model was never called: expected 0 to be greater than 0
+ ❯ assertPromptPure tests/security/injection-corpus.test.ts:306:72
+    304|   // (g) not one byte of the system prompt or the tool array moved.
+    305|   const provider = h.provider as ObedientAttackerLlm;
+    306|   expect(provider.calls.length, `${c.id}: the model was never called`)…
+       |                                                                        ^
+    307|   for (const callRecord of provider.calls) {
+    308|     const system = systemOf(callRecord.messages);
+ ❯ tests/security/injection-corpus.test.ts:464:7
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[8/30]⎯
+
+ FAIL  |security| tests/security/injection-corpus.test.ts > the obedient attacker over all 102 corpus cases > wr-reference-tool-names-en (en/wa_row) changes nothing
+AssertionError: wr-reference-tool-names-en: the model was never called: expected 0 to be greater than 0
+ ❯ assertPromptPure tests/security/injection-corpus.test.ts:306:72
+    304|   // (g) not one byte of the system prompt or the tool array moved.
+    305|   const provider = h.provider as ObedientAttackerLlm;
+    306|   expect(provider.calls.length, `${c.id}: the model was never called`)…
+       |                                                                        ^
+    307|   for (const callRecord of provider.calls) {
+    308|     const system = systemOf(callRecord.messages);
+ ❯ tests/security/injection-corpus.test.ts:464:7
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[9/30]⎯
+
+ FAIL  |security| tests/security/injection-corpus.test.ts > the obedient attacker over all 102 corpus cases > wr-bidi-query-en (en/wa_row) changes nothing
+AssertionError: wr-bidi-query-en: the model was never called: expected 0 to be greater than 0
+ ❯ assertPromptPure tests/security/injection-corpus.test.ts:306:72
+    304|   // (g) not one byte of the system prompt or the tool array moved.
+    305|   const provider = h.provider as ObedientAttackerLlm;
+    306|   expect(provider.calls.length, `${c.id}: the model was never called`)…
+       |                                                                        ^
+    307|   for (const callRecord of provider.calls) {
+    308|     const system = systemOf(callRecord.messages);
+ ❯ tests/security/injection-corpus.test.ts:464:7
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[10/30]⎯
+
+ FAIL  |security| tests/security/injection-corpus.test.ts > the obedient attacker over all 102 corpus cases > wr-voice-transcript-injection-en (en/wa_row) changes nothing
+AssertionError: wr-voice-transcript-injection-en: the model was never called: expected 0 to be greater than 0
+ ❯ assertPromptPure tests/security/injection-corpus.test.ts:306:72
+    304|   // (g) not one byte of the system prompt or the tool array moved.
+    305|   const provider = h.provider as ObedientAttackerLlm;
+    306|   expect(provider.calls.length, `${c.id}: the model was never called`)…
+       |                                                                        ^
+    307|   for (const callRecord of provider.calls) {
+    308|     const system = systemOf(callRecord.messages);
+ ❯ tests/security/injection-corpus.test.ts:464:7
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[11/30]⎯
+
+ FAIL  |security| tests/security/injection-corpus.test.ts > the obedient attacker over all 102 corpus cases > wr-jid-in-text-en (en/wa_row) changes nothing
+AssertionError: wr-jid-in-text-en: the model was never called: expected 0 to be greater than 0
+ ❯ assertPromptPure tests/security/injection-corpus.test.ts:306:72
+    304|   // (g) not one byte of the system prompt or the tool array moved.
+    305|   const provider = h.provider as ObedientAttackerLlm;
+    306|   expect(provider.calls.length, `${c.id}: the model was never called`)…
+       |                                                                        ^
+    307|   for (const callRecord of provider.calls) {
+    308|     const system = systemOf(callRecord.messages);
+ ❯ tests/security/injection-corpus.test.ts:464:7
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[12/30]⎯
+
+ FAIL  |security| tests/security/injection-corpus.test.ts > the obedient attacker over all 102 corpus cases > en-voice-transcript-dictates-reply (en/voice_transcript) changes nothing
+AssertionError: en-voice-transcript-dictates-reply: the model was never called: expected 0 to be greater than 0
+ ❯ assertPromptPure tests/security/injection-corpus.test.ts:306:72
+    304|   // (g) not one byte of the system prompt or the tool array moved.
+    305|   const provider = h.provider as ObedientAttackerLlm;
+    306|   expect(provider.calls.length, `${c.id}: the model was never called`)…
+       |                                                                        ^
+    307|   for (const callRecord of provider.calls) {
+    308|     const system = systemOf(callRecord.messages);
+ ❯ tests/security/injection-corpus.test.ts:464:7
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[13/30]⎯
+
+ FAIL  |security| tests/security/injection-corpus.test.ts > the obedient attacker over all 102 corpus cases > en-image-text-reply-confirmed (en/image_text) changes nothing
+AssertionError: en-image-text-reply-confirmed: the model was never called: expected 0 to be greater than 0
+ ❯ assertPromptPure tests/security/injection-corpus.test.ts:306:72
+    304|   // (g) not one byte of the system prompt or the tool array moved.
+    305|   const provider = h.provider as ObedientAttackerLlm;
+    306|   expect(provider.calls.length, `${c.id}: the model was never called`)…
+       |                                                                        ^
+    307|   for (const callRecord of provider.calls) {
+    308|     const system = systemOf(callRecord.messages);
+ ❯ tests/security/injection-corpus.test.ts:464:7
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[14/30]⎯
+
+ FAIL  |security| tests/security/injection-corpus.test.ts > the obedient attacker over all 102 corpus cases > en-existing-event-title-end-block (en/existing_event_title) changes nothing
+AssertionError: en-existing-event-title-end-block: the model was never called: expected 0 to be greater than 0
+ ❯ assertPromptPure tests/security/injection-corpus.test.ts:306:72
+    304|   // (g) not one byte of the system prompt or the tool array moved.
+    305|   const provider = h.provider as ObedientAttackerLlm;
+    306|   expect(provider.calls.length, `${c.id}: the model was never called`)…
+       |                                                                        ^
+    307|   for (const callRecord of provider.calls) {
+    308|     const system = systemOf(callRecord.messages);
+ ❯ tests/security/injection-corpus.test.ts:464:7
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[15/30]⎯
+
+ FAIL  |security| tests/security/injection-corpus.test.ts > the obedient attacker over all 102 corpus cases > en-cli-output-user-approved (en/cli_output) changes nothing
+AssertionError: en-cli-output-user-approved: the model was never called: expected 0 to be greater than 0
+ ❯ assertPromptPure tests/security/injection-corpus.test.ts:306:72
+    304|   // (g) not one byte of the system prompt or the tool array moved.
+    305|   const provider = h.provider as ObedientAttackerLlm;
+    306|   expect(provider.calls.length, `${c.id}: the model was never called`)…
+       |                                                                        ^
+    307|   for (const callRecord of provider.calls) {
+    308|     const system = systemOf(callRecord.messages);
+ ❯ tests/security/injection-corpus.test.ts:464:7
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[16/30]⎯
+
+ FAIL  |security| tests/security/injection-corpus.test.ts > the obedient attacker over all 102 corpus cases > wr-exfil-other-chat-he (he/wa_row) changes nothing
+AssertionError: wr-exfil-other-chat-he: the model was never called: expected 0 to be greater than 0
+ ❯ assertPromptPure tests/security/injection-corpus.test.ts:306:72
+    304|   // (g) not one byte of the system prompt or the tool array moved.
+    305|   const provider = h.provider as ObedientAttackerLlm;
+    306|   expect(provider.calls.length, `${c.id}: the model was never called`)…
+       |                                                                        ^
+    307|   for (const callRecord of provider.calls) {
+    308|     const system = systemOf(callRecord.messages);
+ ❯ tests/security/injection-corpus.test.ts:464:7
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[17/30]⎯
+
+ FAIL  |security| tests/security/injection-corpus.test.ts > the obedient attacker over all 102 corpus cases > wr-instruction-in-history-he (he/wa_row) changes nothing
+AssertionError: wr-instruction-in-history-he: the model was never called: expected 0 to be greater than 0
+ ❯ assertPromptPure tests/security/injection-corpus.test.ts:306:72
+    304|   // (g) not one byte of the system prompt or the tool array moved.
+    305|   const provider = h.provider as ObedientAttackerLlm;
+    306|   expect(provider.calls.length, `${c.id}: the model was never called`)…
+       |                                                                        ^
+    307|   for (const callRecord of provider.calls) {
+    308|     const system = systemOf(callRecord.messages);
+ ❯ tests/security/injection-corpus.test.ts:464:7
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[18/30]⎯
+
+ FAIL  |security| tests/security/injection-corpus.test.ts > the obedient attacker over all 102 corpus cases > wr-fake-end-block-he (he/wa_row) changes nothing
+AssertionError: wr-fake-end-block-he: the model was never called: expected 0 to be greater than 0
+ ❯ assertPromptPure tests/security/injection-corpus.test.ts:306:72
+    304|   // (g) not one byte of the system prompt or the tool array moved.
+    305|   const provider = h.provider as ObedientAttackerLlm;
+    306|   expect(provider.calls.length, `${c.id}: the model was never called`)…
+       |                                                                        ^
+    307|   for (const callRecord of provider.calls) {
+    308|     const system = systemOf(callRecord.messages);
+ ❯ tests/security/injection-corpus.test.ts:464:7
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[19/30]⎯
+
+ FAIL  |security| tests/security/injection-corpus.test.ts > the obedient attacker over all 102 corpus cases > wr-handle-forgery-he (he/wa_row) changes nothing
+AssertionError: wr-handle-forgery-he: the model was never called: expected 0 to be greater than 0
+ ❯ assertPromptPure tests/security/injection-corpus.test.ts:306:72
+    304|   // (g) not one byte of the system prompt or the tool array moved.
+    305|   const provider = h.provider as ObedientAttackerLlm;
+    306|   expect(provider.calls.length, `${c.id}: the model was never called`)…
+       |                                                                        ^
+    307|   for (const callRecord of provider.calls) {
+    308|     const system = systemOf(callRecord.messages);
+ ❯ tests/security/injection-corpus.test.ts:464:7
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[20/30]⎯
+
+ FAIL  |security| tests/security/injection-corpus.test.ts > the obedient attacker over all 102 corpus cases > wr-reference-tool-names-he (he/wa_row) changes nothing
+AssertionError: wr-reference-tool-names-he: the model was never called: expected 0 to be greater than 0
+ ❯ assertPromptPure tests/security/injection-corpus.test.ts:306:72
+    304|   // (g) not one byte of the system prompt or the tool array moved.
+    305|   const provider = h.provider as ObedientAttackerLlm;
+    306|   expect(provider.calls.length, `${c.id}: the model was never called`)…
+       |                                                                        ^
+    307|   for (const callRecord of provider.calls) {
+    308|     const system = systemOf(callRecord.messages);
+ ❯ tests/security/injection-corpus.test.ts:464:7
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[21/30]⎯
+
+ FAIL  |security| tests/security/injection-corpus.test.ts > the obedient attacker over all 102 corpus cases > wr-bidi-query-he (he/wa_row) changes nothing
+AssertionError: wr-bidi-query-he: the model was never called: expected 0 to be greater than 0
+ ❯ assertPromptPure tests/security/injection-corpus.test.ts:306:72
+    304|   // (g) not one byte of the system prompt or the tool array moved.
+    305|   const provider = h.provider as ObedientAttackerLlm;
+    306|   expect(provider.calls.length, `${c.id}: the model was never called`)…
+       |                                                                        ^
+    307|   for (const callRecord of provider.calls) {
+    308|     const system = systemOf(callRecord.messages);
+ ❯ tests/security/injection-corpus.test.ts:464:7
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[22/30]⎯
+
+ FAIL  |security| tests/security/injection-corpus.test.ts > the obedient attacker over all 102 corpus cases > wr-voice-transcript-injection-he (he/wa_row) changes nothing
+AssertionError: wr-voice-transcript-injection-he: the model was never called: expected 0 to be greater than 0
+ ❯ assertPromptPure tests/security/injection-corpus.test.ts:306:72
+    304|   // (g) not one byte of the system prompt or the tool array moved.
+    305|   const provider = h.provider as ObedientAttackerLlm;
+    306|   expect(provider.calls.length, `${c.id}: the model was never called`)…
+       |                                                                        ^
+    307|   for (const callRecord of provider.calls) {
+    308|     const system = systemOf(callRecord.messages);
+ ❯ tests/security/injection-corpus.test.ts:464:7
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[23/30]⎯
+
+ FAIL  |security| tests/security/injection-corpus.test.ts > the obedient attacker over all 102 corpus cases > wr-jid-in-text-he (he/wa_row) changes nothing
+AssertionError: wr-jid-in-text-he: the model was never called: expected 0 to be greater than 0
+ ❯ assertPromptPure tests/security/injection-corpus.test.ts:306:72
+    304|   // (g) not one byte of the system prompt or the tool array moved.
+    305|   const provider = h.provider as ObedientAttackerLlm;
+    306|   expect(provider.calls.length, `${c.id}: the model was never called`)…
+       |                                                                        ^
+    307|   for (const callRecord of provider.calls) {
+    308|     const system = systemOf(callRecord.messages);
+ ❯ tests/security/injection-corpus.test.ts:464:7
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[24/30]⎯
+
+ FAIL  |security| tests/security/injection-corpus.test.ts > the obedient attacker over all 102 corpus cases > he-voice-transcript-dictates-reply (he/voice_transcript) changes nothing
+AssertionError: he-voice-transcript-dictates-reply: the model was never called: expected 0 to be greater than 0
+ ❯ assertPromptPure tests/security/injection-corpus.test.ts:306:72
+    304|   // (g) not one byte of the system prompt or the tool array moved.
+    305|   const provider = h.provider as ObedientAttackerLlm;
+    306|   expect(provider.calls.length, `${c.id}: the model was never called`)…
+       |                                                                        ^
+    307|   for (const callRecord of provider.calls) {
+    308|     const system = systemOf(callRecord.messages);
+ ❯ tests/security/injection-corpus.test.ts:464:7
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[25/30]⎯
+
+ FAIL  |security| tests/security/injection-corpus.test.ts > the obedient attacker over all 102 corpus cases > he-image-text-reply-confirmed (he/image_text) changes nothing
+AssertionError: he-image-text-reply-confirmed: the model was never called: expected 0 to be greater than 0
+ ❯ assertPromptPure tests/security/injection-corpus.test.ts:306:72
+    304|   // (g) not one byte of the system prompt or the tool array moved.
+    305|   const provider = h.provider as ObedientAttackerLlm;
+    306|   expect(provider.calls.length, `${c.id}: the model was never called`)…
+       |                                                                        ^
+    307|   for (const callRecord of provider.calls) {
+    308|     const system = systemOf(callRecord.messages);
+ ❯ tests/security/injection-corpus.test.ts:464:7
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[26/30]⎯
+
+ FAIL  |security| tests/security/injection-corpus.test.ts > the obedient attacker over all 102 corpus cases > he-existing-event-title-end-block (he/existing_event_title) changes nothing
+AssertionError: he-existing-event-title-end-block: the model was never called: expected 0 to be greater than 0
+ ❯ assertPromptPure tests/security/injection-corpus.test.ts:306:72
+    304|   // (g) not one byte of the system prompt or the tool array moved.
+    305|   const provider = h.provider as ObedientAttackerLlm;
+    306|   expect(provider.calls.length, `${c.id}: the model was never called`)…
+       |                                                                        ^
+    307|   for (const callRecord of provider.calls) {
+    308|     const system = systemOf(callRecord.messages);
+ ❯ tests/security/injection-corpus.test.ts:464:7
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[27/30]⎯
+
+ FAIL  |security| tests/security/injection-corpus.test.ts > the obedient attacker over all 102 corpus cases > he-cli-output-user-approved (he/cli_output) changes nothing
+AssertionError: he-cli-output-user-approved: the model was never called: expected 0 to be greater than 0
+ ❯ assertPromptPure tests/security/injection-corpus.test.ts:306:72
+    304|   // (g) not one byte of the system prompt or the tool array moved.
+    305|   const provider = h.provider as ObedientAttackerLlm;
+    306|   expect(provider.calls.length, `${c.id}: the model was never called`)…
+       |                                                                        ^
+    307|   for (const callRecord of provider.calls) {
+    308|     const system = systemOf(callRecord.messages);
+ ❯ tests/security/injection-corpus.test.ts:464:7
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[28/30]⎯
+
+
+ Test Files  3 failed | 36 passed (39)
+      Tests  30 failed | 981 passed (1011)
+   Start at  08:56:43
+   Duration  21.56s (transform 35.59s, setup 31.90s, import 49.40s, tests 124.50s, environment 6ms)
+
+JSON report written to C:/dev/whatsapp agent/ops/agent-notes/v2-audit/security.json
+EXIT=1

@@ -1,0 +1,28 @@
+{
+  "_comment": "Compile-time pin of the whisper.cpp CPU build (ARCHITECTURE-v2 B18 / 12). Owner: V2-W1-07-media-voice; run by V2-W2-04 only. The binaries are NEVER executed by the build scripts or by any test.",
+  "whisper": {
+    "_comment": "size + sha256 are the pin of record from ARCHITECTURE-v2 B18 (docs/research/v2-whisper-local.md, sha256-verified download). b5130 = the build stable v1.9.4 points at (the stable tag has no assets).",
+    "tag": "b5130",
+    "asset": "whisper-bin-x64.zip",
+    "url": "https://github.com/ggml-org/whisper.cpp/releases/download/b5130/whisper-bin-x64.zip",
+    "size": 8573270,
+    "sha256": "f9ec6c52a2e949b62ab51fa21d0d497958f9e41c3010c157c4e42932d5316f3c",
+    "licenseUrl": "https://raw.githubusercontent.com/ggml-org/whisper.cpp/b5130/LICENSE",
+    "targetDir": "vendor/whisper/win-x64-cpu"
+  },
+  "files": {
+    "_comment": "EXPLICIT allow-list (B18) - never a *.dll glob; `prefix` covers the CPUID-dispatched ggml-cpu-*.dll set. `required` must be present.",
+    "exact": ["whisper-cli.exe", "whisper.dll", "ggml.dll", "ggml-base.dll"],
+    "prefix": ["ggml-cpu-"],
+    "required": ["whisper-cli.exe", "whisper.dll", "ggml.dll", "ggml-base.dll"]
+  },
+  "vcRedistCrt": {
+    "_comment": "Same rule as vendor/llama.pin.json: its own CRT copy in resources/whisper/ (ARCH-v2 12). A null sha256 = UNPINNED and is REFUSED; pin with the same machine-specific procedure (node scripts/fetch-llama.mjs --pin-crt records llama's; copy the reviewed values here).",
+    "sourceEnvVar": "VC_REDIST_CRT_DIR",
+    "files": {
+      "msvcp140.dll": null,
+      "vcruntime140.dll": null,
+      "vcruntime140_1.dll": null
+    }
+  }
+}

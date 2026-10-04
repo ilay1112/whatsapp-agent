@@ -43,6 +43,7 @@ const action = (over: Partial<ApprovalAction> = {}): ApprovalAction => ({
   errorCode: null,
   createdAt: 0,
   expiresAt: 0,
+  approvedBy: null, // [V2] C2 1.3
   ...over,
 });
 

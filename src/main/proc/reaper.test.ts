@@ -491,7 +491,7 @@ describe('frozen-signature conformance', () => {
   type FrozenReapOrphans = (
     runDir: string,
     ownResourcesDir: string,
-  ) => Promise<{ killed: ChildName[]; stalePidFiles: number }>;
+  ) => Promise<{ killed: Array<ChildName | 'job-voice' | 'job-cli'>; stalePidFiles: number }>; // [V2] C2 13 reapOrphansV2
 
   it('reapOrphans still satisfies the verbatim CONTRACTS section 13 declaration', () => {
     const frozen: FrozenReapOrphans = reapOrphans;
@@ -507,5 +507,92 @@ describe('frozen-signature conformance', () => {
     } finally {
       spawnSpy.mockRestore();
     }
+  });
+});
+
+// =====================================================================================================================
+// [V2] B31 job pid files (owner V2-W1-06-claude-cli): job-<kind>-<id>.pid.json; CLI exe accepted only on an EXACT recorded path.
+// =====================================================================================================================
+describe('reapOrphans v2 - job pid files (B31)', () => {
+  const JOB = 'job-cli-00000000-0000-4000-8000-000000000001';
+  let cliExe: string;
+  beforeEach(() => {
+    cliExe = path.join(tmpDir, 'fakehome', '.local', 'bin', 'claude.exe');
+  });
+
+  it('reaps a stale CLI job whose exePath is exactly the recorded locator path (pid + path + creation time)', async () => {
+    writePidFile(JOB, { pid: 900, exePath: cliExe, startedAt: START });
+    const spy = querySpy(() => ({ pid: 900, executablePath: cliExe, creationDate: START + 100 }));
+    const result = await reapOrphans(runDir, resourcesDir, { processQuery: spy, acceptedCliExePaths: [cliExe] });
+    expect(result).toEqual({ killed: ['job-cli'], stalePidFiles: 0 });
+    expect(spy.kills).toEqual([{ pid: 900, tree: true }]);
+    expect(fs.readdirSync(runDir)).toEqual([]);
+  });
+
+  it('reaps a stale voice job under our resources dir as job-voice', async () => {
+    const whisper = path.join(resourcesDir, 'whisper', 'whisper-cli.exe');
+    writePidFile('job-voice-abc123', { pid: 901, exePath: whisper, startedAt: START });
+    const spy = querySpy(() => ({ pid: 901, executablePath: whisper, creationDate: START }));
+    await expect(reapOrphans(runDir, resourcesDir, { processQuery: spy })).resolves.toEqual({
+      killed: ['job-voice'],
+      stalePidFiles: 0,
+    });
+  });
+
+  it.each<[string, (p: string) => string]>([
+    ['upper-cased', (p) => p.toUpperCase()],
+    ['trailing space', (p) => `${p} `],
+    ['parent-dir segment', (p) => [path.dirname(p), 'x', '..', 'claude.exe'].join(path.sep)],
+    ['.cmd sibling', (p) => p.replace(/\.exe$/, '.cmd')],
+    ['.exe.cmd', (p) => `${p}.cmd`],
+  ])('a %s variant of the recorded CLI path => rejected: no query, no kill, file discarded', async (_n, variant) => {
+    writePidFile(JOB, { pid: 902, exePath: variant(cliExe), startedAt: START });
+    const spy = querySpy(() => ({ pid: 902, executablePath: cliExe, creationDate: START }));
+    const result = await reapOrphans(runDir, resourcesDir, { processQuery: spy, acceptedCliExePaths: [cliExe] });
+    expect(result).toEqual({ killed: [], stalePidFiles: 1 });
+    expect(spy.queries).toEqual([]);
+    expect(spy.kills).toEqual([]);
+    expect(fs.readdirSync(runDir)).toEqual([]);
+  });
+
+  it('a recorded CLI path is never accepted for a child name or a voice job, and a CLI job never under resources', async () => {
+    writePidFile('bridge', { pid: 903, exePath: cliExe, startedAt: START });
+    writePidFile('job-voice-1', { pid: 904, exePath: cliExe, startedAt: START });
+    writePidFile(JOB, { pid: 905, exePath: ownExe, startedAt: START });
+    const spy = querySpy((pid) => ({ pid, executablePath: cliExe, creationDate: START }));
+    const result = await reapOrphans(runDir, resourcesDir, { processQuery: spy, acceptedCliExePaths: [cliExe] });
+    expect(result).toEqual({ killed: [], stalePidFiles: 3 });
+    expect(spy.kills).toEqual([]);
+  });
+
+  it('a decoy CLI job pointing at an unrelated live node.exe (other path) is not killed', async () => {
+    const decoy = path.join(tmpDir, 'other', 'node.exe');
+    writePidFile(JOB, { pid: 906, exePath: decoy, startedAt: START });
+    const spy = querySpy(() => ({ pid: 906, executablePath: decoy, creationDate: START }));
+    const result = await reapOrphans(runDir, resourcesDir, { processQuery: spy, acceptedCliExePaths: [cliExe] });
+    expect(result.killed).toEqual([]);
+    expect(spy.kills).toEqual([]);
+  });
+
+  it('a CLI job whose live process has another path or creation time is stale, not killed', async () => {
+    writePidFile(JOB, { pid: 907, exePath: cliExe, startedAt: START });
+    const spy = querySpy(() => ({ pid: 907, executablePath: cliExe, creationDate: START + 60_000 }));
+    const result = await reapOrphans(runDir, resourcesDir, { processQuery: spy, acceptedCliExePaths: [cliExe] });
+    expect(result).toEqual({ killed: [], stalePidFiles: 1 });
+    expect(spy.kills).toEqual([]);
+  });
+
+  it('hostile job pid files cause no spawn and no kill', async () => {
+    const spawn = vi.fn();
+    writePidFile(JOB, '{"pid":"1 OR 1=1","exePath":"C:\\x\\claude.exe","startedAt":1}');
+    writePidFile('job-cli-2', { pid: 2 ** 31, exePath: cliExe, startedAt: START });
+    writePidFile('job-cli-3', { pid: 5, exePath: 'claude.exe', startedAt: START });
+    writePidFile('job-cli-4', { pid: 5, exePath: cliExe, startedAt: -1 });
+    const result = await reapOrphans(runDir, resourcesDir, {
+      spawn: spawn as unknown as SpawnFn,
+      acceptedCliExePaths: [cliExe],
+    });
+    expect(result).toEqual({ killed: [], stalePidFiles: 4 });
+    expect(spawn).not.toHaveBeenCalled();
   });
 });

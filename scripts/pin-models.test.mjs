@@ -6,10 +6,15 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   HF_API,
+  MAGIC_BYTES,
   MANIFEST_PATH,
+  PIN_OUT_PATH,
   checkEntry,
+  checkMediaEntry,
   main,
   parseManifestSource,
+  parseMediaManifestSource,
+  parseMediaResolveUrl,
   parseResolveUrl,
   treeUrl,
 } from './pin-models.mjs';
@@ -171,27 +176,58 @@ describe('checkEntry', () => {
 // main
 // ---------------------------------------------------------------------------------------------------------------------
 describe('main', () => {
-  const fs = { readFile: async () => REAL_MANIFEST_SOURCE };
+  const files = new Map();
+  const fs = {
+    readFile: async () => REAL_MANIFEST_SOURCE,
+    writeFile: async (p, data) => void files.set(p, String(data)),
+  };
+  const COMMIT = 'c'.repeat(40);
+  const media = parseMediaManifestSource(REAL_MANIFEST_SOURCE);
+  /** A loopback-free scripted Hugging Face API: trees per commit, `revision/main` for the unpinned voice repos, 4-byte magic reads. */
+  const hfApi = (over = {}) => {
+    const llm = parseManifestSource(REAL_MANIFEST_SOURCE);
+    const byTree = new Map(llm.map((e) => [treeUrl(parseResolveUrl(e.url)), [e]]));
+    for (const e of media) {
+      const p = parseMediaResolveUrl(e.url);
+      const key = treeUrl({ repo: p.repo, commit: p.commit ?? COMMIT });
+      byTree.set(key, [...(byTree.get(key) ?? []), e]);
+    }
+    return async (url, init) => {
+      if (url.endsWith('/revision/main')) return { ok: true, status: 200, json: async () => ({ sha: COMMIT }) };
+      if (init?.headers?.range === 'bytes=0-3') {
+        const e = media.find((m) => url.endsWith(`/${m.fileName}`) && url.includes(`/resolve/`));
+        const magic = over.badMagic ? [0, 0, 0, 0] : MAGIC_BYTES[e.magic];
+        return { ok: true, status: 206, body: new Response(new Uint8Array([...magic, 9, 9])).body };
+      }
+      const rows = byTree.get(url);
+      if (rows === undefined) return { ok: false, status: 404 };
+      return treeResponse(rows.map((e) => ({ path: e.fileName, lfs: { size: e.size, oid: e.sha256 } })));
+    };
+  };
 
-  it('checks every tier of the real manifest and passes when nothing drifted', async () => {
-    const entries = parseManifestSource(REAL_MANIFEST_SOURCE);
-    const byCommit = new Map(entries.map((e) => [treeUrl(parseResolveUrl(e.url)), e]));
+  it('checks every tier of both tables and writes vendor/models.pin.json with commit-pinned URLs only when all pass', async () => {
+    files.clear();
     const lines = [];
-    const results = await main({
-      fs,
-      log: (m) => lines.push(m),
-      fetch: async (url) => {
-        const e = byCommit.get(url);
-        expect(e).toBeDefined();
-        return treeResponse([{ path: e.fileName, lfs: { size: e.size, oid: e.sha256 } }]);
-      },
-    });
-    expect(results.map((r) => r.tier)).toEqual(['tiny', 'small', 'mid']);
+    const results = await main({ fs, root: 'C:\\repo', log: (m) => lines.push(m), fetch: hfApi() });
+    expect(results.map((r) => r.tier)).toEqual(['tiny', 'small', 'mid', ...media.map((e) => e.tier)]);
     expect(results.every((r) => r.ok)).toBe(true);
-    expect(lines).toEqual(['pin-models: tiny OK', 'pin-models: small OK', 'pin-models: mid OK']);
+    expect(lines.slice(0, 3)).toEqual(['pin-models: tiny OK', 'pin-models: small OK', 'pin-models: mid OK']);
+    const [[file, text]] = [...files.entries()];
+    expect(file.replace(/\\/g, '/')).toBe(`C:/repo/${PIN_OUT_PATH}`);
+    const pin = JSON.parse(text);
+    expect(pin.llm.map((e) => e.id)).toEqual(['tiny', 'small', 'mid']);
+    expect(pin.media.map((e) => [e.id, e.kind, e.magic])).toEqual(media.map((e) => [e.tier, e.kind, e.magic]));
+    for (const e of [...pin.llm, ...pin.media]) expect(e.url).toMatch(/\/resolve\/[0-9a-f]{40}\//);
+    expect(pin.media.find((e) => e.id === 'voice-vad').url).toBe(
+      `https://huggingface.co/ggml-org/whisper-vad/resolve/${COMMIT}/ggml-silero-v6.2.0.bin`,
+    );
+    expect(lines.at(-1)).toMatch(
+      /copy the commit-pinned URLs of voice-hebrew, voice-multilingual, voice-lite, voice-vad/,
+    );
   });
 
-  it('throws when any pin drifted, so CI cannot pass on a re-uploaded model', async () => {
+  it('throws (and writes nothing) when any pin drifted, so CI cannot pass on a re-uploaded model', async () => {
+    files.clear();
     const lines = [];
     await expect(
       main({
@@ -202,6 +238,92 @@ describe('main', () => {
       }),
     ).rejects.toThrow(/at least one pin drifted/);
     expect(lines.join('\n')).toContain('DRIFT');
+    expect(files.size).toBe(0);
+    await expect(main({ fs, log: () => undefined, fetch: hfApi({ badMagic: true }) })).rejects.toThrow(/drifted/);
+    expect(files.size).toBe(0);
+  });
+});
+
+describe('[V2] media entries (MEDIA_MODEL_MANIFEST)', () => {
+  const COMMIT = 'd'.repeat(40);
+  const vad = () => ({ ...parseMediaManifestSource(REAL_MANIFEST_SOURCE).find((e) => e.tier === 'voice-vad') });
+  const proj = () => ({ ...parseMediaManifestSource(REAL_MANIFEST_SOURCE).find((e) => e.tier === 'mmproj-mid') });
+  const api =
+    (e, over = {}) =>
+    async (url, init) => {
+      if (url.endsWith('/revision/main'))
+        return over.revision ?? { ok: true, status: 200, json: async () => ({ sha: COMMIT }) };
+      if (init?.headers?.range === 'bytes=0-3')
+        return over.magic ?? { ok: true, status: 206, body: new Response(new Uint8Array(MAGIC_BYTES[e.magic])).body };
+      return over.tree ?? treeResponse([{ path: e.fileName, lfs: { size: e.size, oid: e.sha256 } }]);
+    };
+
+  it('reads all seven entries; a resolve/main voice URL is resolved to its commit; a pinned projector keeps its commit', async () => {
+    expect(parseMediaManifestSource(REAL_MANIFEST_SOURCE)).toHaveLength(7);
+    expect(() => parseMediaManifestSource('nothing')).toThrow(/no MEDIA_MODEL_MANIFEST/);
+    const v = vad();
+    expect(await checkMediaEntry({ fetch: api(v), entry: v })).toEqual({
+      tier: 'voice-vad',
+      ok: true,
+      problems: [],
+      pinnedUrl: `https://huggingface.co/ggml-org/whisper-vad/resolve/${COMMIT}/ggml-silero-v6.2.0.bin`,
+    });
+    const p = proj();
+    const r = await checkMediaEntry({ fetch: api(p), entry: p });
+    expect(r.ok).toBe(true);
+    expect(r.pinnedUrl).toBe(p.url);
+  });
+
+  it('the mmproj- refusal is lifted only for the three pinned projector ids; voice files must be .bin with the GGML magic', async () => {
+    const other = { ...proj(), tier: 'mmproj-huge' };
+    expect((await checkMediaEntry({ fetch: api(other), entry: other })).problems.join(' ')).toMatch(
+      /only the three pinned/,
+    );
+    const bf16 = { ...proj(), fileName: 'mmproj-BF16.gguf', url: proj().url.replace('mmproj-F16', 'mmproj-BF16') };
+    expect((await checkMediaEntry({ fetch: api(bf16), entry: bf16 })).ok).toBe(false);
+    const ggufVoice = { ...vad(), fileName: 'x.gguf', url: vad().url.replace('ggml-silero-v6.2.0.bin', 'x.gguf') };
+    expect((await checkMediaEntry({ fetch: api(ggufVoice), entry: ggufVoice })).problems.join(' ')).toMatch(
+      /\.bin ggml files/,
+    );
+    const mmVoice = {
+      ...vad(),
+      fileName: 'mmproj-x.bin',
+      url: vad().url.replace('ggml-silero-v6.2.0.bin', 'mmproj-x.bin'),
+    };
+    expect((await checkMediaEntry({ fetch: api(mmVoice), entry: mmVoice })).problems.join(' ')).toMatch(/multimodal/);
+    const exe = { ...vad(), fileName: 'setup.exe', url: vad().url.replace('ggml-silero-v6.2.0.bin', 'setup.exe') };
+    expect((await checkMediaEntry({ fetch: api(exe), entry: exe })).problems.join(' ')).toMatch(/executable/);
+    const mismatch = { ...vad(), fileName: 'other.bin' };
+    expect((await checkMediaEntry({ fetch: api(mismatch), entry: mismatch })).problems.join(' ')).toMatch(/url file/);
+    const branch = { ...vad(), url: vad().url.replace('/resolve/main/', '/resolve/dev/') };
+    expect((await checkMediaEntry({ fetch: api(branch), entry: branch })).problems.join(' ')).toMatch(
+      /not a resolve URL/,
+    );
+  });
+
+  it('drift and API failures are reported, never passed', async () => {
+    const v = vad();
+    const cases = [
+      [{ tree: treeResponse([{ path: v.fileName, lfs: { size: v.size + 1, oid: v.sha256 } }]) }, /size drift/],
+      [{ tree: treeResponse([{ path: v.fileName, lfs: { size: v.size, oid: 'e'.repeat(64) } }]) }, /sha256 drift/],
+      [{ tree: treeResponse([{ path: v.fileName, size: v.size }]) }, /no lfs\.oid/],
+      [{ tree: treeResponse([]) }, /is not in/],
+      [{ tree: { ok: false, status: 500 } }, /HTTP 500/],
+      [{ revision: { ok: false, status: 401 } }, /HTTP 401 resolving/],
+      [{ revision: { ok: true, status: 200, json: async () => ({ sha: 'main' }) } }, /no commit sha/],
+      [
+        { magic: { ok: true, status: 206, body: new Response(new Uint8Array([0x47, 0x47, 0x55, 0x46])).body } },
+        /magic mismatch/,
+      ],
+      [{ magic: { ok: true, status: 206, body: new Response(new Uint8Array([0x6c])).body } }, /magic mismatch/],
+      [{ magic: { ok: false, status: 403, body: null } }, /HTTP 403 reading the magic/],
+    ];
+    for (const [over, re] of cases) {
+      const r = await checkMediaEntry({ fetch: api(v, over), entry: v });
+      expect(r.ok).toBe(false);
+      expect(r.problems.join(' ')).toMatch(re);
+      expect(r.pinnedUrl).toBeNull();
+    }
   });
 });
 

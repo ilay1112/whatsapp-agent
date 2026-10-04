@@ -12,9 +12,10 @@ import {
   type LlmTool,
   type LlmToolCall,
   type ProviderErrorCode,
+  type LlmUserContent,
 } from './types';
 import type { Logger } from '../deps';
-import type { JsonSchemaLcd, ModelOption } from '../../shared/types';
+import { PROVIDER_LOOP, type JsonSchemaLcd, type ModelOption } from '../../shared/types';
 
 /** CONTRACTS section 9: new GoogleGenAI({ apiKey, httpOptions: { baseUrl: GEMINI_BASE_URL } }) - never pass undefined for httpOptions.baseUrl. */
 export const GEMINI_BASE_URL = 'https://generativelanguage.googleapis.com';
@@ -101,13 +102,34 @@ function systemInstruction(messages: readonly LlmMessage[]): string | undefined 
   return text ? text : undefined;
 }
 
+/** [V2] C2 9 wire mapping of an LlmImagePart. The v1 provider speaks the Interactions API, whose inline picture is the
+ *  `{type:'image', data, mime_type}` content block (the Interactions twin of generateContent's `inline_data`; SDK
+ *  @google/genai 2.23.0 `ImageContent`). Order kept: image FIRST, then the text. */
+export function toGeminiContent(parts: Exclude<LlmUserContent, string>): Json[] {
+  return parts.map((part) =>
+    part.type === 'image'
+      ? { type: 'image', data: part.base64, mime_type: part.mime }
+      : { type: 'text', text: part.text },
+  );
+}
+
+/** [V2] true when any user turn carries a picture (V1 read_image only). */
+export function hasImagePart(messages: readonly LlmMessage[]): boolean {
+  return messages.some(
+    (m) => m.role === 'user' && typeof m.content !== 'string' && m.content.some((p) => p.type === 'image'),
+  );
+}
+
 /** Neutral history -> Interactions `input` steps. Assistant turns are replayed verbatim (thought signatures, 4.4). */
 export function toGeminiInput(messages: readonly LlmMessage[]): Json[] {
   const out: Json[] = [];
   for (const m of messages) {
     if (m.role === 'system') continue;
     if (m.role === 'user') {
-      out.push({ type: 'user_input', content: [{ type: 'text', text: m.content }] });
+      out.push({
+        type: 'user_input',
+        content: typeof m.content === 'string' ? [{ type: 'text', text: m.content }] : toGeminiContent(m.content),
+      });
       continue;
     }
     if (m.role === 'assistant') {
@@ -298,8 +320,12 @@ export function createGeminiProvider(input: GeminiProviderInput): LlmProvider {
   return {
     id: 'gemini',
     model,
+    loop: PROVIDER_LOOP.gemini, // [V2 ADD]
+    capabilities: { images: true }, // [V2 ADD] C2 9: inline picture (V1 read_image), no function declarations on that request
 
     async structured<T>(messages: LlmMessage[], schema: JsonSchemaLcd, opts: CallOpts): Promise<T> {
+      // [V2] a picture only on the V1 purpose (C2 9.1); the structured request never carries `tools` (I12).
+      if (opts.purpose !== 'read_image' && hasImagePart(messages)) throw new LlmError('unsupported');
       const system = systemInstruction(messages);
       const it = await call(
         {
@@ -325,6 +351,7 @@ export function createGeminiProvider(input: GeminiProviderInput): LlmProvider {
     },
 
     async chat(messages: LlmMessage[], tools: LlmTool[], opts: CallOpts): Promise<LlmResponse> {
+      if (hasImagePart(messages)) throw new LlmError('unsupported'); // [V2] C2 9.1: chat() never receives a picture
       const system = systemInstruction(messages);
       const sorted = [...tools].sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
       const known = new Set(sorted.map((t) => t.name));

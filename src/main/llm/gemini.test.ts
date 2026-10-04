@@ -16,6 +16,8 @@ import {
   mapGeminiStopReason,
   toGeminiInput,
   toGeminiSchema,
+  toGeminiContent,
+  hasImagePart,
   type GeminiClientLike,
 } from './gemini';
 import { LlmError, type CallOpts, type LlmMessage, type LlmTool } from './types';
@@ -638,5 +640,84 @@ describe('fixtures', () => {
       expect(JSON.parse(raw)._unverified).toBe(true);
       expect(raw).not.toMatch(/@s\.whatsapp\.net|@lid/);
     }
+  });
+});
+
+// ---------------------------------------------------------------------------------------------------------------------
+// [V2, V2-W1-08-vision] V1 READ-IMAGE (C2 9 / 9.1, B19, I12): the inline picture FIRST, no function declarations
+// ---------------------------------------------------------------------------------------------------------------------
+describe('V1 read_image (inline picture, no function declarations)', () => {
+  const B64 = Buffer.from([0x89, 0x50, 0x4e, 0x47, 1, 2, 3]).toString('base64');
+  const V1: LlmMessage[] = [
+    { role: 'system', content: 'V1 CONSTANT (test)' },
+    {
+      role: 'user',
+      content: [
+        { type: 'image', mime: 'image/png', base64: B64 },
+        { type: 'text', text: '<<DATA-0123456789abcdef>>\n{}\n<<END-DATA-0123456789abcdef>>' },
+      ],
+    },
+  ];
+
+  it('capabilities.images is true and the loop is the v1 turn loop', () => {
+    const p = provider(recorder({}).client, recordingLogger().logger);
+    expect(p.capabilities).toEqual({ images: true });
+    expect(p.loop).toBe('turn');
+  });
+
+  it('sends the picture as the Interactions image block before the text, with no tools of any kind', async () => {
+    const r = recorder(fixture('gemini/image-read-interaction.json'));
+    const out = await provider(r.client, recordingLogger().logger).structured<{ readable: boolean; month: number }>(
+      V1,
+      SCHEMA,
+      opts({ purpose: 'read_image', maxOutputTokens: 768 }),
+    );
+    expect(out).toMatchObject({ readable: true, month: 10 });
+    const req = r.requests[0] as Record<string, unknown>;
+    for (const k of ['tools', 'tool_config', 'function_declarations', 'functionDeclarations'])
+      expect(req).not.toHaveProperty(k);
+    expect(JSON.stringify(req)).not.toMatch(/function_?[dD]eclarations/);
+    expect(req.system_instruction).toBe('V1 CONSTANT (test)');
+    expect(req.input).toEqual([
+      {
+        type: 'user_input',
+        content: [
+          { type: 'image', data: B64, mime_type: 'image/png' },
+          { type: 'text', text: '<<DATA-0123456789abcdef>>\n{}\n<<END-DATA-0123456789abcdef>>' },
+        ],
+      },
+    ]);
+  });
+
+  it('toGeminiContent keeps the caller order; hasImagePart only sees image parts of user turns', () => {
+    expect(
+      toGeminiContent([
+        { type: 'text', text: 'a' },
+        { type: 'image', mime: 'image/jpeg', base64: 'AA==' },
+      ]),
+    ).toEqual([
+      { type: 'text', text: 'a' },
+      { type: 'image', data: 'AA==', mime_type: 'image/jpeg' },
+    ]);
+    expect(hasImagePart(HISTORY)).toBe(false);
+    expect(hasImagePart(V1)).toBe(true);
+    expect(hasImagePart([{ role: 'user', content: [{ type: 'text', text: 'x' }] }])).toBe(false);
+  });
+
+  it('a picture on any other purpose, or in chat(), is refused before any request (unsupported)', async () => {
+    const r = recorder(fixture('gemini/image-read-interaction.json'));
+    const p = provider(r.client, recordingLogger().logger);
+    await expect(p.structured(V1, SCHEMA, opts({ purpose: 'extract' }))).rejects.toMatchObject({ code: 'unsupported' });
+    await expect(p.chat(V1, TOOLS, opts({ purpose: 'read_image' }))).rejects.toMatchObject({ code: 'unsupported' });
+    expect(r.requests).toHaveLength(0);
+  });
+
+  it('the image fixture is flagged unverified and synthetic', () => {
+    const raw = readFileSync(
+      fileURLToPath(new URL('./__fixtures__/gemini/image-read-interaction.json', import.meta.url)),
+      'utf8',
+    );
+    expect(JSON.parse(raw)._unverified).toBe(true);
+    expect(raw).not.toMatch(/@s\.whatsapp\.net|@lid/);
   });
 });

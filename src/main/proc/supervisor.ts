@@ -95,6 +95,14 @@ export function isInsideDir(child: string, dir: string): boolean {
 export function isSamePath(a: string, b: string): boolean {
   return canonicalise(a) === canonicalise(b);
 }
+/** [V2] B31 exact-match rule for a recorded vendor-CLI exe: identical strings, absolute, no `..` segment, no surrounding
+ *  whitespace, never a `.cmd` / `.bat` (a CLI job is only ever spawned from an `.exe` - or, in e2e, the recorded node.exe seam). */
+export function isExactCliExePath(pidFileExePath: string, recorded: string): boolean {
+  if (typeof recorded !== 'string' || recorded.length === 0 || pidFileExePath !== recorded) return false;
+  if (recorded.trim() !== recorded || !path.isAbsolute(recorded)) return false;
+  if (/(^|[\\/])\.\.([\\/]|$)/.test(recorded)) return false;
+  return /\.exe$/i.test(recorded);
+}
 
 /** [R2] The pid file is UNTRUSTED input. parsePidFile returns null unless: pid is a safe integer with 0 < pid < 2**31; exePath is an absolute
  *  path whose normalised form starts with one of `ownResourcesDir` + sep or equals one of `execPath`; startedAt is a finite safe integer > 0.
@@ -107,6 +115,9 @@ export function parsePidFile(
   jsonText: string,
   ownResourcesDir: string | readonly string[],
   execPath: string | readonly string[],
+  /** [V2 ADD] C2 13 parsePidFileV2: (c) EXACTLY equal (case-insensitive, normalised) to one of the locator-resolved claude.exe / agy.exe
+   *  paths recorded in meta.cli_exe_paths_json at provider start. [W0 refinement] defaulted to [] so every v1 caller keeps compiling. */
+  acceptedCliExePaths: readonly string[] = [],
 ): PidFile | null {
   let raw: unknown;
   try {
@@ -131,7 +142,10 @@ export function parsePidFile(
   const execPaths = typeof execPath === 'string' ? [execPath] : execPath;
   const insideARoot = roots.some((dir) => typeof dir === 'string' && dir.length > 0 && isInsideDir(normalised, dir));
   const isAnExecPath = execPaths.some((p) => typeof p === 'string' && p.length > 0 && isSamePath(normalised, p));
-  if (!insideARoot && !isAnExecPath) return null;
+  // [V2, B31 / T2 5] a CLI exe is accepted only when the pid file carries EXACTLY the recorded string: the JobRunner writes the
+  // locator-resolved path verbatim, so a case-changed, trailing-space, `..` or `.cmd` variant can only come from a forged file.
+  const isACliExe = acceptedCliExePaths.some((p) => isExactCliExePath(exePath, p));
+  if (!insideARoot && !isAnExecPath && !isACliExe) return null;
 
   return { pid, exePath: normalised, startedAt };
 }
@@ -161,6 +175,9 @@ export interface SupervisorDeps {
   processQuery?: ProcessQuery;
   killSync?: (pid: number) => void;
   random?: RandomSource;
+  /** [V2 ADD, B2] the JobRunner (structural slice, no import cycle): `stopAll` kills every running job FIRST, then the children
+   *  in STOP_ORDER ("Quit kills jobs before supervisor.stopAll", T2 5 call-order row). Optional so every v1 caller keeps compiling. */
+  jobs?: { killAll(): Promise<void> };
 }
 
 /** Wraps a real ChildProcess as a ChildHandle (used by bridge/launcher.ts, llm/local/llamaServer.ts and the lane-1 tests). */
@@ -611,6 +628,15 @@ export function createSupervisor(deps: SupervisorDeps): Supervisor {
       };
     },
     async stopAll(opts) {
+      // [V2] jobs (claude.exe / agy.exe / whisper-cli.exe) die before any supervised child: a CLI job may hold a tool-server
+      // request that reads through the children, and nothing may outlive the quit (I7').
+      if (deps.jobs) {
+        try {
+          await deps.jobs.killAll();
+        } catch (err) {
+          log('proc_jobs_kill_failed', { reason: reasonOf(err) });
+        }
+      }
       for (const name of STOP_ORDER) {
         if (entries.has(name)) await stop(name, { graceMs: opts.graceMs });
       }

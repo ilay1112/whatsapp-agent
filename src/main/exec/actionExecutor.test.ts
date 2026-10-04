@@ -112,6 +112,7 @@ function makeRig(opts: { jid?: string; sendable?: boolean; wireDetail?: boolean 
         state.creates.push(args);
         return state.createResult(args);
       },
+      updateEvent: () => Promise.resolve({ ok: false as const, error: 'unavailable' as const }), // [V2] C2 11 (unused by v1)
     },
     read: {
       getCurrentTime: () => Promise.reject(new Error('exec never reads the clock through MCP')),
@@ -124,6 +125,7 @@ function makeRig(opts: { jid?: string; sendable?: boolean; wireDetail?: boolean 
         return state.freeBusyResult();
       },
       findAppEvent: () => Promise.resolve({ ok: true, value: null }),
+      getEvent: () => Promise.resolve({ ok: false as const, error: 'unavailable' as const }), // [V2] C2 11 (unused by v1)
     },
     bridgeOnline: () => state.bridgeOnline,
     calendarConnected: () => state.calendarConnected,
@@ -406,11 +408,15 @@ describe('approve gate: approval binding', () => {
           return { ok: true };
         },
       },
-      write: { createEvent: () => Promise.reject(new Error('unused')) },
+      write: {
+        createEvent: () => Promise.reject(new Error('unused')),
+        updateEvent: () => Promise.resolve({ ok: false as const, error: 'unavailable' as const }),
+      },
       read: {
         getCurrentTime: () => Promise.reject(new Error('unused')),
         getFreeBusy: () => Promise.resolve({ ok: true, value: [] }),
         findAppEvent: () => Promise.resolve({ ok: true, value: null }),
+        getEvent: () => Promise.resolve({ ok: false as const, error: 'unavailable' as const }), // [V2] C2 11 (unused by v1)
       },
       bridgeOnline: () => true,
       calendarConnected: () => true,
@@ -462,7 +468,7 @@ describe('approve gate: approval binding', () => {
   it('refuses a direct execute() of an executing row with no approved payload', async () => {
     const rig = makeRig();
     const a = seedAction(rig, replyPayload(rig));
-    rig.repos.actions.markApprovedExecuting(a.id, '', rig.clock.now() as EpochMs);
+    rig.repos.actions.markApprovedExecuting(a.id, '', rig.clock.now() as EpochMs, 'user');
     await expect(rig.exec.execute(a.id)).rejects.toBeInstanceOf(ActionNotExecutingError);
     expect(rig.sends).toHaveLength(0);
   });
@@ -470,7 +476,7 @@ describe('approve gate: approval binding', () => {
   it('executes an already-executing row through execute()', async () => {
     const rig = makeRig();
     const a = seedAction(rig, replyPayload(rig));
-    rig.repos.actions.markApprovedExecuting(a.id, a.canonicalJson, rig.clock.now() as EpochMs);
+    rig.repos.actions.markApprovedExecuting(a.id, a.canonicalJson, rig.clock.now() as EpochMs, 'user');
     expect((await rig.exec.execute(a.id)).outcome).toBe('done');
     expect(rig.sends).toEqual([{ recipient: JID, message: 'See you at five.' }]);
   });
@@ -645,7 +651,7 @@ describe('write-ahead', () => {
   it('a compare-and-set miss is a gate failure: ACTION_STALE, no failed row, no clone, no audit', async () => {
     const rig = makeRig();
     const a = seedAction(rig, replyPayload(rig));
-    rig.repos.actions.markApprovedExecuting(a.id, a.canonicalJson, rig.clock.now() as EpochMs);
+    rig.repos.actions.markApprovedExecuting(a.id, a.canonicalJson, rig.clock.now() as EpochMs, 'user');
     expect(await rig.exec.approve(req(a), CTX)).toEqual({ ok: false, error: { code: 'ACTION_STALE' } });
     expect(actionsOf(rig)).toHaveLength(1);
     expect(auditKinds(rig, a.id)).toEqual([]);
@@ -669,6 +675,7 @@ function secondExecutor(base: Rig): { exec: ActionExecutor; creates: CreateEvent
         creates.push(args);
         return { ok: true, value: { eventId: args.eventId, htmlLink: null } };
       },
+      updateEvent: () => Promise.resolve({ ok: false as const, error: 'unavailable' as const }), // [V2] C2 11 (unused by v1)
     },
     read: {
       getCurrentTime: () => Promise.reject(new Error('unused')),
@@ -679,6 +686,7 @@ function secondExecutor(base: Rig): { exec: ActionExecutor; creates: CreateEvent
         return { ok: true, value: [] };
       },
       findAppEvent: () => Promise.resolve({ ok: true, value: null }),
+      getEvent: () => Promise.resolve({ ok: false as const, error: 'unavailable' as const }), // [V2] C2 11 (unused by v1)
     },
     bridgeOnline: () => true,
     calendarConnected: () => true,
@@ -1016,7 +1024,7 @@ describe('recoverOnStartup', () => {
   it('turns every executing row into unknown_outcome WITHOUT re-executing it, and expires overdue rows', async () => {
     const rig = makeRig();
     const executing = seedAction(rig, replyPayload(rig));
-    rig.repos.actions.markApprovedExecuting(executing.id, executing.canonicalJson, rig.clock.now() as EpochMs);
+    rig.repos.actions.markApprovedExecuting(executing.id, executing.canonicalJson, rig.clock.now() as EpochMs, 'user');
     const overdue = seedAction(rig, eventPayload(rig));
     await rig.clock.advanceTo(overdue.expiresAt + 1);
 
@@ -1040,7 +1048,7 @@ describe('recoverOnStartup', () => {
     const rig = makeRig();
     rig.settings = { ...rig.settings, general: { ...rig.settings.general, timeZone: 'Europe/Berlin' } };
     const a = seedAction(rig, eventPayload(rig));
-    rig.repos.actions.markApprovedExecuting(a.id, a.canonicalJson, rig.clock.now() as EpochMs);
+    rig.repos.actions.markApprovedExecuting(a.id, a.canonicalJson, rig.clock.now() as EpochMs, 'user');
 
     await rig.exec.recoverOnStartup();
 
@@ -1065,11 +1073,15 @@ describe('defensive paths', () => {
     const exec = createActionExecutor({
       repos,
       send: { sendText: () => Promise.resolve({ ok: true }) },
-      write: { createEvent: () => Promise.reject(new Error('unused')) },
+      write: {
+        createEvent: () => Promise.reject(new Error('unused')),
+        updateEvent: () => Promise.resolve({ ok: false as const, error: 'unavailable' as const }),
+      },
       read: {
         getCurrentTime: () => Promise.reject(new Error('unused')),
         getFreeBusy: () => Promise.resolve({ ok: true, value: [] }),
         findAppEvent: () => Promise.resolve({ ok: true, value: null }),
+        getEvent: () => Promise.resolve({ ok: false as const, error: 'unavailable' as const }), // [V2] C2 11 (unused by v1)
       },
       bridgeOnline: () => true,
       calendarConnected: () => true,
@@ -1091,11 +1103,15 @@ describe('defensive paths', () => {
     const exec = createActionExecutor({
       repos,
       send: { sendText: () => Promise.resolve({ ok: true }) },
-      write: { createEvent: () => Promise.reject(new Error('unused')) },
+      write: {
+        createEvent: () => Promise.reject(new Error('unused')),
+        updateEvent: () => Promise.resolve({ ok: false as const, error: 'unavailable' as const }),
+      },
       read: {
         getCurrentTime: () => Promise.reject(new Error('unused')),
         getFreeBusy: () => Promise.resolve({ ok: true, value: [] }),
         findAppEvent: () => Promise.resolve({ ok: true, value: null }),
+        getEvent: () => Promise.resolve({ ok: false as const, error: 'unavailable' as const }), // [V2] C2 11 (unused by v1)
       },
       bridgeOnline: () => true,
       calendarConnected: () => true,
@@ -1196,7 +1212,7 @@ describe('offerRetryForUnknown', () => {
   /** Puts one action into `unknown_outcome` exactly the way a crash + recoverOnStartup would. */
   async function recovered(rig: Rig, payload: ActionPayload): Promise<ApprovalAction> {
     const a = seedAction(rig, payload);
-    rig.repos.actions.markApprovedExecuting(a.id, a.canonicalJson, rig.clock.now() as EpochMs);
+    rig.repos.actions.markApprovedExecuting(a.id, a.canonicalJson, rig.clock.now() as EpochMs, 'user');
     await rig.exec.recoverOnStartup();
     expect(rig.repos.actions.byId(a.id)?.state).toBe('unknown_outcome');
     return a;
@@ -1251,11 +1267,15 @@ describe('success atomicity', () => {
     createActionExecutor({
       repos,
       send: { sendText: () => Promise.resolve({ ok: true }) },
-      write: { createEvent: (args) => Promise.resolve({ ok: true, value: { eventId: args.eventId, htmlLink: null } }) },
+      write: {
+        createEvent: (args) => Promise.resolve({ ok: true, value: { eventId: args.eventId, htmlLink: null } }),
+        updateEvent: () => Promise.resolve({ ok: false as const, error: 'unavailable' as const }),
+      },
       read: {
         getCurrentTime: () => Promise.reject(new Error('unused')),
         getFreeBusy: () => Promise.resolve({ ok: true, value: [] }),
         findAppEvent: () => Promise.resolve({ ok: true, value: null }),
+        getEvent: () => Promise.resolve({ ok: false as const, error: 'unavailable' as const }), // [V2] C2 11 (unused by v1)
       },
       bridgeOnline: () => true,
       calendarConnected: () => true,

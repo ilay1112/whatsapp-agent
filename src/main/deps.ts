@@ -81,3 +81,78 @@ export interface UiLanguage {
   lang: Lang;
   dir: 'ltr' | 'rtl';
 }
+
+// ======================= [V2 ADD] dependency-injection seams of v2-tests 4.3 (V2-W0-scaffold; frozen in Wave 1) =======================
+// Types only. Production values are built in compose.ts (the only file besides app/** that may touch `electron`); tests inject doubles.
+
+/** S-IMAGE: the `nativeImage` facade media/normalizeImage.ts receives (never an import of electron). Bytes in, JPEG bytes out. */
+export interface ImageHandle {
+  isEmpty(): boolean;
+  getSize(): { width: number; height: number };
+  resize(opts: { width?: number; height?: number; quality?: 'good' | 'better' | 'best' }): ImageHandle;
+  toJPEG(quality: number): Uint8Array;
+}
+export interface ImageFacade {
+  /** nativeImage.createFromBuffer; an undecodable buffer yields an empty handle (isEmpty() === true), never a throw. */
+  fromBuffer(bytes: Uint8Array): ImageHandle;
+}
+
+/** S-OPUS: decoder factory for voice/decode.ts (real opus-decoder@0.7.12 in production and in every test except two). */
+export interface OpusFrameDecoder {
+  readonly ready: Promise<void>;
+  decodeFrame(frame: Uint8Array): {
+    channelData: Float32Array[];
+    samplesDecoded: number;
+    sampleRate: number;
+    errors: unknown[];
+  };
+  free(): void;
+}
+export type OpusDecoderFactory = (opts: {
+  channels: number;
+  preSkip: number;
+  sampleRate: 16000 | 48000;
+}) => OpusFrameDecoder;
+
+/** S-DIALOG: electron dialog.showMessageBox as a function value (app/autoDialog.ts, the agy workspace dialog). */
+export interface MessageBoxOptionsLike {
+  type: 'none' | 'info' | 'error' | 'question' | 'warning';
+  title?: string;
+  message: string;
+  detail?: string;
+  buttons: string[];
+  defaultId: number;
+  cancelId: number;
+  noLink?: boolean;
+  checkboxLabel?: string;
+  checkboxChecked?: boolean;
+}
+export type ShowMessageBoxFn = (
+  window: unknown,
+  options: MessageBoxOptionsLike,
+) => Promise<{ response: number; checkboxChecked: boolean }>;
+
+/** S-CONSOLE: opens the vendor's own sign-in in a VISIBLE console (cli:signIn); the exe is spawned directly, never cmd.exe (F7). */
+export type OpenVisibleConsoleFn = (exePath: string, args: readonly string[], opts: { cwd?: string }) => Promise<void>;
+
+/** S-HOME: the home directory the agy workspace-trust handler resolves `~/.gemini/...` against (tests: mkdtemp). */
+export type HomeDirFn = () => string;
+/** S-PROC: "is an agy process running" query (refuses cli:allowWorkspace while true). */
+export type AgyRunningFn = () => Promise<boolean>;
+
+/** S-LOCATE: the CLI locator's view of the disk and PATH (tests: mkdtemp layouts; e2e: never probes the real disk). */
+export interface LocateDeps {
+  statFile(p: string): { isFile: boolean } | null;
+  env: Readonly<Record<string, string | undefined>>;
+  /** `where.exe <name>` - production only; NEVER called in tests or in e2e mode (T8). */
+  runWhere(name: string): Promise<string[]>;
+}
+
+/** S-JOB: process primitives of proc/jobRunner.ts, llm/cli/runner.ts and voice/whisperCli.ts. */
+export interface JobProcessDeps {
+  spawn: SpawnFn;
+  killPid(pid: number, tree: boolean): Promise<void>;
+  queryProcess: ProcessQuery;
+  setPriority(pid: number, priority: 'below_normal'): void;
+  cpuCount(): number;
+}

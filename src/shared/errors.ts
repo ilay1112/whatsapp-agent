@@ -50,6 +50,33 @@ export const ERROR_CODES = [
   'NOT_FOUND',
   'ABORTED',
   'INTERNAL',
+  // [V2 ADD] vendor CLIs (B13, B14, ARCH-v2 13)
+  'CLI_NOT_INSTALLED',
+  'CLI_VERSION',
+  'CLI_NOT_SIGNED_IN',
+  'CLI_TOOLSET_MISMATCH',
+  'CLI_UNSTABLE',
+  'CLOUD_AUTH',
+  'CLOUD_OVERAGE',
+  // [V2 ADD] event editing (B4, ARCH-v2 7)
+  'CAL_EVENT_GONE',
+  'CAL_EVENT_FOREIGN',
+  'CAL_UPDATE_FAILED',
+  'CAL_UPDATE_UNAVAILABLE',
+  // [V2 ADD] automatic mode (B7)
+  'AUTO_NOT_CONFIRMED',
+  'AUTO_CALENDAR_NOT_OWNED',
+  'AUTO_NO_TRACK_RECORD',
+  // [V2 ADD] voice + pictures (B18, B19)
+  'VOICE_MODEL_MISSING',
+  'VOICE_AUDIO_MISSING',
+  'VOICE_DECODE_FAILED',
+  'VOICE_LOCAL_FAILED',
+  'VOICE_TOO_LONG',
+  'VOICE_TIMEOUT',
+  'MEDIA_UNAVAILABLE',
+  'VOICE_TOO_LONG_FOR_DEVICE', // [F33] predicted transcription time > LIMITS.voiceJobMaxMs on this PC
+  'CLI_UNSAFE_CONFIG', // [F3] agy global-profile fallback: the user's global mcp_config.json has an enabled server / hooks.json a hook / unparsable
 ] as const;
 export type ErrorCode = (typeof ERROR_CODES)[number];
 
@@ -81,6 +108,12 @@ export const ERROR_ACTIONS = [
   'restore_db',
   'focus_window',
   'install_vcredist',
+  'copy_install_command', // [V2 ADD] the vendor's install command as copyable text (the app never runs an installer, B32)
+  'copy_update_command', // [V2 ADD]
+  'sign_in', // [V2 ADD] cli:signIn - the vendor's own login in a VISIBLE console
+  'sign_in_again', // [V2 ADD]
+  'add_as_new_event', // [V2 ADD] approve the pending create_event offered after CAL_EVENT_GONE
+  'download_voice_model', // [V2 ADD] model:startDownload {tier: <resolved voice tier>}
 ] as const; // [R2] install_vcredist = external:open {target:'vcredist_download'} (Microsoft page; no runtime exe download by the app)
 export type ErrorAction = (typeof ERROR_ACTIONS)[number];
 
@@ -130,7 +163,33 @@ export const ERROR_ACTION: Record<ErrorCode, ErrorAction> = {
   NOT_FOUND: 'none',
   ABORTED: 'none',
   INTERNAL: 'export_diagnostics',
+  CLI_NOT_INSTALLED: 'copy_install_command',
+  CLI_VERSION: 'copy_update_command',
+  CLI_NOT_SIGNED_IN: 'sign_in',
+  CLI_TOOLSET_MISMATCH: 'export_diagnostics', // the row ALSO offers "Switch to the AI on this computer" (a second link, not the action)
+  CLI_UNSTABLE: 'test_again',
+  CLOUD_AUTH: 'sign_in_again',
+  CLOUD_OVERAGE: 'open_ai_settings',
+  CAL_EVENT_GONE: 'add_as_new_event',
+  CAL_EVENT_FOREIGN: 'none', // info line
+  CAL_UPDATE_FAILED: 'try_again',
+  CAL_UPDATE_UNAVAILABLE: 'export_diagnostics',
+  AUTO_NOT_CONFIRMED: 'none',
+  AUTO_CALENDAR_NOT_OWNED: 'none',
+  AUTO_NO_TRACK_RECORD: 'none',
+  VOICE_MODEL_MISSING: 'download_voice_model',
+  VOICE_AUDIO_MISSING: 'try_again',
+  VOICE_DECODE_FAILED: 'analyse_again',
+  VOICE_LOCAL_FAILED: 'analyse_again',
+  VOICE_TOO_LONG: 'none',
+  VOICE_TIMEOUT: 'try_again',
+  MEDIA_UNAVAILABLE: 'try_again',
+  VOICE_TOO_LONG_FOR_DEVICE: 'open_ai_settings', // copy "Use Lite" (the Voice notes sub-row)
+  CLI_UNSAFE_CONFIG: 'open_ai_settings',
 };
+// [V2] CLOUD_QUOTA keeps 'open_ai_settings' (one action per code, v1 rule): for the CLI providers the AI settings row carries the
+//      "usage resets HH:MM" line and the external:open {target:'claude_usage'} link (see Architecture concerns #9).
+// [V2] ERROR_SEVERITY unchanged: every new code is 'attention'.
 
 /** Severity drives AppHealth.overall: 'attention' codes turn the pill red/amber-with-action, 'working' codes are transient amber. */
 export const ERROR_SEVERITY: Partial<Record<ErrorCode, 'working' | 'attention'>> = {
@@ -140,6 +199,7 @@ export const ERROR_SEVERITY: Partial<Record<ErrorCode, 'working' | 'attention'>>
 }; // every code not listed = 'attention'
 
 /** Provider-level error classes (defined here so shared code can map them; re-exported by src/main/llm/types.ts). */
+// [V2 CHANGE] PROVIDER_ERROR_CODES (8 appended), providerErrorToErrorCode (signature widens), NO_RETRY_PROVIDER_ERRORS (8 appended)
 export const PROVIDER_ERROR_CODES = [
   'auth',
   'billing',
@@ -151,16 +211,44 @@ export const PROVIDER_ERROR_CODES = [
   'aborted',
   'bad_output',
   'not_ready',
+  // [V2 ADD] vendor CLIs (ARCH-v2 4.2) + 'unsupported' (chat() on a CLI provider - a programming error, see concerns #6)
+  'not_installed',
+  'version',
+  'not_logged_in',
+  'usage_limit',
+  'overage',
+  'sandbox',
+  'account_hold',
+  'unsupported',
 ] as const;
 export type ProviderErrorCode = (typeof PROVIDER_ERROR_CODES)[number];
 
-export function providerErrorToErrorCode(provider: 'local' | 'claude' | 'gemini', e: ProviderErrorCode): ErrorCode {
+/** [V2 CHANGE] provider param widened to ProviderId (inline union: errors.ts imports nothing). */
+export function providerErrorToErrorCode(
+  provider: 'local' | 'claude_cli' | 'antigravity_cli' | 'claude' | 'gemini',
+  e: ProviderErrorCode,
+): ErrorCode {
   if (e === 'aborted') return 'ABORTED';
   if (e === 'bad_output') return 'LLM_BAD_OUTPUT';
+  if (e === 'unsupported') return 'INTERNAL';
   if (provider === 'local') return e === 'not_ready' ? 'LLM_NOT_READY' : 'LLM_LOCAL_FAILED';
   switch (e) {
+    case 'not_installed':
+      return 'CLI_NOT_INSTALLED';
+    case 'version':
+      return 'CLI_VERSION';
+    case 'not_logged_in':
+      return 'CLI_NOT_SIGNED_IN';
+    case 'usage_limit':
+      return 'CLOUD_QUOTA';
+    case 'overage':
+      return 'CLOUD_OVERAGE';
+    case 'sandbox':
+      return 'CLI_TOOLSET_MISMATCH';
+    case 'account_hold':
+      return 'CLOUD_AUTH';
     case 'auth':
-      return 'KEY_INVALID';
+      return provider === 'claude_cli' || provider === 'antigravity_cli' ? 'CLOUD_AUTH' : 'KEY_INVALID';
     case 'billing':
     case 'quota_daily':
       return 'CLOUD_QUOTA';
@@ -179,4 +267,12 @@ export const NO_RETRY_PROVIDER_ERRORS: readonly ProviderErrorCode[] = [
   'quota_daily',
   'model_not_found',
   'aborted',
+  'not_installed', // [V2 ADD] ...
+  'version',
+  'not_logged_in',
+  'usage_limit', // held/budget until resetsAt instead
+  'overage',
+  'sandbox', // CLI_TOOLSET_MISMATCH: never retried with looser flags (I11)
+  'account_hold',
+  'unsupported',
 ];

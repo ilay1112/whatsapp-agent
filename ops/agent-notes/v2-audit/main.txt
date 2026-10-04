@@ -1,0 +1,254 @@
+
+ RUN  v4.1.11 C:/dev/whatsapp agent
+
+ ✓ |main| src/main/llm/local/download.media.test.ts (5 tests) 647ms
+     ✓ one queue: a media file waits for a running LLM download before its first request  363ms
+ ✓ |main| src/main/llm/local/download.test.ts (42 tests) 911ms
+ ✓ |main| src/main/db/retention.test.ts (18 tests) 633ms
+ ✓ |main| src/main/db/backup.test.ts (12 tests) 643ms
+ ✓ |main| src/main/db/repos/repos.v2.test.ts (32 tests) 713ms
+ ✓ |main| src/main/agent/items.test.ts (34 tests) 705ms
+ ✓ |main| src/main/proc/supervisor.test.ts (91 tests) 1094ms
+ ✓ |main| src/main/bridge/readClient.test.ts (29 tests) 1215ms
+     ✓ a slow trickle is cut by the caller signal  346ms
+ ✓ |main| src/main/db/migrations.v4.test.ts (6 tests) 920ms
+     ✓ keeps every row, applies the backfills and leaves no FK violation  432ms
+     ✓ the v4 trigger refuses an approve without approved_by on a migrated database (F18, B6)  402ms
+ ✓ |main| src/main/agent/orchestrator.v2.test.ts (35 tests) 910ms
+ ✓ |main| src/main/agent/validate.v2.test.ts (43 tests) 1060ms
+ ✓ |main| src/main/ipc/handlers/data.test.ts (15 tests) 1022ms
+ ✓ |main| src/main/db/repos/actions.test.ts (54 tests) 1120ms
+ ✓ |main| src/main/exec/actionExecutor.undo.test.ts (26 tests) 1127ms
+ ✓ |main| src/main/db/index.test.ts (13 tests) 1451ms
+     ✓ warns about a statement slower than 20 ms, and only in development  1149ms
+ ✓ |main| src/main/exec/actionExecutor.edges.test.ts (24 tests) 1255ms
+ ✓ |main| src/main/exec/autoPolicy.test.ts (24 tests) 1252ms
+ ✓ |main| src/main/agent/orchestrator.test.ts (26 tests) 675ms
+ ✓ |main| src/main/exec/actionExecutor.test.ts (91 tests) 1764ms
+ ✓ |main| src/main/bridge/ingest.v2.test.ts (4 tests) 540ms
+ ✓ |main| src/main/exec/actionExecutor.v2.test.ts (39 tests) 1663ms
+ ✓ |main| src/main/agent/items.v2.test.ts (28 tests) 650ms
+ ✓ |main| src/main/agent/validate.test.ts (38 tests) 571ms
+ ✓ |main| src/main/agent/prompt.purity.test.ts (6 tests) 598ms
+     ✓ existing_event title/location, imageText and transcripts stay inside the block; every stage prompt is byte-identical  376ms
+ ✓ |main| src/main/llm/cli/runner.test.ts (45 tests) 702ms
+ ✓ |main| src/main/exec/reconcile.test.ts (21 tests) 538ms
+ ✓ |main| src/main/llm/local/llamaServer.test.ts (44 tests) 563ms
+ ✓ |main| src/main/proc/reaper.test.ts (49 tests) 569ms
+ ✓ |main| src/main/agent/stage0.test.ts (36 tests) 834ms
+ ✓ |main| src/main/mcp/host.test.ts (60 tests) 399ms
+ ✓ |main| src/main/ipc/handlers/auto.test.ts (18 tests) 806ms
+ ✓ |main| src/main/mcp/toolServer.test.ts (13 tests) 2586ms
+     ✓ every row answers as specified, never 401/403; rejected rows reach neither the SDK nor the gate  2099ms
+ ✓ |main| src/main/mcp/host.v2.test.ts (15 tests) 355ms
+ ✓ |main| src/main/voice/service.test.ts (26 tests) 1303ms
+     ✓ selfTest: the bundled 5 s signal through whisper; bench stored as secPerAudioSec; failures => ok false  492ms
+ ✓ |main| src/main/voice/ogg.test.ts (35 tests) 382ms
+ ✓ |main| src/main/proc/jobRunner.test.ts (36 tests) 4007ms
+     ✓ a failing pid-file removal is logged by name only, never thrown  507ms
+     ✓ spawns the system node with the allow-listed env, reads NDJSON, writes/removes the pid file, kills a hung job  2818ms
+ ✓ |main| src/main/db/repos/chats.test.ts (15 tests) 369ms
+ ✓ |main| src/main/llm/local.test.ts (54 tests) 430ms
+ ✓ |main| src/main/agent/queue.test.ts (19 tests) 609ms
+ ✓ |main| src/main/db/repos/items.test.ts (21 tests) 590ms
+ ✓ |main| src/main/bridge/sendClient.test.ts (20 tests) 422ms
+ ✓ |main| src/shared/locales/locales.test.ts (41 tests) 369ms
+ ✓ |main| scripts/stage-calendar-mcp.test.mjs (25 tests) 679ms
+ ✓ |main| src/main/db/repos/autoWrites.test.ts (7 tests) 191ms
+ ✓ |main| src/main/exec/rateLimiter.test.ts (13 tests) 259ms
+ ✓ |main| src/main/voice/whisperCli.test.ts (19 tests) 547ms
+ ✓ |main| src/main/agent/existingEvent.test.ts (18 tests) 580ms
+ ✓ |main| src/main/db/repos/autoPolicies.test.ts (12 tests) 306ms
+ ✓ |main| src/main/db/repos/eventRevisions.test.ts (9 tests) 397ms
+ ✓ |main| src/main/exec/outcome.test.ts (13 tests) 384ms
+ ✓ |main| src/main/mcp/host.fakeCalendar.test.ts (25 tests) 436ms
+ ✓ |main| src/main/db/migrations.test.ts (24 tests) 195ms
+ ✓ |main| src/main/db/repos/repos.test.ts (12 tests) 456ms
+ ✓ |main| src/main/exec/autoGate.test.ts (128 tests) 681ms
+     ✓ over 2 000 seeded random mutations of both fixtures  567ms
+ ✓ |main| src/main/bridge/janitor.test.ts (8 tests) 323ms
+ ✓ |main| src/main/bridge/invariants.test.ts (33 tests) 125ms
+ ✓ |main| src/main/media/normalizeImage.test.ts (14 tests) 490ms
+     ✓ exactly 25 MP passes the pixel guard, one pixel more does not  429ms
+ ✓ |main| src/main/exec/reconcile.v2.test.ts (5 tests) 446ms
+ ✓ |main| src/main/db/repos/autoDecisions.test.ts (5 tests) 144ms
+ ✓ |main| src/main/voice/decode.test.ts (10 tests) 152ms
+ ✓ |main| src/main/db/repos/settings.test.ts (5 tests) 147ms
+ ✓ |main| src/main/ipc/register.test.ts (28 tests) 257ms
+ ✓ |main| src/main/exec/outcome.v2.test.ts (3 tests) 182ms
+ ✓ |main| src/main/media/imageDims.test.ts (13 tests) 92ms
+ ✓ |main| src/shared/i18n/format.test.ts (25 tests) 118ms
+ ✓ |main| src/main/llm/cli/locator.test.ts (36 tests) 275ms
+ ✓ |main| src/main/agent/toolGate.test.ts (75 tests) 140ms
+ ✓ |main| src/preload/index.test.ts (15 tests) 495ms
+     ✓ exposes exactly invoke / on / initial, all frozen - no ipcRenderer object reaches the renderer  358ms
+ ✓ |main| src/main/db/repos/mediaCache.test.ts (4 tests) 92ms
+ ✓ |main| src/main/agent/stage0.v2.test.ts (6 tests) 160ms
+ ✓ |main| src/main/mcp/googleAuth.test.ts (26 tests) 343ms
+ ✓ |main| src/main/agent/readImage.test.ts (55 tests) 132ms
+ ✓ |main| src/shared/when.test.ts (48 tests) 53ms
+ ✓ |main| src/main/llm/cli/antigravityCli.test.ts (95 tests) 65ms
+ ✓ |main| src/main/llm/local/supervised.test.ts (11 tests) 134ms
+ ✓ |main| scripts/gen-golden-images.test.mjs (11 tests) 75ms
+ ✓ |main| src/main/bridge/doorbell.test.ts (35 tests) 7377ms
+     ✓ never drains more than the cap from a 25 MB body on the VALID path  6029ms
+     ✓ rejects beyond 30 requests per second and recovers in the next window  1180ms
+ ✓ |main| scripts/import-bridge.test.mjs (8 tests) 74ms
+ ✓ |main| src/main/agent/resolveDelta.test.ts (68 tests) 58ms
+ ✓ |main| src/main/agent/waTools.test.ts (32 tests) 6842ms
+     ✓ default 12 rows of chat_1, oldest -> newest, more:true, handles in first-seen order  687ms
+     ✓ limit clamps to 1..20; paging with before_message returns strictly older rows; more:false at the window edge  547ms
+     ✓ bad arguments => null before any row is served (unknown / foreign handle, anchor of another chat)  562ms
+     ✓ LIMITS.waResultChars: the oldest rows are dropped first, more:true, and dropped rows get NO handle  877ms
+     ✓ trigger_chat: pinned to chat_1 whether `chat` is omitted or chat_1; other chats never surface  531ms
+     ✓ all_chats: every visible chat, hits carry run handles; cross-chat rows are counted and kept for the S4 guard  518ms
+     ✓ returns the neighbours of a message shown earlier in this run  599ms
+     ✓ a message of another chat is out of scope in trigger_chat (null); defaults are 4 / 4  550ms
+     ✓ only under all_chats; lists visible DM chats as handles with sanitised, capped last text  1297ms
+     ✓ 90 days shows all 60 history rows; an out-of-range setting is clamped  592ms
+ ✓ |main| src/main/ipc/handlers/actions.v2.test.ts (2 tests) 160ms
+ ✓ |main| src/main/ipc/handlers/app.test.ts (25 tests) 61ms
+ ✓ |main| src/main/mcp/adminClient.v2.test.ts (11 tests) 91ms
+ ✓ |main| src/main/db/repos/transcripts.test.ts (3 tests) 78ms
+ ✓ |main| src/main/media/mediaCache.test.ts (5 tests) 75ms
+ ✓ |main| scripts/fetch-llama.test.mjs (56 tests) 55ms
+ ✓ |main| scripts/make-icons.test.mjs (18 tests) 87ms
+ ✓ |main| src/main/health/healthHub.test.ts (26 tests) 70ms
+ ✓ |main| src/main/app/window.test.ts (47 tests) 81ms
+ ✓ |main| src/shared/state.test.ts (403 tests) 53ms
+ ✓ |main| src/main/mcp/projection.test.ts (29 tests) 50ms
+ ✓ |main| src/main/proc/freePort.test.ts (10 tests) 40ms
+ ✓ |main| src/main/agent/draft.test.ts (25 tests) 113ms
+ ✓ |main| src/main/llm/gemini.test.ts (56 tests) 45ms
+ ✓ |main| src/main/agent/toolGate.corpus.test.ts (19 tests) 92ms
+ ✓ |main| scripts/hash-bridge.test.mjs (6 tests) 40ms
+ ✓ |main| src/main/secrets.test.ts (37 tests) 48ms
+ ✓ |main| src/main/ipc/handlers/settings.v2.test.ts (10 tests) 36ms
+ ✓ |main| src/main/agent/resolve.test.ts (74 tests) 76ms
+ ✓ |main| src/shared/schemas.test.ts (18 tests) 69ms
+ ✓ |main| src/main/mcp/readClient.test.ts (18 tests) 39ms
+ ✓ |main| src/main/mcp/projection.v2.test.ts (16 tests) 40ms
+ ✓ |main| src/main/llm/cli/claudeCli.test.ts (67 tests) 43ms
+ ✓ |main| src/shared/types.test.ts (44 tests) 36ms
+ ✓ |main| src/shared/ipc.test.ts (85 tests) 45ms
+ ✓ |main| src/main/llm/claude.test.ts (55 tests) 43ms
+ ✓ |main| src/main/mcp/readClient.v2.test.ts (4 tests) 34ms
+ ✓ |main| scripts/pin-models.test.mjs (25 tests) 31ms
+ ✓ |main| src/main/agent/prompt.test.ts (29 tests) 35ms
+ ✓ |main| src/main/app/notifications.v2.test.ts (12 tests) 40ms
+ ✓ |main| src/main/ipc/handlers/cli.test.ts (53 tests) 53ms
+ ✓ |main| src/main/agent/contextBuilder.test.ts (37 tests) 31ms
+ ✓ |main| src/main/llm/factory.test.ts (29 tests) 32ms
+ ✓ |main| src/main/llm/factory.cli.test.ts (14 tests) 49ms
+ ✓ |main| src/main/mcp/writeClient.v2.test.ts (8 tests) 42ms
+ ✓ |main| src/main/agent/sanitize.test.ts (32 tests) 19ms
+ ✓ |main| src/main/agent/extract.test.ts (22 tests) 27ms
+ ✓ |main| src/main/agent/draft.loops.test.ts (9 tests) 28ms
+ ✓ |main| src/main/app/tray.test.ts (32 tests) 38ms
+ ✓ |main| src/main/ipc/handlers/settings.test.ts (11 tests) 33ms
+ ✓ |main| src/main/exec/undo.test.ts (4 tests) 11ms
+ ✓ |main| src/main/agent/toolDefs.test.ts (14 tests) 29ms
+ ✓ |main| src/main/paths.test.ts (30 tests) 20ms
+ ✓ |main| src/main/app/notifications.test.ts (23 tests) 29ms
+ ✓ |main| src/main/agent/minimize.test.ts (12 tests) 16ms
+ ✓ |main| scripts/smoke-packaged.test.mjs (42 tests) 28ms
+ ✓ |main| src/main/logger.test.ts (48 tests) 24ms
+ ✓ |main| src/main/bridge/ingest.test.ts (45 tests) 9686ms
+     ✓ pages through more than one batch of LIMITS.ingestBatch rows  3381ms
+     ✓ a 300-row history sync produces zero queue rows  1706ms
+ ✓ |main| src/shared/settings.test.ts (10 tests) 23ms
+ ✓ |main| src/main/app/protocol.test.ts (52 tests) 27ms
+ ✓ |main| src/main/app/autoDialog.test.ts (9 tests) 25ms
+ ✓ |main| src/main/app/i18n.test.ts (11 tests) 30ms
+ ✓ |main| src/main/ipc/handlers/llm.v2.test.ts (10 tests) 23ms
+ ✓ |main| src/main/ipc/handlers/llm.test.ts (16 tests) 33ms
+ ✓ |main| src/main/media/fetch.test.ts (11 tests) 20ms
+ ✓ |main| src/main/bridge/pairing.test.ts (9 tests) 18ms
+ ✓ |main| scripts/fetch-whisper.test.mjs (7 tests) 15ms
+ ✓ |main| src/main/agent/dateTable.test.ts (10 tests) 21ms
+ ✓ |main| src/main/app/tray.v2.test.ts (7 tests) 28ms
+ ✓ |main| src/main/compose.breaker.test.ts (8 tests) 93ms
+ ✓ |main| src/main/testSeams.test.ts (17 tests) 14ms
+ ✓ |main| src/main/agent/prompt.size.test.ts (17 tests) 14ms
+ ✓ |main| src/main/llm/local/selfTest.test.ts (23 tests) 18ms
+ ✓ |main| src/main/llm/consent.test.ts (15 tests) 14ms
+ ✓ |main| src/main/mcp/adminClient.test.ts (17 tests) 18ms
+ ✓ |main| src/main/ipc/handlers/items.v2.test.ts (11 tests) 21ms
+ ✓ |main| src/main/ipc/register.handlers.test.ts (5 tests) 18ms
+ ✓ |main| src/main/bridge/stdoutMarkers.test.ts (11 tests) 13ms
+ ✓ |main| src/main/llm/local/hardware.test.ts (46 tests) 23ms
+ ✓ |main| src/main/ipc/sender.test.ts (10 tests) 15ms
+ ✓ |main| src/main/exec/buildCreateEventArgs.test.ts (12 tests) 17ms
+ ✓ |main| src/main/ipc/handlers/actions.test.ts (15 tests) 22ms
+ ✓ |main| src/main/ipc/handlers/model.test.ts (6 tests) 14ms
+ ✓ |main| src/main/exec/actionHash.test.ts (5 tests) 8ms
+ ✓ |main| src/main/mcp/writeClient.test.ts (9 tests) 16ms
+ ✓ |main| src/main/ipc/handlers/google.test.ts (11 tests) 17ms
+ ✓ |main| src/main/agent/handles.test.ts (25 tests) 10ms
+ ✓ |main| src/shared/i18n/bidi.test.ts (19 tests) 9ms
+ ✓ |main| src/main/bridge/timestamps.test.ts (34 tests) 10ms
+ ✓ |main| src/main/ipc/handlers/model.v2.test.ts (5 tests) 12ms
+ ✓ |main| src/main/testSeams.v2.test.ts (23 tests) 11ms
+ ✓ |main| src/main/llm/local/manifest.media.test.ts (6 tests) 10ms
+ ✓ |main| scripts/smoke-packaged.notices.test.mjs (11 tests) 14ms
+ ✓ |main| src/main/exec/eventContent.test.ts (8 tests) 13ms
+ ✓ |main| src/main/ipc/handlers/voice.test.ts (3 tests) 13ms
+ ✓ |main| src/main/ipc/handlers/pairing.test.ts (6 tests) 14ms
+ ✓ |main| src/main/llm/local/manifest.test.ts (8 tests) 9ms
+ ✓ |main| src/main/exec/buildUpdateEventArgs.test.ts (6 tests) 12ms
+ ✓ |main| src/main/ipc/handlers/secrets.test.ts (5 tests) 9ms
+ ✓ |main| src/main/agent/gates.test.ts (7 tests) 21ms
+ ✓ |main| src/shared/i18n/languages.test.ts (15 tests) 8ms
+ ✓ |main| src/main/app/autostart.test.ts (5 tests) 9ms
+ ✓ |main| src/main/voice/wav.test.ts (3 tests) 10ms
+ ✓ |main| src/main/exec/buildSendArgs.test.ts (4 tests) 9ms
+ ✓ |main| src/main/agent/replyLang.test.ts (6 tests) 22ms
+ ✓ |main| src/main/ipc/handlers/items.test.ts (3 tests) 9ms
+ ✓ |main| src/main/bridge/launcher.test.ts (64 tests) 20564ms
+     ✓ the rest_starting stdout hint only starts the poll early - it is not the readiness signal  405ms
+     ✓ no readiness inside the 10 s budget => kill + fresh port, max 3, then terminal  319ms
+     ✓ 503 => reconnecting, and 10 minutes of 503 => respawn  3752ms
+     ✓ health coming back 200 returns the bridge to online  523ms
+     ✓ the breaker opens after 5 exits in 10 minutes => failed, BRIDGE_CRASH_LOOP territory  527ms
+     ✓ BRIDGE_OUTDATED only when a client_outdated annotation is less than 60 s old when the breaker opens  911ms
+     ✓ an old client_outdated annotation does NOT select BRIDGE_OUTDATED  1032ms
+     ✓ every BRIDGE_MARKERS string, echoed as a message line AND as multi-line content, is inert  2580ms
+     ✓ token_banner / invalid_port / token_too_short only act while STARTING with no REST answer yet  1796ms
+     ✓ a stdout chunk without a newline is buffered, and an absurd one is dropped rather than grown  371ms
+     ✓ the exit window forgets crashes older than 10 minutes, so the breaker never opens on a slow drip  809ms
+     ✓ a startup-refusal marker before readiness is BRIDGE_SPAWN_REFUSED and audits the code  360ms
+     ✓ the breaker opening with a fresh client_outdated annotation reports BRIDGE_OUTDATED  618ms
+ ✓ |main| src/main/bridge/bridgeDb.test.ts (27 tests) 21484ms
+     ✓ surfaces SQLITE_BUSY instead of corrupting or waiting forever  4413ms
+     ✓ SQLITE_BUSY => [] / null for the four reads (never a throw); the connection stays read-only  15598ms
+ ✓ |main| src/main/bridge/waReadClient.test.ts (32 tests) 34954ms
+     ✓ exposes exactly the four read methods, no write method (type + runtime key list)  663ms
+     ✓ returns the newest n visible rows of the trigger chat in chronological order  544ms
+     ✓ deleted, reaction, sticker, media-only (image / document) and garbage-timestamp rows never surface  589ms
+     ✓ the window is app-pinned: 30 days hides the older rows, 90 days shows all 60  795ms
+     ✓ parses go-sqlite3 timestamps the same way  1714ms
+     ✓ parses rfc3339 timestamps the same way  1797ms
+     ✓ parses epoch_s timestamps the same way  1654ms
+     ✓ parses epoch_ms timestamps the same way  1615ms
+     ✓ a store whose every timestamp is garbage shows nothing (unparseable => invisible)  436ms
+     ✓ pages with beforeRowid (rows strictly older than the anchor)  535ms
+     ✓ n <= 0, NaN or an unknown chat id => []  524ms
+     ✓ policy never and unknown-sender chats are invisible; processUnknownSenders makes the stranger visible  575ms
+     ✓ a force-known chat is visible without processUnknownSenders  664ms
+     ✓ the @lid twin rows are merged into the phone-JID chat (aliasJids)  691ms
+     ✓ voice rows need a DONE transcript with text; otherwise the audio row is invisible  2655ms
+     ✓ a voice row stored under the @lid form finds its transcript under the app chat JID too  737ms
+     ✓ walks page after page when many rows are hidden, and stops at the scan cap  2012ms
+     ✓ finds case-insensitive ASCII and exact non-ASCII substrings of ONE visible chat, newest first  350ms
+     ✓ a needle with SQL / LIKE metacharacters is data, never syntax  302ms
+     ✓ chatId null is answered only in all_chats scope, and only from visible DM chats  384ms
+     ✓ finds the after-neighbours below many newer rows, and gives up (after = []) past the scan cap  465ms
+     ✓ answers empty while the bridge holds an exclusive lock longer than busy_timeout  13142ms
+
+ Test Files  179 passed (179)
+      Tests  4696 passed | 1 expected fail (4697)
+   Start at  08:55:49
+   Duration  36.62s (transform 55.75s, setup 16.36s, import 100.34s, tests 152.73s, environment 24ms)
+
+JSON report written to C:/dev/whatsapp agent/ops/agent-notes/v2-audit/main.json
+EXIT=0

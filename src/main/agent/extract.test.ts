@@ -1,6 +1,6 @@
 // src/main/agent/extract.test.ts - S1 EXTRACT (TESTS 5.3 row `agent/extract.ts`: one repair retry then LLM_BAD_OUTPUT; owner W1-10).
 import { describe, expect, it, vi } from 'vitest';
-import { REPAIR_MESSAGE, runExtract } from './extract';
+import { REPAIR_MESSAGE, runExtract, stripOneCodeFence } from './extract';
 import {
   LlmError,
   type CallOpts,
@@ -27,6 +27,11 @@ const VALID: Extraction = {
   location: '',
   missing: ['duration', 'location'],
   suspicious: false,
+  // [V2] C2 5: the four B20 fields S1 v2 always returns (null-event defaults of the S1 v2 few-shots)
+  refersToExisting: false,
+  change: 'no_change',
+  changeConfidence: 'high',
+  confidence: 'high',
 };
 
 /** A minimal LlmProvider whose `structured()` plays one scripted answer per call. */
@@ -41,6 +46,8 @@ function provider(
   return {
     id: opts.id ?? 'local',
     model: 'test-model',
+    loop: 'turn', // [V2] C2 9
+    capabilities: { images: false }, // [V2] C2 9
     calls,
     structured<T>(messages: LlmMessage[], schema: JsonSchemaLcd, o: CallOpts): Promise<T> {
       calls.push({ messages: [...messages], schema, opts: o });
@@ -147,5 +154,93 @@ describe('runExtract', () => {
     expect(spy).toHaveBeenCalledTimes(2);
     expect(p.calls[0]!.messages).toHaveLength(2);
     expect(p.calls[1]!.messages).toHaveLength(3);
+  });
+});
+
+// ======================= [V2-W1-03] P2 6.1 / 6.3, T2 5 row `extract.ts` v2 =======================
+
+describe('runExtract v2 - the four B20 fields', () => {
+  it('accepts every change kind / confidence the schema allows', async () => {
+    for (const change of ['no_change', 'reschedule', 'move', 'cancel', 'new_event'] as const) {
+      for (const c of ['high', 'medium', 'low'] as const) {
+        const x = { ...VALID, refersToExisting: change !== 'new_event', change, changeConfidence: c, confidence: c };
+        const out = await runExtract(provider([x]), input());
+        expect(out).toEqual({ ok: true, extraction: x, repaired: false });
+      }
+    }
+  });
+
+  it('a v1-shaped answer (the four fields missing) is not an extraction: repair, then bad_output', async () => {
+    const { refersToExisting: _a, change: _b, changeConfidence: _c, confidence: _d, ...v1 } = VALID;
+    expect(await runExtract(provider([v1, v1]), input())).toEqual({ ok: false, reason: 'bad_output' });
+  });
+
+  it('rejects an unknown change kind and a non-boolean refersToExisting', async () => {
+    const a = { ...VALID, change: 'delete' };
+    expect(await runExtract(provider([a, a]), input())).toEqual({ ok: false, reason: 'bad_output' });
+    const b = { ...VALID, refersToExisting: 'yes' };
+    expect(await runExtract(provider([b, b]), input())).toEqual({ ok: false, reason: 'bad_output' });
+  });
+
+  it("the model can never name the event it changes: a targetEventId key is a strict-schema failure (I3')", async () => {
+    const x = { ...VALID, change: 'cancel', refersToExisting: true, targetEventId: 'abc123' };
+    expect(await runExtract(provider([x, x]), input())).toEqual({ ok: false, reason: 'bad_output' });
+  });
+});
+
+describe('stripOneCodeFence / CLI text answers (P2 6.3)', () => {
+  const json = JSON.stringify(VALID);
+
+  it('strips exactly one ```json fence and one trailing fence', () => {
+    expect(stripOneCodeFence('```json\n' + json + '\n```')).toBe(json);
+    expect(stripOneCodeFence('```\n' + json + '\n```')).toBe(json);
+    expect(stripOneCodeFence('  ```json\n' + json + '\n```  ')).toBe(json);
+    expect(stripOneCodeFence(json)).toBe(json);
+  });
+
+  it('never strips twice: a doubly fenced answer stays fenced (=> parse failure, not a second strip)', () => {
+    const twice = '```json\n```json\n' + json + '\n```\n```';
+    const once = stripOneCodeFence(twice);
+    expect(once.startsWith('```json')).toBe(true);
+    expect(() => JSON.parse(once)).toThrow();
+  });
+
+  it('an opening fence without a closing fence is left alone', () => {
+    const half = '```json\n' + json;
+    expect(stripOneCodeFence(half)).toBe(half.trim());
+  });
+
+  it('runExtract parses a fenced text answer (the CLI result.result path)', async () => {
+    const out = await runExtract(provider(['```json\n' + json + '\n```']), input());
+    expect(out).toEqual({ ok: true, extraction: VALID, repaired: false });
+  });
+
+  it('a doubly fenced text answer is a bad answer: one repair turn, then bad_output', async () => {
+    const twice = '```json\n```json\n' + json + '\n```\n```';
+    const p = provider([twice, twice]);
+    expect(await runExtract(p, input())).toEqual({ ok: false, reason: 'bad_output' });
+    expect(p.calls).toHaveLength(2);
+    expect(p.calls[1]!.messages.at(-1)).toEqual({ role: 'user', content: REPAIR_MESSAGE });
+  });
+
+  it('non-JSON text goes to the repair turn and a valid second answer wins (the CLI repair JOB is a second structured() call)', async () => {
+    const p = provider(['Sure! Here is the JSON you asked for.', '```\n' + json + '\n```'], { id: 'claude_cli' });
+    const out = await runExtract(p, input());
+    expect(out).toEqual({ ok: true, extraction: VALID, repaired: true });
+    expect(p.calls).toHaveLength(2);
+    for (const c of p.calls) {
+      expect(c.opts.purpose).toBe('extract');
+      expect(c.schema).toBe(EXTRACTION_JSON_SCHEMA);
+    }
+  });
+
+  it('forwards the CLI sandbox proof sink when given, and omits it otherwise', async () => {
+    const proofs: unknown[] = [];
+    const p = provider([VALID], { id: 'claude_cli' });
+    await runExtract(p, input({ onSandbox: (x) => void proofs.push(x) }));
+    expect(typeof p.calls[0]!.opts.onSandbox).toBe('function');
+    const q = provider([VALID]);
+    await runExtract(q, input());
+    expect(q.calls[0]!.opts.onSandbox).toBeUndefined();
   });
 });

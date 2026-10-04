@@ -42,9 +42,35 @@ export interface BridgeDb {
   chatName(chatJid: string): string | null;
   /** Reconcile: newest is_from_me rows of a chat with rowid > sinceRowid. Covers both JID forms, like `lastMessages`. */
   outboundAfter(chatJid: string, sinceRowid: number, limit: number): BridgeMessageRow[];
+  // ---- [V2 ADD] C2 12 BridgeDbV2 - four additive SELECT-only methods (B17); Wave 0 stubs, implemented by V2-W1-05 ----
+  /** SELECT ... FROM messages WHERE chat_jid IN (<aliases>) AND (? IS NULL OR rowid < ?) ORDER BY rowid DESC LIMIT ? */
+  messagesBefore(chatJid: string, beforeRowid: number | null, n: number): BridgeMessageRowV2[];
+  /** SELECT ... FROM messages WHERE rowid = ? LIMIT 1 - the row with its chat_jid (the facade maps it to a ChatRef and checks the scope). */
+  messageByRowid(rowid: number): BridgeMessageRowV2 | null;
+  /** SELECT ... WHERE (? IS NULL OR chat_jid IN (<aliases>)) AND rowid > ? AND deleted_at IS NULL AND content IS NOT NULL
+   *    AND (instr(lower(content), ?) > 0 OR instr(content, ?) > 0) ORDER BY rowid DESC LIMIT ?   (needle bound, never interpolated) */
+  searchContent(needle: string, chatJid: string | null, sinceRowid: number, n: number): BridgeMessageRowV2[];
+  /** SELECT chat_jid AS jid, MAX(rowid) AS lastRowid FROM messages WHERE (chat_jid LIKE '%@s.whatsapp.net' OR chat_jid LIKE '%@lid')
+   *    GROUP BY chat_jid ORDER BY lastRowid DESC LIMIT ?   (cost U-D1 ; 1 call/run) */
+  recentDmChats(n: number): Array<{ jid: string; lastRowid: number }>;
 }
+/** [V2 CHANGE] BridgeMessageRow gains `filename` (messages.filename; UNTRUSTED, diagnostics only). Every v1 SELECT adds the column. */
+export interface BridgeMessageRowV2 extends BridgeMessageRow {
+  filename: string | null;
+}
+/** C2 names the delta interface `BridgeDbV2`; per the C2 convention the members live on BridgeDb itself. */
+export type BridgeDbV2 = BridgeDb;
 
-const ROW_COLUMNS = 'rowid AS rowid, id, chat_jid, sender, content, timestamp, is_from_me, media_type, deleted_at';
+const ROW_COLUMNS_V1 = 'rowid AS rowid, id, chat_jid, sender, content, timestamp, is_from_me, media_type, deleted_at';
+/** [V2 CHANGE] (B5) every SELECT carries `filename` - UNTRUSTED, diagnostics only. A store without the column (never produced by the
+ *  pinned bridge, whose schema has it) reads NULL instead of failing: probed once per connection, like whatsmeow_lid_map. */
+const WITH_FILENAME = `${ROW_COLUMNS_V1}, filename`;
+const WITHOUT_FILENAME = `${ROW_COLUMNS_V1}, NULL AS filename`;
+/** SQLITE_BUSY (5) / SQLITE_LOCKED (6) after busy_timeout: the four v2 read methods answer [] / null, never a throw (B17). */
+function isBusy(e: unknown): boolean {
+  const code = (e as { errcode?: unknown } | null)?.errcode;
+  return typeof code === 'number' && ((code & 0xff) === 5 || (code & 0xff) === 6);
+}
 
 /** [R2] The doc comment of `userHasSentIn` in CONTRACTS spells the media-type guard as
  *  `(media_type IS NULL OR media_type NOT IN ('', 'reaction') OR content <> '')`, which is TRUE for a reaction row whose content is the
@@ -63,7 +89,7 @@ function asTimestamp(v: unknown): string | number | null {
   return typeof v === 'string' || typeof v === 'number' ? v : null;
 }
 
-function normaliseRow(r: Record<string, unknown>): BridgeMessageRow {
+function normaliseRow(r: Record<string, unknown>): BridgeMessageRowV2 {
   return {
     rowid: Number(r.rowid),
     id: String(r.id),
@@ -74,6 +100,7 @@ function normaliseRow(r: Record<string, unknown>): BridgeMessageRow {
     is_from_me: Number(r.is_from_me ?? 0),
     media_type: asText(r.media_type),
     deleted_at: asTimestamp(r.deleted_at),
+    filename: asText(r.filename),
   };
 }
 
@@ -81,6 +108,8 @@ export function createBridgeDb(path: string): BridgeDb {
   let db: DatabaseSync | null = null;
   /** whatsmeow_lid_map does not exist in an old store; probed once, then remembered. */
   let lidMapUsable: boolean | null = null;
+  /** [V2] messages.filename exists in every store the pinned bridge writes; probed once per connection anyway. */
+  let filenameColumn: boolean | null = null;
 
   const open = (): boolean => {
     if (db) return true;
@@ -91,6 +120,7 @@ export function createBridgeDb(path: string): BridgeDb {
     handle.exec('PRAGMA busy_timeout=2000');
     db = handle;
     lidMapUsable = null;
+    filenameColumn = null;
     return true;
   };
 
@@ -149,11 +179,32 @@ export function createBridgeDb(path: string): BridgeDb {
     return pn.includes('@') ? pn : `${pn}@s.whatsapp.net`;
   };
 
-  const all = (sql: string, ...params: Array<string | number>): BridgeMessageRow[] => {
+  const columnsOf = (c: DatabaseSync): string => {
+    if (filenameColumn === null) {
+      const cols = c.prepare('PRAGMA table_info(messages)').all() as Array<{ name: unknown }>;
+      filenameColumn = cols.some((col) => col.name === 'filename');
+    }
+    return filenameColumn ? WITH_FILENAME : WITHOUT_FILENAME;
+  };
+
+  /** `SELECT <row columns> FROM messages <tail>` - every message read goes through here (one column list, bound parameters only). */
+  const all = (tail: string, ...params: Array<string | number | null>): BridgeMessageRowV2[] => {
     const c = conn();
     if (!c) return [];
+    const sql = `SELECT ${columnsOf(c)} FROM messages ${tail}`;
     return (c.prepare(sql).all(...params) as Array<Record<string, unknown>>).map(normaliseRow);
   };
+  /** [V2] the four B17 reads: SQLITE_BUSY / SQLITE_LOCKED => the empty answer; any other error propagates (the gate maps it to 'unavailable'). */
+  const busySafe = <T>(empty: T, read: () => T): T => {
+    try {
+      return read();
+    } catch (e) {
+      if (isBusy(e)) return empty;
+      throw e;
+    }
+  };
+  const inList = (jids: readonly string[]): string => `chat_jid IN (${jids.map(() => '?').join(',')})`;
+  const count = (n: number): number => (Number.isFinite(n) ? Math.max(0, Math.trunc(n)) : 0);
 
   return {
     open,
@@ -161,6 +212,7 @@ export function createBridgeDb(path: string): BridgeDb {
       if (db?.isOpen) db.close();
       db = null;
       lidMapUsable = null;
+      filenameColumn = null;
     },
     maxRowid: () => {
       const c = conn();
@@ -169,18 +221,10 @@ export function createBridgeDb(path: string): BridgeDb {
       return Number(r?.m ?? 0);
     },
     rowsAfter: (watermark, limit) =>
-      all(
-        `SELECT ${ROW_COLUMNS} FROM messages WHERE rowid > ? ORDER BY rowid LIMIT ?`,
-        Math.trunc(watermark),
-        Math.trunc(limit),
-      ),
+      all('WHERE rowid > ? ORDER BY rowid LIMIT ?', Math.trunc(watermark), Math.trunc(limit)),
     lastMessages: (chatJid, n) => {
       const jids = aliasJids(chatJid);
-      return all(
-        `SELECT ${ROW_COLUMNS} FROM messages WHERE chat_jid IN (${jids.map(() => '?').join(',')}) ORDER BY rowid DESC LIMIT ?`,
-        ...jids,
-        Math.max(0, Math.trunc(n)),
-      ).reverse();
+      return all(`WHERE ${inList(jids)} ORDER BY rowid DESC LIMIT ?`, ...jids, Math.max(0, Math.trunc(n))).reverse();
     },
     userHasSentIn: (chatJid) => {
       const c = conn();
@@ -202,11 +246,54 @@ export function createBridgeDb(path: string): BridgeDb {
     outboundAfter: (chatJid, sinceRowid, limit) => {
       const jids = aliasJids(chatJid);
       return all(
-        `SELECT ${ROW_COLUMNS} FROM messages WHERE chat_jid IN (${jids.map(() => '?').join(',')}) AND is_from_me = 1 AND rowid > ? ORDER BY rowid DESC LIMIT ?`,
+        `WHERE ${inList(jids)} AND is_from_me = 1 AND rowid > ? ORDER BY rowid DESC LIMIT ?`,
         ...jids,
         Math.trunc(sinceRowid),
         Math.max(0, Math.trunc(limit)),
       );
     },
+    // ---- [V2 ADD] B17: four SELECT-only reads; rowid-ordered, no new index, no timestamp comparison in SQL (the facade filters
+    // time windows in TypeScript with parseBridgeTs), @lid twin covered by aliasJids() exactly like lastMessages() ----
+    messagesBefore: (chatJid, beforeRowid, n) =>
+      busySafe<BridgeMessageRowV2[]>([], () => {
+        const jids = aliasJids(chatJid);
+        const before = beforeRowid === null ? null : Math.trunc(beforeRowid);
+        return all(
+          `WHERE ${inList(jids)} AND (? IS NULL OR rowid < ?) ORDER BY rowid DESC LIMIT ?`,
+          ...jids,
+          before,
+          before,
+          count(n),
+        );
+      }),
+    messageByRowid: (rowid) =>
+      busySafe<BridgeMessageRowV2 | null>(null, () => {
+        if (!Number.isSafeInteger(rowid) || rowid <= 0) return null;
+        return all('WHERE rowid = ? LIMIT 1', rowid)[0] ?? null;
+      }),
+    searchContent: (needle, chatJid, sinceRowid, n) =>
+      busySafe<BridgeMessageRowV2[]>([], () => {
+        // SQLite lower() folds ASCII only, so the folded and the exact form are both tried; the needle is ALWAYS a bound parameter.
+        const match =
+          'rowid > ? AND deleted_at IS NULL AND content IS NOT NULL' +
+          ' AND (instr(lower(content), ?) > 0 OR instr(content, ?) > 0) ORDER BY rowid DESC LIMIT ?';
+        const since = Math.trunc(sinceRowid);
+        if (chatJid === null) return all(`WHERE ${match}`, since, needle.toLowerCase(), needle, count(n));
+        const jids = aliasJids(chatJid);
+        return all(`WHERE ${inList(jids)} AND ${match}`, ...jids, since, needle.toLowerCase(), needle, count(n));
+      }),
+    recentDmChats: (n) =>
+      busySafe<Array<{ jid: string; lastRowid: number }>>([], () => {
+        const c = conn();
+        if (!c) return [];
+        const rows = c
+          .prepare(
+            'SELECT chat_jid AS jid, MAX(rowid) AS lastRowid FROM messages' +
+              " WHERE (chat_jid LIKE '%@s.whatsapp.net' OR chat_jid LIKE '%@lid')" +
+              ' GROUP BY chat_jid ORDER BY lastRowid DESC LIMIT ?',
+          )
+          .all(count(n)) as Array<{ jid: unknown; lastRowid: unknown }>;
+        return rows.map((r) => ({ jid: String(r.jid), lastRowid: Number(r.lastRowid) }));
+      }),
   };
 }

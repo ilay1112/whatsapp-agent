@@ -1,6 +1,10 @@
 // src/renderer/src/components/EventEditor.tsx - event block + EventChip (UX 6.4, 7.2, 7.3; owner W1-15).
 // Every piece of chrome (weekday, day, month, time range) is produced by the APP from structured fields through Intl -
 // never by the model - so the date tab is trusted; only the title and the location are untrusted and get `msg-text`.
+//
+// [V2] (owner V2-W1-11) `mode: 'change'` edits the Change card's `to` only (I3'): the target event is pinned, so there
+// is no calendar line, and the title is read-only - title changes are not applied in v2.0 (B20, F40). EventChip gains
+// the states `updated` ("Updated · rev N") and `cancelled` (struck title + the word, never colour alone) (UX2 3.4).
 import { useEffect, useId, useRef, useState, type JSX } from 'react';
 import { useTranslation } from 'react-i18next';
 import { LIMITS, type Badge, type EventState, type MissingField, type ProposedEvent } from '@shared/types';
@@ -13,15 +17,19 @@ import { Badges } from './Badges';
 export interface EventVM extends ProposedEvent {
   state: Exclude<EventState, 'none'>;
   hasCalendarLink: boolean;
+  /** [V2] Calendar revision of a created / updated event ("Updated · rev N"). */
+  revision?: number;
 }
 export interface EventEditorProps {
   value: EventVM;
   missing: MissingField[];
-  mode: 'edit' | 'fill' | 'readonly';
+  mode: 'edit' | 'fill' | 'readonly' | 'change';
   calendarName: string;
   onChange(v: EventEdit): void;
   onValidityChange(ok: boolean, message?: string): void;
   focusField?: 'title' | 'date' | 'start' | 'end' | 'location';
+  /** [V2] App-text hint under the Date field, linked by aria-describedby ("Check against the picture", UX2 3.6). */
+  dateNote?: string;
 }
 
 const MONTH_AHEAD_MS = LIMITS.eventHorizonMonths * 31 * 24 * 3600_000;
@@ -77,6 +85,7 @@ export function EventEditor(props: EventEditorProps) {
   const [fields, setFields] = useState<Fields>(() => fieldsOf(props.value));
   const [unlocked, setUnlocked] = useState<FieldKey[]>([]);
   const errorId = useId();
+  const dateNoteId = useId();
   // Held as separate consts, not as a `refs` object: `react-hooks/refs` forbids reading `refs.date` during render.
   const titleRef = useRef<HTMLInputElement>(null);
   const dateRef = useRef<HTMLInputElement>(null);
@@ -114,6 +123,7 @@ export function EventEditor(props: EventEditorProps) {
   /** "fill" only opens the fields listed in `missing[]`; the known ones are read-only text with a quiet "Change". */
   const editable = (key: FieldKey): boolean => {
     if (readonly) return false;
+    if (props.mode === 'change') return key !== 'title'; // F40: a delta never takes a new title
     if (props.mode === 'edit') return true;
     if (unlocked.includes(key)) return true;
     switch (key) {
@@ -151,7 +161,7 @@ export function EventEditor(props: EventEditorProps) {
           <span className="msg-text grow" dir="auto" data-testid={`event-readonly-${key}`}>
             {text}
           </span>
-          {readonly ? null : (
+          {readonly || (props.mode === 'change' && key === 'title') ? null : (
             <button
               type="button"
               className="btn btn-quiet"
@@ -202,11 +212,17 @@ export function EventEditor(props: EventEditorProps) {
           type="date"
           value={fields.date}
           aria-label={t('event.field.date')}
+          aria-describedby={props.dateNote !== undefined ? dateNoteId : undefined}
           data-testid="event-date"
           onChange={(e) => set('date', e.target.value)}
         />,
         fields.date,
       )}
+      {props.dateNote !== undefined ? (
+        <p id={dateNoteId} className="note-amber m-0 text-xs" data-testid="event-date-note">
+          {props.dateNote}
+        </p>
+      ) : null}
       <div className="flex flex-wrap items-center gap-2">
         {row(
           'start',
@@ -254,6 +270,12 @@ export function EventEditor(props: EventEditorProps) {
         fields.location,
       )}
 
+      {props.mode === 'change' ? (
+        <p className="m-0 text-xs text-text-muted" data-testid="event-title-not-applied">
+          {t('change.titleNotApplied')}
+        </p>
+      ) : null}
+
       {message !== undefined ? (
         <p id={errorId} role="alert" className="m-0 text-xs text-danger" data-testid="event-error">
           {message}
@@ -262,9 +284,11 @@ export function EventEditor(props: EventEditorProps) {
       {/* UX 7.2: the target calendar name, read-only here. The name is UNTRUSTED (CONTRACTS `CalendarInfo.name`) and
           may be a Latin id when Google could not be reached, so it is isolated in its own <bdi> - otherwise it
           reorders the Hebrew sentence around it (UX 2.5 item 3, the same rule Settings already follows). */}
-      <p className="m-0 text-xs text-text-muted" data-testid="event-calendar">
-        {t('event.calendarLabel')} <bdi>{props.calendarName}</bdi> - {t('event.noInvites')}
-      </p>
+      {props.mode === 'change' ? null : (
+        <p className="m-0 text-xs text-text-muted" data-testid="event-calendar">
+          {t('event.calendarLabel')} <bdi>{props.calendarName}</bdi> - {t('event.noInvites')}
+        </p>
+      )}
     </div>
   );
 }
@@ -300,11 +324,12 @@ export function EventChip(props: EventChipProps) {
     : t('event.timeUnknown');
 
   const headerTone =
-    e.state === 'created'
+    e.state === 'created' || e.state === 'updated'
       ? 'bg-ok text-surface'
-      : e.state === 'proposed'
+      : e.state === 'proposed' || e.state === 'change_proposed'
         ? 'bg-accent text-on-accent'
         : 'bg-line-strong text-surface';
+  const cancelled = e.state === 'cancelled';
 
   return (
     <div className="flex flex-col gap-1">
@@ -330,7 +355,11 @@ export function EventChip(props: EventChipProps) {
           </span>
         </span>
         <span className="min-w-0 grow">
-          <span className="msg-text block truncate font-semibold" dir="auto" data-testid="event-chip-title">
+          <span
+            className={`msg-text block truncate font-semibold${cancelled ? ' event-cancelled' : ''}`}
+            dir="auto"
+            data-testid="event-chip-title"
+          >
             {e.title}
           </span>
           <span className="tnum block text-sm text-text-muted" data-testid="event-chip-range">
@@ -344,6 +373,16 @@ export function EventChip(props: EventChipProps) {
           {e.state === 'created' ? (
             <span className="block text-sm text-ok" data-testid="event-chip-created">
               {t('event.inCalendar')}
+            </span>
+          ) : null}
+          {e.state === 'updated' ? (
+            <span className="block text-sm text-ok" data-testid="event-chip-updated">
+              <span data-testid="event-chip-rev">{t('event.updatedRev', { n: e.revision ?? 1 })}</span>
+            </span>
+          ) : null}
+          {cancelled ? (
+            <span className="block text-sm text-text-muted" data-testid="event-chip-cancelled">
+              {t('event.cancelled')}
             </span>
           ) : null}
         </span>

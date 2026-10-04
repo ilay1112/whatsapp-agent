@@ -35,9 +35,10 @@ describe('Settings - shape', () => {
     expect(screen.getByTestId('settings')).toHaveTextContent('Loading');
   });
 
-  it('renders the seven groups of ARCH 12.2 with a nav for each', async () => {
+  it('renders the groups of ARCH 12.2 + UX2 4 (Automatic mode after Google Calendar) with a nav for each', async () => {
     await paint();
-    expect(SETTINGS_GROUPS).toEqual(['general', 'ai', 'whatsapp', 'calendar', 'rules', 'replies', 'privacy']);
+    expect(SETTINGS_GROUPS).toEqual(['general', 'ai', 'whatsapp', 'calendar', 'auto', 'rules', 'replies', 'privacy']);
+    await waitFor(() => expect(screen.getByTestId('auto-state-card')).toBeInTheDocument());
     for (const group of SETTINGS_GROUPS) {
       expect(screen.getByTestId(`settings-group-${group}`)).toBeInTheDocument();
       expect(screen.getByTestId(`settings-nav-${group}`)).toBeInTheDocument();
@@ -247,6 +248,7 @@ describe('Settings - calendar and per-chat rules', () => {
             sendable: true,
             isKnown: true,
             policy: 'never',
+            autoPolicy: 'inherit', // [V2]
           },
         ],
       },
@@ -278,6 +280,7 @@ describe('Settings - calendar and per-chat rules', () => {
             sendable: true,
             isKnown: true,
             policy: 'never',
+            autoPolicy: 'inherit', // [V2]
           },
         ],
       },
@@ -297,7 +300,7 @@ describe('Settings - privacy', () => {
   it('has one table row per data recipient', async () => {
     await paint();
     const table = screen.getByTestId('settings-privacy-table');
-    expect(within(table).getAllByRole('row')).toHaveLength(6); // head + five recipients
+    expect(within(table).getAllByRole('row')).toHaveLength(9); // head + eight recipients (UX2 4.8)
     expect(table).toHaveTextContent('without names or phone numbers');
     expect(table).toHaveTextContent('The replies you approved');
   });
@@ -319,8 +322,22 @@ describe('Settings - the AI group reuses the onboarding cards', () => {
         geminiModel: 'gemini-3.8-flash',
         local: { tier: 'auto', acceleration: 'auto', forceCpu: false },
         keys: { anthropic_api_key: { present: true, last4: '9876' }, gemini_api_key: { present: false, last4: '' } },
-        consents: { whatsapp_tos: true, cloud_claude: true, cloud_gemini: false },
+        consents: {
+          whatsapp_tos: true,
+          cloud_claude: true,
+          cloud_gemini: false,
+          cloud_claude_cli: false,
+          cloud_antigravity_cli: false,
+        },
         usageToday: { inputTokens: 0, outputTokens: 0, budget: 200_000 },
+        cli: {
+          claudeModel: 'sonnet',
+          agyModel: 'gemini-3.8-flash-high',
+          maxRunsPerHour: 20,
+          allowOverage: false,
+          claudeExePathSet: false,
+        }, // [V2]
+        quota: null, // [V2]
       },
     }));
     await paint();

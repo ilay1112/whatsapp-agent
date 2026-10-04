@@ -1,7 +1,13 @@
 // src/renderer/src/components/QuotedBubble.tsx - inert message text (UX 6.5 item 2, 7.1, 14.2; owner W1-15).
 // No children prop, ever: the ONLY way text enters this component is the `text` string, which React renders as a text
 // node. No links, no markdown, no emoji enlargement, no media - a non-text trigger shows an app-authored placeholder.
+//
+// [V2] (owner V2-W1-11) Delegates by `triggerKind` (UX2 3.5 / 3.6 / 12): a voice trigger renders VoiceBubble, an image
+// trigger that was read renders ImageBubble. Both stay inert text; this component still never takes children.
 import { useTranslation } from 'react-i18next';
+import type { ImageReadView, TriggerKind, VoiceView } from '@shared/types';
+import { ImageBubble } from './ImageBubble';
+import { VoiceBubble } from './VoiceBubble';
 
 export type MediaKind = 'photo' | 'voice' | 'sticker' | 'location' | 'other';
 export interface QuotedBubbleProps {
@@ -12,18 +18,41 @@ export interface QuotedBubbleProps {
   isTrigger?: boolean;
   mediaKind?: MediaKind;
   timeLabel?: string;
+  /** [V2] The trigger's kind; voice / image delegate to their bubble when the matching view model is present. */
+  triggerKind?: TriggerKind;
+  voice?: VoiceView | null;
+  image?: ImageReadView | null;
+  /** [V2] Plain text for the picture's `alt` ("Picture sent by ..."). */
+  contactName?: string;
+  /** [V2] Suffix of the `voice-bubble-<itemId>` / `image-bubble-<itemId>` wrapper test ids (UX2 13). */
+  itemId?: number;
+  /** [V2] Sheet: the full transcript, no clamp (UX2 3.5). */
+  full?: boolean;
 }
 
 export function QuotedBubble(props: QuotedBubbleProps) {
   const { t } = useTranslation();
+  if (props.triggerKind === 'voice' && props.voice) {
+    return (
+      <div className="flex justify-start" data-testid={`voice-bubble-${props.itemId ?? 0}`}>
+        <VoiceBubble voice={props.voice} clampLines={props.clampLines} full={props.full} />
+      </div>
+    );
+  }
+  if (props.triggerKind === 'image' && props.image) {
+    return (
+      <div className="flex justify-start" data-testid={`image-bubble-${props.itemId ?? 0}`}>
+        <ImageBubble image={props.image} contactName={props.contactName ?? ''} mode="card" />
+      </div>
+    );
+  }
   const mine = props.from === 'me';
   const hasText = props.text !== null && props.text !== '';
   // Retention nulls the text; an empty string with a media kind is a photo/voice/sticker/location trigger.
-  const placeholder = props.mediaKind
-    ? t(`card.media.${props.mediaKind}`)
-    : props.text === null
-      ? t('card.messageRemoved')
-      : null;
+  const mediaKind =
+    props.mediaKind ??
+    (props.triggerKind === 'voice' ? 'voice' : props.triggerKind === 'image' && !hasText ? 'photo' : undefined);
+  const placeholder = mediaKind ? t(`card.media.${mediaKind}`) : props.text === null ? t('card.messageRemoved') : null;
 
   const tone = mine ? 'bg-accent-soft' : 'bg-quote';
   const clamp = props.clampLines

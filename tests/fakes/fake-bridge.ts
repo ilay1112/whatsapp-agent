@@ -5,6 +5,7 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import { timingSafeEqual } from 'node:crypto';
 import { mkdirSync, rmSync } from 'node:fs';
+import { DatabaseSync } from 'node:sqlite';
 import { join } from 'node:path';
 import { createFakeBridgeDb, type FakeBridgeDb, type FakeTsFormat } from './fake-bridge-db.ts';
 
@@ -58,6 +59,26 @@ export interface FakeWebhookPayload {
   reactionRemoved?: boolean;
 }
 
+/** [V2] T2 3.6: `GET /api/media` scenarios (the route moves from FORBIDDEN_PATHS to a served route with V2-W1-07). */
+export const FAKE_MEDIA_SCENARIOS = [
+  'missing',
+  'http_500_once',
+  'http_500',
+  'partial',
+  'slow',
+  'oversize',
+  'wrong_bytes',
+] as const;
+export type FakeMediaScenario = (typeof FAKE_MEDIA_SCENARIOS)[number];
+/** [V2] T2 3.6 violation names the media route records (the ledger fails any test that triggers one). */
+export const FAKE_MEDIA_VIOLATIONS = ['media_unknown_row', 'media_non_media_row', 'media_retry_storm'] as const;
+export interface FakeMediaRequest {
+  chatJid: string;
+  messageId: string;
+  status: number | 'reset';
+  at: number;
+}
+
 export interface FakeBridge {
   readonly url: string;
   readonly port: number;
@@ -105,10 +126,15 @@ export interface FakeBridge {
   readonly sent: Array<{ at: number; recipient: string; message: string; rawBody: Record<string, unknown> }>;
   /** CONTRACTS 16 view of `sent`: extraKeys must always be []. */
   readonly sends: ReadonlyArray<{ recipient: string; message: string; extraKeys: string[] }>;
-  /** MUST stay empty (typing/react/download/media/group). */
+  /** MUST stay empty (typing/react/download/group; [V2] /api/media is a served route journaled in mediaRequests). */
   readonly otherRequests: ReadonlyArray<{ method: string; path: string }>;
   readonly doorbellProblems: Array<{ at: number; status: number; ms: number }>;
   readonly violations: string[];
+  // ---- [V2] T2 3.6 (types frozen in Wave 0; body V2-W1-07-media-voice) ----
+  /** Scripts the `/api/media` answer for one message: real bytes, or a failure scenario layered over them (http_500_once then the bytes). Resets that message's retry-storm count. */
+  setMedia(chatJid: string, msgId: string, media: Uint8Array | { scenario: FakeMediaScenario }): void;
+  /** Journal of every `/api/media` request (ledger rule 10). */
+  readonly mediaRequests: FakeMediaRequest[];
   /** Every line the fake "printed". In child mode these also go to the real stdout; in-process they stay here. */
   readonly stdoutLines: string[];
   stop(): Promise<void>;
@@ -128,11 +154,27 @@ const FORBIDDEN_PATHS = [
   '/api/typing',
   '/api/react',
   '/api/download',
-  '/api/media',
   '/api/group/status',
   '/api/group/participant-count',
 ];
 const SEND_RECIPIENT_RE = /^[0-9]{5,20}@s\.whatsapp\.net$/;
+/** [V2] media_serve.go allow-lists (the bridge answers 404 "media not found" to anything else - never a format oracle). */
+const MEDIA_JID_PATTERN = /^[A-Za-z0-9.-]{1,100}@[a-z.]{1,40}$/;
+const MEDIA_ID_PATTERN = /^[A-Za-z0-9]{1,128}$/;
+/** [V2] the app's caps (C2 1.2 LIMITS.voiceMaxBytes / imageMaxBytes); 'oversize' serves cap + 1 bytes for the row's media type. */
+export const FAKE_MEDIA_CAPS = { audio: 64 * 1024 * 1024, image: 10 * 1024 * 1024 } as const;
+/** [V2] more than this many requests for one message since its last setMedia() = media_retry_storm (T2 3.6, ledger rule 10). */
+export const FAKE_MEDIA_MAX_REQUESTS = 2;
+const GIF_BYTES = Uint8Array.from([
+  0x47, 0x49, 0x46, 0x38, 0x39, 0x61, 1, 0, 1, 0, 0x80, 0, 0, 0, 0, 0, 0xff, 0xff, 0xff, 0x2c, 0, 0, 0, 0, 1, 0, 1, 0,
+  0, 2, 2, 0x44, 1, 0, 0x3b,
+]);
+function mediaMime(bytes: Uint8Array): string {
+  if (bytes[0] === 0x4f && bytes[1] === 0x67 && bytes[2] === 0x67 && bytes[3] === 0x53) return 'audio/ogg';
+  if (bytes[0] === 0xff && bytes[1] === 0xd8) return 'image/jpeg';
+  if (bytes[0] === 0x89 && bytes[1] === 0x50) return 'image/png';
+  return 'application/octet-stream';
+}
 const QR_ROTATE_MS = 20_000;
 /** The privacy bait line the redaction tests look for: it must never reach a log file. */
 export const SENTINEL_MSG_TEXT = 'SENTINEL_MSG_TEXT coffee Thursday at 5?';
@@ -181,6 +223,12 @@ export async function startFakeBridge(opts: FakeBridgeOptions): Promise<FakeBrid
   const otherRequests: Array<{ method: string; path: string }> = [];
   const doorbellProblems: FakeBridge['doorbellProblems'] = [];
   const violations: string[] = [];
+  // [V2] GET /api/media state (T2 3.6)
+  const mediaRequests: FakeMediaRequest[] = [];
+  const mediaBytes = new Map<string, Uint8Array>();
+  const mediaScenario = new Map<string, FakeMediaScenario>();
+  const mediaCount = new Map<string, number>();
+  const mediaKey = (chatJid: string, msgId: string): string => `${chatJid}|${msgId}`;
 
   mkdirSync(opts.storeDir, { recursive: true });
   let db: FakeBridgeDb = createFakeBridgeDb({
@@ -281,6 +329,11 @@ export async function startFakeBridge(opts: FakeBridgeOptions): Promise<FakeBrid
       return;
     }
 
+    if (path === '/api/media') {
+      handleMedia(req, res, url);
+      return;
+    }
+
     if (path === '/api/send') {
       if (req.method !== 'POST') {
         plainText(res, 405, 'Method not allowed');
@@ -292,6 +345,137 @@ export async function startFakeBridge(opts: FakeBridgeOptions): Promise<FakeBrid
 
     plainText(res, 404, '404 page not found');
   });
+
+  /** [V2] media_serve.go: GET only; both ids checked against the allow-lists (404 otherwise); the row must exist in messages.db. */
+  function handleMedia(req: IncomingMessage, res: ServerResponse, url: URL): void {
+    const jid = url.searchParams.get('jid') ?? '';
+    const messageId = url.searchParams.get('message_id') ?? '';
+    const entry: FakeMediaRequest = { chatJid: jid, messageId, status: 404, at: Date.now() };
+    mediaRequests.push(entry);
+    const finish = (status: number | 'reset'): void => {
+      entry.status = status;
+    };
+    if (req.method !== 'GET') {
+      finish(405);
+      plainText(res, 405, 'Method not allowed');
+      return;
+    }
+    if (!MEDIA_JID_PATTERN.test(jid) || !MEDIA_ID_PATTERN.test(messageId)) {
+      finish(404);
+      plainText(res, 404, 'media not found');
+      return;
+    }
+    let rowType: string | null;
+    try {
+      const ro = new DatabaseSync(join(opts.storeDir, 'messages.db'), { readOnly: true });
+      try {
+        const row = ro.prepare('SELECT media_type FROM messages WHERE id = ? AND chat_jid = ?').get(messageId, jid) as
+          { media_type: string | null } | undefined;
+        rowType = row === undefined ? null : (row.media_type ?? '');
+      } finally {
+        ro.close();
+      }
+    } catch {
+      rowType = null;
+    }
+    if (rowType === null) {
+      violations.push('media_unknown_row');
+      finish(404);
+      plainText(res, 404, 'media not found');
+      return;
+    }
+    if (rowType !== 'audio' && rowType !== 'image') {
+      violations.push('media_non_media_row');
+      finish(404);
+      plainText(res, 404, 'media not found');
+      return;
+    }
+    const key = mediaKey(jid, messageId);
+    const count = (mediaCount.get(key) ?? 0) + 1;
+    mediaCount.set(key, count);
+    if (count > FAKE_MEDIA_MAX_REQUESTS) violations.push('media_retry_storm');
+
+    const scenario = mediaScenario.get(key);
+    const bytes = mediaBytes.get(key);
+    if (scenario === 'http_500_once') mediaScenario.delete(key); // the next request is served normally
+    if (scenario === 'missing' || (scenario === undefined && bytes === undefined)) {
+      finish(404);
+      plainText(res, 404, 'media not found');
+      return;
+    }
+    if (scenario === 'http_500' || scenario === 'http_500_once') {
+      finish(500);
+      plainText(res, 500, 'media download failed');
+      return;
+    }
+    if (scenario === 'wrong_bytes') {
+      finish(200);
+      res.writeHead(200, {
+        'Content-Type': rowType === 'audio' ? 'audio/ogg' : 'image/jpeg',
+        'Content-Length': GIF_BYTES.length,
+      });
+      res.end(Buffer.from(GIF_BYTES));
+      return;
+    }
+    if (scenario === 'oversize') {
+      // chunked (no Content-Length): the client must enforce the cap while streaming and abort at cap + 1
+      finish(200);
+      const total = FAKE_MEDIA_CAPS[rowType] + 1;
+      res.writeHead(200, { 'Content-Type': rowType === 'audio' ? 'audio/ogg' : 'image/jpeg' });
+      const chunk = Buffer.alloc(256 * 1024);
+      chunk.set([0x4f, 0x67, 0x67, 0x53]);
+      let sentBytes = 0;
+      const pump = (): void => {
+        while (sentBytes < total && !res.destroyed) {
+          const n = Math.min(chunk.length, total - sentBytes);
+          sentBytes += n;
+          if (!res.write(n === chunk.length ? chunk : chunk.subarray(0, n))) {
+            res.once('drain', pump);
+            return;
+          }
+        }
+        if (!res.destroyed) res.end();
+      };
+      res.on('error', () => undefined);
+      pump();
+      return;
+    }
+    const body = Buffer.from(bytes ?? new Uint8Array(1024).fill(0x4f));
+    const mime = mediaMime(body);
+    if (scenario === 'partial') {
+      finish('reset');
+      res.writeHead(200, { 'Content-Type': mime, 'Content-Length': body.length });
+      res.write(body.subarray(0, Math.floor(body.length / 2)), () => {
+        setTimeout(() => res.socket?.destroy(), 20);
+      });
+      return;
+    }
+    if (scenario === 'slow') {
+      finish(200);
+      res.writeHead(200, { 'Content-Type': mime, 'Content-Length': body.length });
+      const parts = 16;
+      const step = Math.ceil(body.length / parts);
+      let i = 0;
+      const timer = setInterval(() => {
+        if (res.destroyed || i * step >= body.length) {
+          clearInterval(timer);
+          if (!res.destroyed) res.end();
+          return;
+        }
+        res.write(body.subarray(i * step, (i + 1) * step));
+        i += 1;
+      }, 100);
+      res.on('close', () => clearInterval(timer));
+      return;
+    }
+    finish(200);
+    res.writeHead(200, {
+      'Content-Type': mime,
+      'Content-Length': body.length,
+      'Cache-Control': 'private, max-age=86400',
+    });
+    res.end(body);
+  }
 
   async function handleSend(req: IncomingMessage, res: ServerResponse): Promise<void> {
     const raw = await readBody(req);
@@ -379,6 +563,19 @@ export async function startFakeBridge(opts: FakeBridgeOptions): Promise<FakeBrid
     otherRequests,
     doorbellProblems,
     violations,
+    setMedia(chatJid: string, msgId: string, media: Uint8Array | { scenario: FakeMediaScenario }): void {
+      const key = mediaKey(chatJid, msgId);
+      if (media instanceof Uint8Array) {
+        mediaBytes.set(key, media.slice());
+        mediaScenario.delete(key);
+      } else {
+        if (!(FAKE_MEDIA_SCENARIOS as readonly string[]).includes(media.scenario))
+          throw new Error(`unknown media scenario ${String(media.scenario)}`);
+        mediaScenario.set(key, media.scenario);
+      }
+      mediaCount.delete(key); // a (re)scripted message starts a new triage window for media_retry_storm
+    },
+    mediaRequests,
     stdoutLines,
 
     async inbound(msg): Promise<{ id: string; rowid: number }> {
@@ -674,6 +871,15 @@ async function runChildMode(): Promise<void> {
             break;
           case 'setPairing':
             fake.setPairing(args.phase as FakePairingPhase, args.message as string | undefined);
+            break;
+          case 'setMedia':
+            fake.setMedia(
+              String(args.chatJid ?? ''),
+              String(args.msgId ?? ''),
+              typeof args.base64 === 'string'
+                ? new Uint8Array(Buffer.from(args.base64, 'base64'))
+                : { scenario: args.scenario as FakeMediaScenario },
+            );
             break;
           case 'setConnected':
             fake.setConnected(Boolean(args.up));

@@ -5,7 +5,16 @@
 import { LIMITS } from '../../shared/types';
 import { epochMsToLocal, localToEpochMs } from '../../shared/when';
 import { parseBridgeTs } from '../bridge/timestamps';
-import { applyCreateSuccess, applySendSuccess, parseFinalPayload } from './outcome';
+import {
+  applyCreateSuccess,
+  applySendSuccess,
+  autoWriteIdOfAction,
+  commitUpdateDone,
+  parseFinalPayload,
+} from './outcome';
+import { contentOfProjection, normaliseField } from './eventContent';
+import type { OwnedEventProjection } from '../mcp/readClient';
+import type { CreateEventPayload, EventContentWithStatus, UpdateEventPayload } from '../../shared/schemas';
 import type { Repos } from '../db/index';
 import type { BridgeDb } from '../bridge/bridgeDb';
 import type { McpReadClient, PinnedWindow } from '../mcp/readClient';
@@ -14,7 +23,8 @@ import type { ActionId, ApprovalAction, EpochMs } from '../../shared/types';
 export interface ReconcileDeps {
   repos: Repos;
   bridgeDb: Pick<BridgeDb, 'open' | 'outboundAfter' | 'close'> | null; // null when the bridge store does not exist yet
-  read: Pick<McpReadClient, 'findAppEvent'> | null; // null when the calendar is not connected
+  /** null when the calendar is not connected. [V2-W1-04] getEvent (optional so v1 callers compile): update reconcile + the B24 edit check. */
+  read: (Pick<McpReadClient, 'findAppEvent'> & Partial<Pick<McpReadClient, 'getEvent'>>) | null;
   now: () => EpochMs;
   timeZone: () => string;
 }
@@ -82,14 +92,23 @@ async function reconcileCreate(deps: ReconcileDeps, action: ApprovalAction): Pro
     return false; // [R2] a reconcile failure keeps unknown_outcome and still offers the clone
   }
   if (!found.ok || found.value === null) return false;
+  // [V2] the readback of the found event: the rev-1 baseline (post_etag / post_updated) and the B24 edit check.
+  const eventId = found.value.eventId;
+  const readback = await readEvent(deps, settings.calendar.targetCalendarId, eventId);
   const now = deps.now();
-  const result = { kind: 'create_event' as const, eventId: found.value.eventId, htmlLink: found.value.htmlLink };
+  const result = { kind: 'create_event' as const, eventId, htmlLink: found.value.htmlLink };
+  const approved = approvedContentOf(payload);
+  const foundContent = readback === null || readback.status === 'cancelled' ? null : contentOfProjection(readback);
+  const edited = foundContent !== null && !sameApprovedContent(foundContent, approved);
   // [I7] markDone + the item consequence + the audit are ONE transaction: a `done` action whose item row still says
   // 'proposed' is revisited by no later pass, so the next triage would propose - and offer to create - the event again.
   deps.repos.db.transaction(() => {
     deps.repos.actions.markDone(action.id, result, now);
-    applyCreateSuccess(deps.repos, action, payload, result, now);
+    applyCreateSuccess(deps.repos, action, payload, result, now, readback);
     deps.repos.audit.append('action_reconciled', action.id, { kind: 'create_event', attempt: action.attempt }, now);
+    // [V2] B24 (T-401): found but EDITED in Google => ONE pending update_event from the found content to the approved content -
+    // a card, zero writes without a click (F38).
+    if (edited && foundContent !== null) offerCorrection(deps, action, payload, eventId, foundContent, approved, now);
   });
   return true;
 }
@@ -123,9 +142,146 @@ export async function reconcileUnknown(deps: ReconcileDeps): Promise<ReconcileRe
     const action = deps.repos.actions.byId(id);
     if (!action) continue;
     out.checked += 1;
-    const resolved = action.kind === 'send_reply' ? reconcileSend(deps, action) : await reconcileCreate(deps, action);
+    const resolved =
+      action.kind === 'send_reply'
+        ? reconcileSend(deps, action)
+        : action.kind === 'update_event'
+          ? (await reconcileUpdateWith(deps, action)) === 'done'
+          : await reconcileCreate(deps, action);
     if (resolved) out.resolvedDone += 1;
     else out.stillUnknown += 1;
   }
   return out;
+}
+
+// ======================= [V2 ADD] C2 14 (owner V2-W1-04-exec-auto) =======================
+
+async function readEvent(
+  deps: ReconcileDeps,
+  calendarId: string,
+  eventId: string,
+): Promise<OwnedEventProjection | null> {
+  const getEvent = deps.read?.getEvent;
+  if (getEvent === undefined) return null;
+  try {
+    const res = await getEvent(calendarId, eventId);
+    return res.ok ? res.value : null;
+  } catch {
+    return null;
+  }
+}
+
+/** The approved content of a create, cleaned exactly like the builder cleans it (so Google's copy of it compares equal). */
+function approvedContentOf(p: CreateEventPayload): EventContentWithStatus {
+  return {
+    title: normaliseField(p.title, LIMITS.titleChars),
+    startLocal: p.startLocal,
+    endLocal: p.endLocal,
+    timeZone: p.timeZone,
+    location: normaliseField(p.location, LIMITS.locationChars),
+    status: 'confirmed',
+  };
+}
+function sameApprovedContent(a: EventContentWithStatus, b: EventContentWithStatus): boolean {
+  return a.title === b.title && a.startLocal === b.startLocal && a.endLocal === b.endLocal && a.location === b.location;
+}
+
+/** B24: the pending update_event of a found-but-edited create (same proposal version; NEVER approved here - a card). */
+function offerCorrection(
+  deps: ReconcileDeps,
+  action: ApprovalAction,
+  payload: CreateEventPayload,
+  eventId: string,
+  found: EventContentWithStatus,
+  approved: EventContentWithStatus,
+  now: EpochMs,
+): void {
+  const slotChanged = found.startLocal !== approved.startLocal || found.endLocal !== approved.endLocal;
+  const update: UpdateEventPayload = {
+    v: 1,
+    kind: 'update_event',
+    itemId: payload.itemId,
+    chatRef: payload.chatRef,
+    proposalVersion: payload.proposalVersion,
+    targetEventId: eventId,
+    targetItemId: action.itemId,
+    baseRevision: 1,
+    change: slotChanged ? 'reschedule' : 'move',
+    from: found,
+    to: approved,
+  };
+  try {
+    deps.repos.actions.insertPending({
+      itemId: action.itemId,
+      proposalId: action.proposalId,
+      chatId: action.chatId,
+      payload: update,
+      now,
+    });
+  } catch {
+    deps.repos.audit.append('db_recovery', action.id, { stage: 'b24_update_offer' }, now);
+  }
+}
+
+/** One unknown_outcome update_event, read-only: get-event only (never list-events, never a re-patch). */
+async function reconcileUpdateWith(
+  deps: ReconcileDeps,
+  action: ApprovalAction,
+): Promise<'done' | 'superseded' | 'unknown_outcome'> {
+  const payload = parseFinalPayload(action);
+  if (payload === null || payload.kind !== 'update_event' || action.state !== 'unknown_outcome')
+    return 'unknown_outcome';
+  const target = deps.repos.items.byId(payload.targetItemId);
+  if (target !== null && target.eventRevision > payload.baseRevision) {
+    // another change of this event landed meanwhile: this one can never apply as approved
+    const now = deps.now();
+    deps.repos.db
+      .prepare(`UPDATE actions SET state = 'superseded' WHERE id = ? AND state = 'unknown_outcome'`)
+      .run(action.id);
+    deps.repos.audit.append(
+      'action_reconciled',
+      action.id,
+      { kind: 'update_event', attempt: action.attempt, superseded: true },
+      now,
+    );
+    return 'superseded';
+  }
+  const rb = await readEvent(deps, deps.repos.settings.get().calendar.targetCalendarId, payload.targetEventId);
+  if (rb === null) return 'unknown_outcome';
+  const root = deps.repos.actions.chainRoot(action.id);
+  const applied =
+    rb.id === payload.targetEventId &&
+    rb.priv.waUpdate === root.id &&
+    rb.status === payload.to.status &&
+    (payload.to.status === 'cancelled' ||
+      (rb.startLocal === payload.to.startLocal && rb.endLocal === payload.to.endLocal));
+  if (!applied) return 'unknown_outcome';
+  const now = deps.now();
+  deps.repos.db.transaction(() => {
+    commitUpdateDone(
+      deps.repos,
+      action,
+      payload,
+      rb,
+      { autoWriteId: autoWriteIdOfAction(deps.repos, action.id), extraReverts: [], auditKind: 'action_reconciled' },
+      now,
+    );
+  });
+  return 'done';
+}
+
+/** exec/reconcile.ts - get-event only (never list-events, never a re-patch): waUpdate === chain root and status/slot == `to` => done ;
+ *  items.event_revision > baseRevision => superseded ; else stays unknown_outcome + pending clone ("Apply again").
+ *  B24 (T-401): offerRetryForUnknown on a create: findAppEvent first; found + unedited => done ; found + EDITED => an update_event from the
+ *  found content to the edited content ; not found => create retry clone (v1).
+ *  [V2-W1-04] The frozen one-argument form has no repository to read: `deps` is an additive optional second argument; without it the
+ *  action cannot be resolved and stays unknown_outcome (fail safe - nothing is ever re-sent). */
+export async function reconcileUpdate(
+  actionId: ActionId,
+  deps?: ReconcileDeps,
+): Promise<'done' | 'superseded' | 'unknown_outcome'> {
+  if (deps === undefined) return 'unknown_outcome';
+  const action = deps.repos.actions.byId(actionId);
+  if (action === null || action.kind !== 'update_event') return 'unknown_outcome';
+  return reconcileUpdateWith(deps, action);
 }

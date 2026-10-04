@@ -1,11 +1,18 @@
 // tests/fakes/fake-llama-server.ts - OpenAI-compatible llama-server double + fake model host (TESTS 3.5; owner W1-07).
+// [V2] v2 deltas (T2 3.8; owner V2-W1-08-vision): `--mmproj <file> --mmproj-device none --image-max-tokens 1120|560` (+ mid batch 2048)
+// asserted by checkVisionArgv(); `GET /props` answers `modalities.vision` true only for a vision server; chat requests with an
+// `image_url` part are matched by `when.imageSha256` (sha256 of the decoded data-URL bytes) and `when.purpose 'read_image'`; an image
+// part together with `tools` => violation `vision_with_tools`; an image part on a text-only server => 500 + `image_without_vision`;
+// scenario `vision_garbage` answers image requests with non-JSON. The fake model host serves GGUF-magic bodies (text models and
+// projectors) and GGML-magic bodies (`lmgg`, voice `*.bin` files).
 // Spawnable-fake rules (TESTS 2.3): Node built-ins + tests/fakes only; erasable TS only (no enums, no parameter properties,
 // no namespaces) so `node --experimental-strip-types tests/fakes/fake-llama-server.ts --port <p>` runs in child mode.
 // Child: node tests/fakes/fake-llama-server.ts --port <p> ... (records the real flag set; key must arrive via env LLAMA_API_KEY).
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import { createHash } from 'node:crypto';
+import { appendFileSync, readFileSync } from 'node:fs';
 
-export type FakeLlamaScenario = 'default' | 'garbage' | 'exit_on_first_call' | `load_ms:${number}`;
+export type FakeLlamaScenario = 'default' | 'garbage' | 'exit_on_first_call' | 'vision_garbage' | `load_ms:${number}`;
 export type FakeDeviceFixture = 'nvidia_8g' | 'intel_igpu_only' | 'igpu_plus_dgpu' | 'unparseable';
 export type FakeModelHostScenario =
   | 'default'
@@ -18,7 +25,13 @@ export type FakeModelHostScenario =
 
 /** Same rule shape as stub-llm.ts (duplicated as a plain type so this file stays spawnable without src/** or other test imports). */
 export type FakeLlamaRule = {
-  when: { purpose?: 'extract' | 'draft'; contains?: string; notContains?: string; turn?: number };
+  when: {
+    purpose?: 'extract' | 'draft' | 'read_image'; // [V2] read_image = a request carrying an image_url part
+    contains?: string;
+    notContains?: string;
+    turn?: number;
+    imageSha256?: string; // [V2] sha256 (hex) of the first image_url part's decoded bytes
+  };
   respond:
     | { structured: Record<string, unknown> }
     | { text: string; finishReason?: 'stop' | 'length' }
@@ -34,13 +47,33 @@ export interface FakeLlamaServerOptions {
   rules?: FakeLlamaRule[];
   scenario?: FakeLlamaScenario;
   modelHost?: { scenario?: FakeModelHostScenario; sizeBytes?: number }; // fake GGUF host (256 KiB by default)
+  /** [V2] in-process mode: this server was "started with --mmproj" (GET /props reports vision). Child mode derives it from argv. */
+  vision?: boolean;
+  /** [V2] called once per chat request after the contract checks (child mode writes it to --fake-journal). Never the bytes or text. */
+  onCompletion?: (entry: FakeLlamaCompletionEntry) => void;
+}
+/** [V2] one chat request as the child-mode journal records it: structure only (no message text, no picture bytes). */
+export interface FakeLlamaCompletionEntry {
+  kind: 'completion';
+  authorized: boolean;
+  hasTools: boolean;
+  hasResponseFormat: boolean;
+  partTypes: string[]; // content part types of every user turn, in order ('text' for a string content)
+  images: Array<{ mime: string; sha256: string; bytes: number }>;
+  violations: string[]; // the server's violations so far
 }
 export interface FakeLlamaServer {
   readonly url: string; // http://127.0.0.1:<port>
   readonly port: number;
   readonly requests: Array<{ at: number; method: string; path: string; authorized: boolean; body?: unknown }>;
   readonly argv: string[]; // child mode: the flags it was started with
-  readonly violations: string[]; // e.g. 'tools_and_response_format', 'tool_choice_not_auto', 'thinking_enabled', 'log_file_flag', 'key_in_argv'
+  readonly violations: string[]; // e.g. 'tools_and_response_format', 'tool_choice_not_auto', 'thinking_enabled', 'log_file_flag', 'key_in_argv', [V2] 'vision_with_tools', 'image_without_vision'
+  /** [V2] one entry per image_url part received: mime and sha256 of the decoded bytes (never the bytes). */
+  readonly images: Array<{ mime: string; sha256: string; bytes: number }>;
+  /** [V2] sha256 / size of the body the model host serves for a file name (GGML magic for `*.bin`, GGUF otherwise). */
+  modelSha256For(file: string): string;
+  modelSizeFor(file: string): number;
+  setVision(on: boolean): void;
   /** The fake model host: GET /<repo>/resolve/<commit>/<file> -> 302 -> /cdn/<signed> ; Range support ; scenarios. */
   modelUrl(file?: string): string;
   readonly modelSha256: string; // sha256 of the served fake GGUF
@@ -67,6 +100,79 @@ export const REQUIRED_LLAMA_FLAGS: readonly string[] = [
   '0',
 ];
 export const FORBIDDEN_LLAMA_FLAGS: readonly string[] = ['--log-file', '--api-key', '--api-key-file'];
+
+/** [V2] B19 / C2 9.1 picture flags per tier (the fake cannot know the tier from argv alone, so the caller may name it). */
+export const VISION_MAX_TOKENS: Readonly<Record<'tiny' | 'small' | 'mid', string>> = {
+  tiny: '560',
+  small: '1120',
+  mid: '1120',
+};
+
+/** [V2] T2 3.8: when `--mmproj` is present the flag set must be exactly `--mmproj <file> --mmproj-device none --image-max-tokens
+ *  1120|560` (+ `--batch-size 2048 --ubatch-size 2048` for mid, and never `--image-min-tokens`). Returns violation names. */
+export function checkVisionArgv(argv: readonly string[], tier?: 'tiny' | 'small' | 'mid'): string[] {
+  const v: string[] = [];
+  const at = argv.indexOf('--mmproj');
+  const valueOf = (flag: string): string | undefined => {
+    const i = argv.indexOf(flag);
+    return i === -1 ? undefined : argv[i + 1];
+  };
+  if (at === -1) {
+    for (const flag of ['--mmproj-device', '--image-max-tokens', '--image-min-tokens']) {
+      if (argv.includes(flag)) v.push(`vision_flag_without_mmproj:${flag}`);
+    }
+    return v;
+  }
+  const file = argv[at + 1];
+  if (file === undefined || file.startsWith('-') || !/mmproj.*\.gguf$/i.test(file)) v.push('bad_mmproj_file');
+  if (valueOf('--mmproj-device') !== 'none') v.push('mmproj_device_not_none');
+  const maxTokens = valueOf('--image-max-tokens');
+  if (maxTokens === undefined) v.push('missing_flag:--image-max-tokens');
+  else if (tier !== undefined ? maxTokens !== VISION_MAX_TOKENS[tier] : maxTokens !== '1120' && maxTokens !== '560')
+    v.push('bad_flag_value:--image-max-tokens');
+  if (argv.includes('--image-min-tokens')) v.push('image_min_tokens');
+  const batch = valueOf('--batch-size');
+  const ubatch = valueOf('--ubatch-size');
+  if (tier === 'mid' && (batch !== '2048' || ubatch !== '2048')) v.push('mid_batch_missing');
+  if (tier !== undefined && tier !== 'mid' && (batch !== undefined || ubatch !== undefined)) v.push('batch_on_non_mid');
+  if ((batch === undefined) !== (ubatch === undefined) || (batch !== undefined && batch !== ubatch))
+    v.push('batch_ubatch_mismatch');
+  return v;
+}
+
+/** [V2] The image_url parts of an OpenAI chat request (data URLs), decoded. */
+function imagesOf(messages: unknown): Array<{ mime: string; bytes: Buffer }> {
+  const out: Array<{ mime: string; bytes: Buffer }> = [];
+  if (!Array.isArray(messages)) return out;
+  for (const m of messages as Array<{ content?: unknown }>) {
+    if (!Array.isArray(m?.content)) continue;
+    for (const part of m.content as Array<{ type?: unknown; image_url?: { url?: unknown } }>) {
+      if (part?.type !== 'image_url') continue;
+      const url = part.image_url?.url;
+      const match = typeof url === 'string' ? /^data:([a-z/]+);base64,([A-Za-z0-9+/=]*)$/.exec(url) : null;
+      out.push(
+        match === null
+          ? { mime: '', bytes: Buffer.alloc(0) }
+          : { mime: match[1]!, bytes: Buffer.from(match[2]!, 'base64') },
+      );
+    }
+  }
+  return out;
+}
+
+/** [V2] content part types of the user turns, in order (a string content counts as one 'text'). */
+function partTypesOf(messages: unknown): string[] {
+  const out: string[] = [];
+  if (!Array.isArray(messages)) return out;
+  for (const m of messages as Array<{ role?: unknown; content?: unknown }>) {
+    if (m?.role !== 'user') continue;
+    if (!Array.isArray(m.content)) out.push('text');
+    else
+      for (const p of m.content as Array<{ type?: unknown }>)
+        out.push(typeof p?.type === 'string' ? p.type : 'unknown');
+  }
+  return out;
+}
 
 /** Checks a llama-server argv against the contract; returns the violation names (empty = fine). */
 export function checkLlamaArgv(argv: readonly string[], apiKey?: string): string[] {
@@ -137,6 +243,17 @@ export function fakeGgufBytes(size = DEFAULT_MODEL_BYTES): Buffer {
   for (let i = 4; i < size; i += 1) buf[i] = (i * 31 + 7) & 0xff;
   return buf;
 }
+/** [V2] whisper.cpp `GGML` magic (`6c 6d 67 67` = 'lmgg') + deterministic filler, for the voice files (`*.bin`). */
+export function fakeGgmlBytes(size = DEFAULT_MODEL_BYTES): Buffer {
+  const buf = Buffer.alloc(size);
+  buf.write('lmgg', 0, 'ascii');
+  for (let i = 4; i < size; i += 1) buf[i] = (i * 17 + 11) & 0xff;
+  return buf;
+}
+/** [V2] which magic a model-host file gets: voice / VAD files are `.bin` (GGML), everything else (text GGUF, mmproj) is GGUF. */
+export function isGgmlFile(file: string): boolean {
+  return /\.bin$/i.test(file);
+}
 
 // ---------------------------------------------------------------------------------------------------------------------
 // server
@@ -177,18 +294,25 @@ export async function startFakeLlamaServer(opts: FakeLlamaServerOptions): Promis
   let modelScenario: FakeModelHostScenario = opts.modelHost?.scenario ?? 'default';
   const modelBody = fakeGgufBytes(opts.modelHost?.sizeBytes ?? DEFAULT_MODEL_BYTES);
   const modelSha256 = createHash('sha256').update(modelBody).digest('hex');
+  const ggmlBody = fakeGgmlBytes(opts.modelHost?.sizeBytes ?? DEFAULT_MODEL_BYTES);
+  const ggmlSha256 = createHash('sha256').update(ggmlBody).digest('hex');
+  const bodyOf = (file: string): Buffer => (isGgmlFile(file) ? ggmlBody : modelBody);
+  const shaOf = (file: string): string => (isGgmlFile(file) ? ggmlSha256 : modelSha256);
+  let vision = opts.vision ?? false;
+  const images: Array<{ mime: string; sha256: string; bytes: number }> = [];
   const startedAt = Date.now();
   const loadMs = opts.loadMs ?? (scenario.startsWith('load_ms:') ? Number(scenario.slice('load_ms:'.length)) : 0);
   let turn = 0;
   let signedIssued = 0;
 
-  const pickRule = (body: Record<string, unknown>): FakeLlamaRule | null => {
-    const purpose = body.response_format === undefined ? 'draft' : 'extract';
+  const pickRule = (body: Record<string, unknown>, imageSha: string | null): FakeLlamaRule | null => {
+    const purpose = imageSha !== null ? 'read_image' : body.response_format === undefined ? 'draft' : 'extract';
     const haystack = JSON.stringify(body.messages ?? []);
     for (const st of rules) {
       const w = st.rule.when;
       if (st.rule.times !== undefined && st.used >= st.rule.times) continue;
       if (w.purpose !== undefined && w.purpose !== purpose) continue;
+      if (w.imageSha256 !== undefined && w.imageSha256 !== imageSha) continue;
       if (w.turn !== undefined && w.turn !== turn) continue;
       if (w.contains !== undefined && !haystack.includes(w.contains)) continue;
       if (w.notContains !== undefined && haystack.includes(w.notContains)) continue;
@@ -198,7 +322,7 @@ export async function startFakeLlamaServer(opts: FakeLlamaServerOptions): Promis
     return null;
   };
 
-  const completionFromRule = (rule: FakeLlamaRule | null, body: Record<string, unknown>): unknown => {
+  const completionFromRule = (rule: FakeLlamaRule | null, body: Record<string, unknown>, isImage: boolean): unknown => {
     const usage = { prompt_tokens: 40, completion_tokens: 12, total_tokens: 52 };
     const wrap = (message: Record<string, unknown>, finish: string): unknown => ({
       id: 'chatcmpl-fake',
@@ -226,6 +350,8 @@ export async function startFakeLlamaServer(opts: FakeLlamaServerOptions): Promis
       return wrap({ role: 'assistant', content: '', tool_calls: toolCalls }, 'tool_calls');
     }
     if (scenario === 'garbage') return wrap({ role: 'assistant', content: 'not json at all {{{' }, 'stop');
+    if (scenario === 'vision_garbage' && isImage)
+      return wrap({ role: 'assistant', content: 'I see a picture {{{' }, 'stop');
     if (body.response_format !== undefined) return wrap({ role: 'assistant', content: '{"ok":true}' }, 'stop');
     return wrap({ role: 'assistant', content: 'ok' }, 'stop');
   };
@@ -261,7 +387,35 @@ export async function startFakeLlamaServer(opts: FakeLlamaServerOptions): Promis
       });
       return;
     }
-    const rule = pickRule(body);
+    // [V2] T2 3.8 picture checks
+    const parts = imagesOf(body.messages);
+    let imageSha: string | null = null;
+    if (parts.length > 0) {
+      for (const part of parts) {
+        images.push({
+          mime: part.mime,
+          sha256: createHash('sha256').update(part.bytes).digest('hex'),
+          bytes: part.bytes.length,
+        });
+      }
+      imageSha = images[images.length - parts.length]!.sha256;
+      if (body.tools !== undefined || body.tool_choice !== undefined) violations.push('vision_with_tools');
+      if (!vision) {
+        violations.push('image_without_vision');
+        json(res, 500, { error: { message: 'image input is not supported by this server', type: 'server_error' } });
+        return;
+      }
+    }
+    opts.onCompletion?.({
+      kind: 'completion',
+      authorized,
+      hasTools: body.tools !== undefined || body.tool_choice !== undefined,
+      hasResponseFormat: body.response_format !== undefined,
+      partTypes: partTypesOf(body.messages),
+      images: images.slice(images.length - parts.length),
+      violations: [...violations],
+    });
+    const rule = scenario === 'vision_garbage' && imageSha !== null ? null : pickRule(body, imageSha);
     turn += 1;
     if (rule !== null && 'hang' in rule.respond) return; // never answers
     if (rule !== null && 'status' in rule.respond) {
@@ -270,23 +424,24 @@ export async function startFakeLlamaServer(opts: FakeLlamaServerOptions): Promis
       res.end(text);
       return;
     }
-    json(res, 200, completionFromRule(rule, body));
+    json(res, 200, completionFromRule(rule, body, imageSha !== null));
   };
 
   const serveModel = (req: IncomingMessage, res: ServerResponse, url: URL): void => {
     const isResolve = /\/resolve\/[0-9a-f]{40}\//.test(url.pathname);
     if (isResolve) {
       signedIssued += 1;
-      const size = modelScenario === 'wrong_size' ? modelBody.length + 999 : modelBody.length;
+      const file = url.pathname.slice(url.pathname.lastIndexOf('/') + 1);
+      const size = modelScenario === 'wrong_size' ? bodyOf(file).length + 999 : bodyOf(file).length;
       const location =
         modelScenario === 'foreign_redirect_host'
           ? 'https://hf.co.evil.example/cdn/signed-1'
-          : `http://127.0.0.1:${String(port)}/cdn/signed-${String(signedIssued)}`;
+          : `http://127.0.0.1:${String(port)}/cdn/signed-${String(signedIssued)}${isGgmlFile(file) ? '.bin' : ''}`;
       res.writeHead(302, {
         location,
         'x-repo-commit': FAKE_GGUF_COMMIT,
         'x-linked-size': String(size),
-        'x-linked-etag': `"${modelSha256}"`,
+        'x-linked-etag': `"${shaOf(file)}"`,
         'accept-ranges': 'bytes',
         'content-length': '0',
       });
@@ -298,14 +453,18 @@ export async function startFakeLlamaServer(opts: FakeLlamaServerOptions): Promis
       res.end();
       return;
     }
-    if (modelScenario === 'expired_redirect_on_resume' && url.pathname !== `/cdn/signed-${String(signedIssued)}`) {
+    if (
+      modelScenario === 'expired_redirect_on_resume' &&
+      url.pathname.replace(/\.bin$/, '') !== `/cdn/signed-${String(signedIssued)}`
+    ) {
       res.writeHead(403, { 'content-length': '0' });
       res.end();
       return;
     }
-    let payload = modelBody;
+    const served = url.pathname.endsWith('.bin') ? ggmlBody : modelBody;
+    let payload = served;
     if (modelScenario === 'corrupt_byte') {
-      payload = Buffer.from(modelBody);
+      payload = Buffer.from(served);
       payload[Math.floor(payload.length / 2)] = (payload[Math.floor(payload.length / 2)]! ^ 0xff) & 0xff;
     }
     const range = req.headers.range;
@@ -346,6 +505,13 @@ export async function startFakeLlamaServer(opts: FakeLlamaServerOptions): Promis
       json(res, 200, { status: 'ok' });
       return;
     }
+    if (url.pathname === '/props' && req.method === 'GET') {
+      // [V2] C2 9.1 readiness probe; the real server reports the loaded modalities. The bearer is recorded, not enforced.
+      const authorized = req.headers.authorization === `Bearer ${opts.apiKey}`;
+      requests.push({ at: Date.now(), method: 'GET', path: url.pathname, authorized });
+      json(res, 200, { model_path: 'fake.gguf', n_ctx: 8192, modalities: { vision, audio: false } });
+      return;
+    }
     if (url.pathname === '/v1/chat/completions' && req.method === 'POST') {
       void handleCompletions(req, res, url);
       return;
@@ -373,6 +539,12 @@ export async function startFakeLlamaServer(opts: FakeLlamaServerOptions): Promis
     requests,
     argv: [...process.argv.slice(2)],
     violations,
+    images,
+    modelSha256For: (file) => shaOf(file),
+    modelSizeFor: (file) => bodyOf(file).length,
+    setVision: (on) => {
+      vision = on;
+    },
     modelUrl: (file = FAKE_GGUF_FILE) =>
       `http://127.0.0.1:${String(port)}/${FAKE_GGUF_REPO}/resolve/${FAKE_GGUF_COMMIT}/${file}`,
     modelSha256,
@@ -417,7 +589,7 @@ async function childMain(argv: string[]): Promise<void> {
   const portAt = argv.indexOf('--port');
   const port = portAt === -1 ? 0 : Number(argv[portAt + 1]);
   const apiKey = process.env.LLAMA_API_KEY ?? '';
-  const flagViolations = checkLlamaArgv(argv, apiKey);
+  const flagViolations = [...checkLlamaArgv(argv, apiKey), ...checkVisionArgv(argv)];
   if (apiKey === '') flagViolations.push('key_not_in_env');
   process.stdout.write(`FAKE_LLAMA_ARGV ${JSON.stringify(argv)}\n`);
   if (flagViolations.length > 0) {
@@ -425,10 +597,26 @@ async function childMain(argv: string[]): Promise<void> {
     process.exit(2);
   }
   const loadAt = argv.indexOf('--load-ms');
+  // [V2] --fake-rules <file> ({rules:[...]}) scripts the answers; --fake-journal <file> gets one JSON line for the argv and one per
+  // chat request (structure only). Both are test-only flags the real llama-server never sees.
+  const rulesAt = argv.indexOf('--fake-rules');
+  const journalAt = argv.indexOf('--fake-journal');
+  const journal = journalAt === -1 ? null : argv[journalAt + 1]!;
+  const rules =
+    rulesAt === -1
+      ? []
+      : ((JSON.parse(readFileSync(argv[rulesAt + 1]!, 'utf8')) as { rules?: FakeLlamaRule[] }).rules ?? []);
+  const writeJournal = (entry: unknown): void => {
+    if (journal !== null) appendFileSync(journal, `${JSON.stringify(entry)}\n`);
+  };
+  writeJournal({ kind: 'argv', argv, visionViolations: checkVisionArgv(argv) });
   const fake = await startFakeLlamaServer({
     port,
     apiKey,
+    rules,
     loadMs: loadAt === -1 ? 0 : Number(argv[loadAt + 1]),
+    vision: argv.includes('--mmproj'), // [V2] GET /props reports vision only when started with the projector
+    onCompletion: writeJournal,
   });
   process.stdout.write(`FAKE_LLAMA_READY ${String(fake.port)}\n`);
   process.on('SIGTERM', () => {

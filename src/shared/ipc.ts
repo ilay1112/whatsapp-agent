@@ -4,11 +4,16 @@ import {
   ACTION_KINDS,
   CHAT_POLICIES,
   CONSENT_KINDS,
-  MODEL_TIERS,
   ONBOARDING_STEPS,
   SECRET_NAMES,
   LIMITS,
-} from './types';
+  PROVIDER_IDS,
+  CLI_PROVIDER_IDS,
+  API_KEY_PROVIDER_IDS,
+  CHAT_AUTO_POLICIES,
+  DOWNLOAD_TARGETS,
+} from './types'; // [V2 CHANGE] import list (MODEL_TIERS -> DOWNLOAD_TARGETS)
+import type { AutoState, AutoWriteView, CliStatus, VoiceState, EventContentView } from './types'; // [V2 ADD]
 import type {
   Bootstrap,
   DashboardData,
@@ -34,15 +39,19 @@ import type {
 } from './types';
 import type { AppHealth, PairingState } from './health';
 import { SettingsPatchSchema, type Settings } from './settings';
-import { EventEditSchema, ReplyEditSchema } from './schemas';
+import { EventEditSchema, ReplyEditSchema, AutoScopeSchema } from './schemas'; // [V2 CHANGE] + AutoScopeSchema
 
 // ---------- request schemas ----------
 const NoReq = z.undefined();
 const ItemIdReq = z.strictObject({ itemId: z.number().int().positive() });
 const ConfirmReq = z.strictObject({ confirm: z.literal(true) });
-const CloudProviderReq = z.strictObject({ provider: z.enum(['claude', 'gemini']) });
-const TierReq = z.strictObject({ tier: z.enum(MODEL_TIERS).optional() }); // omitted = currently selected tier
+const CloudProviderReq = z.strictObject({ provider: z.enum(API_KEY_PROVIDER_IDS) }); // [V2] same two values, now named: API-key providers only
+/** [V2 CHANGE] tier enum = DOWNLOAD_TARGETS ('mmproj' = the projector of the selected LLM tier; voice-* files). Omitted = the selected LLM tier. */
+const TierReq = z.strictObject({ tier: z.enum(DOWNLOAD_TARGETS).optional() });
+const CliProviderReq = z.strictObject({ provider: z.enum(CLI_PROVIDER_IDS) }); // [V2 ADD]
 
+/** [V2 CHANGE] kind += update_event ; + confirmDrift (update_event only) ; edit for update_event = EventEditSchema applied to `to` only ;
+ *  confirmConflict for create_event AND update_event ; confirmDuplicate create_event only. */
 export const ApproveReqSchema = z
   .strictObject({
     actionId: z.uuid(),
@@ -51,12 +60,17 @@ export const ApproveReqSchema = z
     edit: z.union([ReplyEditSchema, EventEditSchema]).optional(),
     confirmConflict: z.literal(true).optional(),
     confirmDuplicate: z.literal(true).optional(),
+    confirmDrift: z.literal(true).optional(), // [V2 ADD]
   })
   .superRefine((r, ctx) => {
     if (r.edit && 'text' in r.edit !== (r.kind === 'send_reply'))
       ctx.addIssue({ code: 'custom', message: 'edit/kind mismatch' });
-    if (r.kind === 'send_reply' && (r.confirmConflict || r.confirmDuplicate))
-      ctx.addIssue({ code: 'custom', message: 'confirm flags are create_event only' });
+    if (r.kind === 'send_reply' && (r.confirmConflict || r.confirmDuplicate || r.confirmDrift))
+      ctx.addIssue({ code: 'custom', message: 'confirm flags are calendar kinds only' });
+    if (r.kind === 'update_event' && r.confirmDuplicate)
+      ctx.addIssue({ code: 'custom', message: 'confirmDuplicate is create_event only' });
+    if (r.kind === 'create_event' && r.confirmDrift)
+      ctx.addIssue({ code: 'custom', message: 'confirmDrift is update_event only' });
   });
 export type ApproveReq = z.infer<typeof ApproveReqSchema>;
 
@@ -75,6 +89,11 @@ export const EXTERNAL_TARGETS = [
   'google_unverified_app_help',
   'project_readme',
   'vcredist_download',
+  'claude_install', // [V2 ADD] the vendor's install docs (B32: the app never installs anything)
+  'claude_usage',
+  'antigravity_install',
+  'antigravity_terms',
+  'whisper_licence',
 ] as const; // keys of resources/links.json (parity test) ; [R2] vcredist_download = https://aka.ms/vs/17/release/vc_redist.x64.exe (a Microsoft page opened in the browser)
 export type ExternalTarget = (typeof EXTERNAL_TARGETS)[number];
 /** [R2] external:open {itemId, target:'calendarEvent'}: main NEVER opens a server-supplied link. It builds
@@ -101,7 +120,36 @@ export const IPC_REQUEST_SCHEMAS = {
   'chat:setPolicy': z.union([
     z.strictObject({ chatRef: z.number().int().positive(), policy: z.enum(CHAT_POLICIES) }),
     z.strictObject({ chatRef: z.number().int().positive(), forceKnown: z.literal(true) }),
+    z.strictObject({ chatRef: z.number().int().positive(), autoPolicy: z.enum(CHAT_AUTO_POLICIES) }), // [V2 ADD] "Never automatic for this contact"
   ]),
+  // ---- [V2 ADD] event editing + undo (B10, B19) ----
+  'item:undoChange': z.strictObject({ itemId: z.number().int().positive(), revisionId: z.number().int().positive() }), // focused window + focus-steal guard
+  'item:getImage': ItemIdReq, // normalised picture as a data URL (<= LIMITS.imageDataUrlMaxBytes)
+  'item:restoreOriginal': ItemIdReq, // [F1] focused window + focus-steal guard
+  'item:cancelEvent': ItemIdReq, // [F32] focused window + focus-steal guard ; the "Cancel event" door (blocked_started, card)
+  'wa:setReadScope': z.strictObject({ scope: z.enum(['trigger_chat', 'all_chats']) }), // [F11] all_chats: focus-gated + native confirmation
+  // ---- [V2 ADD] automatic mode (B7, B10, B11) - none of these exists on any MCP surface (B29) ----
+  'auto:getState': NoReq,
+  'auto:requestEnable': z.strictObject({ scope: AutoScopeSchema, trial: z.boolean() }), // focused + visible window, 3/h, native dialog in MAIN
+  'auto:disable': z.strictObject({ reason: z.literal('user') }), // no dialog, works unfocused
+  'auto:pause': z.strictObject({ reason: z.literal('user') }), // no dialog, works unfocused
+  'auto:resume': ConfirmReq, // focused window
+  'auto:endShadow': ConfirmReq, // focused window, >= LIMITS.autoMinShadowDecisions shadow decisions
+  'auto:undo': z.strictObject({ autoWriteId: z.uuid() }), // delegates to the item:undoChange path with approved_by 'user'
+  'auto:listWrites': z.strictObject({ sinceTs: z.number().int().nonnegative() }),
+  'auto:export': NoReq, // save dialog opened IN MAIN ; JSON metadata only
+  // ---- [V2 ADD] vendor CLIs (B13, B14) ----
+  'cli:getStatus': CliProviderReq, // cached LIMITS.cliStatusCacheMs
+  'cli:signIn': CliProviderReq, // spawns the validated exe itself in a VISIBLE console (never cmd.exe, F7); the app never sees a credential
+  'cli:setOverage': z.strictObject({ allow: z.boolean() }), // [F11] true: focus-gated + native confirmation ; false: one click
+  'cli:test': CliProviderReq, // one tiny constant run ("uses a little of your quota")
+  'cli:pickExe': z.strictObject({ provider: z.literal('claude_cli') }), // [S+] native open dialog IN MAIN; the only writer of llm.cli.claudeExePath
+  'cli:previewWorkspaceChange': z.strictObject({ provider: z.literal('antigravity_cli') }),
+  'cli:allowWorkspace': z.strictObject({ provider: z.literal('antigravity_cli'), confirm: z.literal(true) }), // + native dialog showing the diff
+  // ---- [V2 ADD] voice (B18) ----
+  'voice:getState': NoReq,
+  'voice:selfTest': NoReq, // bundled 5 s fixture -> bench_json.secPerAudioSec
+  'voice:retry': ItemIdReq, // re-run a failed / aborted transcript of this item's trigger
   'chat:listPolicies': NoReq, // [C+]
   'clipboard:writeText': z.strictObject({ text: z.string().min(1).max(LIMITS.clipboardChars) }), // [C+]
   'onboarding:getState': NoReq,
@@ -115,9 +163,9 @@ export const IPC_REQUEST_SCHEMAS = {
   'pairing:unlinkAndWipe': ConfirmReq,
   'llm:getHardware': NoReq,
   'llm:getConfig': NoReq,
-  'llm:setProvider': z.strictObject({ provider: z.enum(['local', 'claude', 'gemini']) }),
-  'llm:validateKey': CloudProviderReq,
-  'llm:listModels': CloudProviderReq,
+  'llm:setProvider': z.strictObject({ provider: z.enum(PROVIDER_IDS) }), // [V2 CHANGE] 5 ids ; CLI ids need status ready + consent + passed test
+  'llm:validateKey': CloudProviderReq, // API-key providers only (unchanged values)
+  'llm:listModels': z.strictObject({ provider: z.enum(['claude', 'gemini', 'claude_cli', 'antigravity_cli']) }), // [V2 CHANGE] + CLI ids
   'secrets:set': z.strictObject({
     name: z.enum(SECRET_NAMES),
     value: z
@@ -160,7 +208,14 @@ export type IpcReq<C extends IpcChannel> = z.infer<(typeof IPC_REQUEST_SCHEMAS)[
 export type ApproveOutcome =
   | { outcome: 'done'; item: ItemDetail } // side effect confirmed
   | { outcome: 'needs_confirm_conflict'; busy: BusyBlock[]; item: ItemDetail } // action still 'pending'; re-send with confirmConflict:true
+  // [V2 ADD] update_event: Google's copy differs from payload.from. Pre-flight drift: the action is still 'pending'; HTTP 412 on If-Match (after the
+  // write-ahead): the action failed and item.actions holds its pending clone (v2-contracts concerns #12). The card says
+  // "In Google it is now Thu 16:00 - apply the change anyway?" -> re-send with confirmDrift:true ("Apply anyway") or action:reject ("Keep Google's").
+  | { outcome: 'needs_confirm_drift'; current: EventContentView; item: ItemDetail }
   | { outcome: 'failed'; item: ItemDetail }; // action 'failed' | 'unknown_outcome'; item.actions holds the fresh retry action + lastError
+// [V2] update_event gate failures before the write-ahead: ACTION_STALE (to == from, or baseRevision != items.event_revision),
+// CAL_UPDATE_UNAVAILABLE (startup guard), EVENT_INVALID. CAL_EVENT_GONE / CAL_EVENT_FOREIGN end the action 'failed' WITHOUT a retry clone
+// (GONE instead inserts a pending create_event with `to` - "Add as new event").
 // Gate failures that happen BEFORE the write-ahead (stale hash, expired, rate limit, unfocused window, bridge offline, bad edit)
 // are returned as Result.ok=false with ACTION_STALE | ACTION_EXPIRED | RATE_LIMIT_* | WINDOW_NOT_FOCUSED | SEND_NOT_CONNECTED | EVENT_INVALID ...
 // and leave the action 'pending' (except expiry, which moves it to 'expired').
@@ -184,7 +239,7 @@ export interface IpcResMap {
   'action:reject': ItemDetail;
   'agent:setPaused': AppHealth;
   'chat:setPolicy': ChatView;
-  'chat:listPolicies': { chats: ChatView[] }; // chats with policy != 'default' or forceKnown
+  'chat:listPolicies': { chats: ChatView[] }; // chats with policy != 'default' or forceKnown ; [V2] or autoPolicy = 'never'
   'clipboard:writeText': null;
   'onboarding:getState': OnboardingState;
   'onboarding:setStep': OnboardingState;
@@ -221,6 +276,30 @@ export interface IpcResMap {
   'external:open': null;
   'data:purgeNow': { itemsPurged: number };
   'diagnostics:export': { saved: boolean };
+  'item:undoChange': ApproveOutcome; // [V2 ADD] the undo action is approved immediately through the normal executor
+  'item:getImage': { dataUrl: string }; // [V2 ADD] 'data:image/jpeg;base64,...'
+  'item:restoreOriginal': ApproveOutcome; // [F1]
+  'item:cancelEvent': ApproveOutcome; // [F32]
+  'wa:setReadScope': { scope: 'trigger_chat' | 'all_chats' }; // [F11] cancelled confirmation => unchanged scope
+  'auto:getState': AutoState; // [V2 ADD]
+  'auto:requestEnable': AutoState; // AUTO_NOT_CONFIRMED | AUTO_CALENDAR_NOT_OWNED | AUTO_NO_TRACK_RECORD | WINDOW_NOT_FOCUSED | CAL_UNAVAILABLE | CAL_UPDATE_UNAVAILABLE | BAD_REQUEST
+  'auto:disable': AutoState;
+  'auto:pause': AutoState;
+  'auto:resume': AutoState;
+  'auto:endShadow': AutoState;
+  'auto:undo': ApproveOutcome;
+  'auto:listWrites': { writes: AutoWriteView[] };
+  'auto:export': { saved: boolean };
+  'cli:getStatus': CliStatus; // [V2 ADD]
+  'cli:signIn': { opened: true };
+  'cli:setOverage': CliStatus; // [F11] cancelled confirmation => unchanged
+  'cli:test': { ok: true; ms: number }; // failures = Result.ok=false with the mapped ErrorCode
+  'cli:pickExe': CliStatus; // cancelled dialog => unchanged status
+  'cli:previewWorkspaceChange': { diffLine: string; settingsFileExists: boolean; agyRunning: boolean }; // diffLine = app-built display text
+  'cli:allowWorkspace': CliStatus; // BAD_REQUEST while an agy process runs ; the file is backed up first
+  'voice:getState': VoiceState; // [V2 ADD]
+  'voice:selfTest': { ok: boolean; secPerAudioSec: number | null };
+  'voice:retry': ItemDetail;
 }
 export type IpcRes<C extends IpcChannel> = IpcResMap[C];
 type _AssertAllChannelsHaveRes = { [C in IpcChannel]: IpcResMap[C] }; // compile error if a channel lacks a response type
@@ -234,6 +313,10 @@ export interface IpcEventMap {
   'google:changed': GoogleWizardState;
   'ui:languageChanged': { lang: Lang; dir: Dir };
   'ui:navigate': { view: View; itemId?: ItemId }; // 'tray_hint' = first-close coach mark
+  'auto:changed': AutoState; // [V2 ADD] policy state / AutoStrip ; also after every automatic write, undo and pause
+  'cli:changed': CliStatus; // [V2 ADD] Connect card (sign-in poll, quota line)
+  'queue:changed': { pending: number; running: number; transcribing: { seconds: number } | null }; // [V2 ADD] header "Transcribing a voice note (0:42)..."
+  'voice:progress': { itemId: ItemId; phase: 'fetch' | 'decode' | 'transcribe'; audioSeconds: number }; // [V2 ADD] 2 Hz max ; numbers only
 }
 export type IpcEvent = keyof IpcEventMap;
 export const IPC_EVENTS = [
@@ -244,7 +327,40 @@ export const IPC_EVENTS = [
   'google:changed',
   'ui:languageChanged',
   'ui:navigate',
+  'auto:changed',
+  'cli:changed',
+  'queue:changed',
+  'voice:progress',
 ] as const satisfies readonly IpcEvent[];
+
+/** [V2 ADD] Channels that require ctx.windowFocused && ctx.windowVisible and the focus-steal guard (same gate as action:approve).
+ *  auto:disable / auto:pause are deliberately absent (fail-safe direction works from anywhere). Asserted by a register.ts test. */
+export const FOCUS_GATED_CHANNELS = [
+  'action:approve',
+  'item:undoChange',
+  'auto:requestEnable',
+  'auto:resume',
+  'auto:endShadow',
+  'auto:undo',
+  'cli:allowWorkspace',
+  'cli:pickExe',
+  'item:restoreOriginal', // [F1]
+  'item:cancelEvent', // [F32]
+  'cli:setOverage', // [F11] focus-gated in both directions (the control lives on the focused Settings page); only {allow:true} shows the native confirmation
+  'wa:setReadScope', // [F11] focus-gated in both directions; only {scope:'all_chats'} shows the native confirmation
+] as const satisfies readonly IpcChannel[];
+/** [V2 ADD] Nothing on an MCP surface (the loopback tool server, the calendar child) may ever carry one of these (B29, test A18). */
+export const NEVER_ON_MCP_PREFIXES = [
+  'auto:',
+  'item:undoChange',
+  'item:restoreOriginal',
+  'item:cancelEvent',
+  'action:',
+  'settings:',
+  'cli:',
+  'consent:',
+  'wa:',
+] as const;
 
 // ---------- preload API (window.api) ----------
 type InvokeArgs<C extends IpcChannel> = undefined extends IpcReq<C> ? [] : [req: IpcReq<C>];

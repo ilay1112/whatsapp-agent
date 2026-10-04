@@ -68,3 +68,47 @@ describe('createMainI18n', () => {
     expect(i18n.t('test.onlyEn')).toBe('only english');
   });
 });
+
+// [V2] the main instance serves the native dialog / toast / tray copy of v2 (UX2 14.3, 5; build plan W1-10): every such key
+// resolves in BOTH languages to real text (never the raw key), the Hebrew text differs from the English one.
+describe('[V2] main-process copy', () => {
+  const MAIN_V2_KEYS = [
+    'auto.dialog.title',
+    'auto.dialog.message',
+    'auto.dialog.checkbox',
+    'auto.dialog.cancel',
+    'auto.dialog.trial',
+    'auto.dialog.now',
+    'notify.auto.body',
+    'notify.auto.undo',
+    'notify.auto.show',
+    'notify.auto.undone.title',
+    'notify.auto.paused.title',
+    'tray.auto.on',
+    'tray.auto.shadow',
+    'tray.auto.paused',
+    'cli.limits.overageConfirmTitle',
+    'cli.limits.overageConfirmBody',
+  ];
+
+  it('every v2 dialog / toast / tray key resolves in en and he', () => {
+    process.env.NODE_ENV = 'development'; // a missing key throws here
+    const en = createMainI18n('en');
+    const he = createMainI18n('he');
+    for (const key of MAIN_V2_KEYS) {
+      const e = en.t(key, { calendar: 'X', vendor: 'Y', count: 2, date: 'D', time: 'T', reason: 'R' });
+      const h = he.t(key, { calendar: 'X', vendor: 'Y', count: 2, date: 'D', time: 'T', reason: 'R' });
+      expect(e, key).not.toBe(key);
+      expect(h, key).not.toBe(key);
+      expect(e.length, key).toBeGreaterThan(0);
+      expect(h, key).not.toBe(e);
+    }
+  });
+
+  it('the plural toast title pluralises in both languages', () => {
+    for (const lang of ['en', 'he'] as const) {
+      const i18n = createMainI18n(lang);
+      expect(i18n.t('notify.auto.burst.title', { count: 1 })).not.toBe(i18n.t('notify.auto.burst.title', { count: 5 }));
+    }
+  });
+});

@@ -95,20 +95,30 @@ Status: `todo` · `doing` · `review` · `done` · `blocked`. Details in `ops/ti
 
 | ID | Package | Wave | Status |
 |---|---|---|---|
-| T-600 | V2-W0-scaffold | 0 | todo |
-| T-601 | V2-W1-01-db | 1 | todo |
-| T-602 | V2-W1-02-calendar-mcp | 1 | todo |
-| T-603 | V2-W1-03-edit-pipeline | 1 | todo |
-| T-604 | V2-W1-04-exec-auto | 1 | todo |
-| T-605 | V2-W1-05-wa-toolserver | 1 | todo |
-| T-606 | V2-W1-06-claude-cli | 1 | todo |
-| T-607 | V2-W1-07-media-voice | 1 | todo |
-| T-608 | V2-W1-08-vision | 1 | todo |
-| T-609 | V2-W1-09-antigravity | 1 | todo |
-| T-610 | V2-W1-10-main-platform | 1 | todo |
-| T-611 | V2-W1-11-renderer-dashboard | 1 | todo |
-| T-612 | V2-W1-12-renderer-settings | 1 | todo |
-| T-613 | V2-W2-01-compose | 2 | todo |
-| T-614 | V2-W2-02-security | 2 | todo |
-| T-615 | V2-W2-03-e2e | 2 | todo |
-| T-616 | V2-W2-04-packaging | 2 | todo |
+| T-600 | V2-W0-scaffold | 0 | done |
+| T-601 | V2-W1-01-db | 1 | done |
+| T-602 | V2-W1-02-calendar-mcp | 1 | done |
+| T-603 | V2-W1-03-edit-pipeline | 1 | done |
+| T-604 | V2-W1-04-exec-auto | 1 | done |
+| T-605 | V2-W1-05-wa-toolserver | 1 | done |
+| T-606 | V2-W1-06-claude-cli | 1 | done |
+| T-607 | V2-W1-07-media-voice | 1 | done |
+| T-608 | V2-W1-08-vision | 1 | done |
+| T-609 | V2-W1-09-antigravity | 1 | done |
+| T-610 | V2-W1-10-main-platform | 1 | done |
+| T-611 | V2-W1-11-renderer-dashboard | 1 | done |
+| T-612 | V2-W1-12-renderer-settings | 1 | done |
+| T-613 | V2-W2-01-compose | 2 | done |
+| T-614 | V2-W2-02-security | 2 | done (partial — see PROGRESS 60) |
+| T-615 | V2-W2-03-e2e | 2 | done (partial — see PROGRESS 60) |
+| T-616 | V2-W2-04-packaging | 2 | done (partial — see PROGRESS 60) |
+
+## Phase 7 — v2 repair + adversarial review (workflow ⑦)
+
+| ID | Title | Owner | Status |
+|---|---|---|---|
+| T-700 | Repair the 13 v2 e2e product defects + voice-model URL pinning + fake calendar control | 4 repair agents | todo |
+| T-701 | Re-verify incl. full e2e | agent | todo |
+| T-702 | Adversarial v2 review (6 lenses) + skeptic verification | agents | todo |
+| T-703 | Fix confirmed findings | agents | todo |
+| T-704 | v2 acceptance vs the v2 request + original request | agent + orchestrator | todo |

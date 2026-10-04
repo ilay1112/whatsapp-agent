@@ -4,6 +4,7 @@
 import { describe, expect, it } from 'vitest';
 import { cleanDraft, runDraft, type DraftInput } from './draft';
 import type { RunCtx, ToolGate, ToolGateOutcome, ToolGateVerdict } from './toolGate';
+import { createHandleTable } from './handles';
 import { LIMITS } from '../../shared/types';
 import type { LlmMessage, LlmTool, LlmToolCall } from '../llm/types';
 import { StubLlm, type StubRule } from '../../../tests/fakes/stub-llm';
@@ -33,6 +34,9 @@ function fakeGate(opts: { verdicts?: ToolGateVerdict[]; abortAt?: number; tools?
       });
     },
     prefetchFreeBusy: () => Promise.resolve(null),
+    // [V2] C2 10 ToolGate additions (unused by the v1 turn loop)
+    exposedSpecs: () => [],
+    prefetchWaContext: () => Promise.resolve(null),
   };
 }
 
@@ -48,6 +52,11 @@ function ctx(signal: AbortSignal): RunCtx {
     totalCalls: 0,
     blockedCalls: 0,
     signal,
+    // [V2] C2 10 RunCtx additions (a Wave 0 stub handle table; the v1 gate never reads them)
+    handles: createHandleTable(1),
+    waRowsServed: 0,
+    crossChatRows: 0,
+    otherChatTexts: [],
   };
 }
 

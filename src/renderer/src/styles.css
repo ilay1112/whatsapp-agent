@@ -324,6 +324,122 @@ body {
   font-variant-numeric: tabular-nums;
 }
 
+/* ---------------------------------------------------------------------------------------------------------------
+ * [V2] UX2 section 1 (owner V2-W1-12): no new colour TOKENS - the new states map onto the v1 families (UX2 1.2).
+ * Recipes below are the names V2-W1-11 (dashboard) and V2-W1-12 (settings/shell) use; nobody else defines colours.
+ * ------------------------------------------------------------------------------------------------------------- */
+
+/* Chip tones (UX2 1.2). `chip` stays the neutral recipe; add exactly one tone class next to it. */
+@utility chip-info {
+  background: var(--color-accent-soft);
+  color: var(--color-accent);
+}
+@utility chip-ok {
+  background: var(--color-ok-soft);
+  color: var(--color-ok);
+}
+@utility chip-amber {
+  background: var(--color-warn-soft);
+  color: var(--color-warn);
+}
+@utility chip-red {
+  background: var(--color-danger-soft);
+  color: var(--color-danger);
+}
+/* `auto_shadow` = "would have": info, outlined, 1 px DASHED accent border, no fill - visibly lighter than `automatic`. */
+@utility chip-shadow {
+  background: transparent;
+  color: var(--color-accent);
+  border: 1px dashed var(--color-accent);
+}
+/* "Experimental" - an honest risk marker; the word is always present (never colour only, UX2 11.10). */
+@utility chip-experimental {
+  background: var(--color-warn-soft);
+  color: var(--color-warn);
+}
+
+/* The fourth voice (UX2 1.1): machine-transcribed contact text. DOTTED 1 px rule between the app header strip and the
+ * text (solid = typed by the contact, dashed = written by the AI, dotted = sound/pixels turned into text). */
+@utility media-rule {
+  border-block-start: 1px dotted var(--color-line-strong);
+}
+/* The fixed caution line under a transcript / picture text: app text, muted, --text-xs. */
+@utility media-caution {
+  color: var(--color-text-muted);
+  font-size: var(--text-xs);
+}
+
+/* ChangeLine: trusted app text; the arrow glyph (a TEXT glyph, never an icon) is muted and aria-hidden by the component. */
+@utility change-arrow {
+  color: var(--color-text-muted);
+}
+/* A cancelled event's title stays readable and struck through (survives forced colours: text-decoration is kept). */
+@utility event-cancelled {
+  text-decoration: line-through;
+}
+
+/* Amber explanatory rows (blocked undo, "Not changed - your approval is needed first.", precondition lines). */
+@utility note-amber {
+  color: var(--color-warn);
+}
+/* Risk disclosure box (Antigravity, UX2 7.4): warn-soft surface, never dismissible. */
+@utility disclosure-warn {
+  background: var(--color-warn-soft);
+  color: var(--color-text);
+  border: 1px solid var(--color-warn);
+  border-radius: var(--radius-sm);
+  padding-inline: 12px;
+  padding-block: 8px;
+}
+
+/* Vendor command text (Connect card): Segoe UI (the v1 "no monospace" rule stands); the element carries dir="ltr" itself. */
+@utility command-field {
+  font-family: var(--font-ui);
+  unicode-bidi: isolate;
+  text-align: start;
+}
+
+/*
+ * Icons (UX2 1.3 - the closed list grows from 22 to 27: mic, image, undo, auto, terminal). Mask icons painted with
+ * currentColor, so they follow the text colour of their container and survive forced colours. Usage:
+ * <span class="icon icon-mic" aria-hidden="true"></span>. Only `undo` mirrors in RTL (it points "back").
+ */
+@utility icon {
+  display: inline-block;
+  flex-shrink: 0;
+  inline-size: 16px;
+  block-size: 16px;
+  background-color: currentColor;
+  -webkit-mask: var(--wca-icon) center / contain no-repeat;
+  mask: var(--wca-icon) center / contain no-repeat;
+}
+@utility icon-mic {
+  --wca-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='black' stroke-width='1.5' stroke-linecap='round'%3E%3Crect x='5.5' y='1.75' width='5' height='8' rx='2.5'/%3E%3Cpath d='M3.25 7.5a4.75 4.75 0 0 0 9.5 0M8 12.25v2'/%3E%3C/svg%3E");
+}
+@utility icon-image {
+  --wca-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='black' stroke-width='1.5' stroke-linejoin='round'%3E%3Crect x='1.75' y='2.75' width='12.5' height='10.5' rx='1.5'/%3E%3Ccircle cx='5.5' cy='6.25' r='1.25'/%3E%3Cpath d='m2 12 3.75-3.75 2.5 2.5 2-2 3.75 3.75'/%3E%3C/svg%3E");
+}
+@utility icon-undo {
+  --wca-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='black' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4.75 3.25 2 6l2.75 2.75'/%3E%3Cpath d='M2.25 6h7.5a4.25 4.25 0 0 1 0 8.5H7'/%3E%3C/svg%3E");
+
+  &:dir(rtl) {
+    transform: scaleX(-1);
+  }
+}
+@utility icon-auto {
+  --wca-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='black' stroke-width='1.5' stroke-linecap='round'%3E%3Crect x='1.75' y='2.75' width='12.5' height='11.5' rx='2'/%3E%3Cpath d='M1.75 6.25h12.5M6.25 11.5a1.75 1.75 0 0 1 3.5 0M4.5 11.5a3.5 3.5 0 0 1 7 0'/%3E%3C/svg%3E");
+}
+@utility icon-terminal {
+  --wca-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='black' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='1.75' y='2.75' width='12.5' height='10.5' rx='1.5'/%3E%3Cpath d='m4.5 6.25 2 1.75-2 1.75M8 10h3.5'/%3E%3C/svg%3E");
+}
+/* v1 glyph reused by the v2 risk disclosure and the not-installed state line. */
+@utility icon-alert {
+  --wca-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='black' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M8 2.25 14.25 13.5H1.75z'/%3E%3Cpath d='M8 6.5v3M8 11.5v.25'/%3E%3C/svg%3E");
+}
+
+/* Motion (UX2 1.4): an AutoStrip row that lands while the window is visible gets the SAME 1.6 s accent inline-start
+ * edge as an arriving card - use `card-arrival` (above) on the row; the strip itself never animates open. */
+
 /*
  * Windows contrast themes (UX 13.6): soft fills drop to Canvas, every voice keeps a distinguishable BORDER STYLE
  * (bubble = solid, draft = dashed, chrome = none), and the primary button uses the system Highlight pair.
@@ -345,5 +461,19 @@ body {
   .btn-outline,
   .field {
     border: 1px solid CanvasText;
+  }
+  /* [V2] UX2 11.10: the dashed shadow chip, the dotted media rule and the struck cancelled title survive. */
+  .chip-shadow {
+    border-style: dashed;
+  }
+  .media-rule {
+    border-block-start: 1px dotted CanvasText;
+  }
+  .disclosure-warn {
+    border: 1px solid CanvasText;
+  }
+  .icon {
+    forced-color-adjust: none;
+    background-color: CanvasText;
   }
 }

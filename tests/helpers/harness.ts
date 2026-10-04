@@ -2,8 +2,8 @@
 // Builds an AppRuntime with every fake wired in: fake bridge (in-process, attach mode), fake bridge DB, fake MCP calendar
 // over InMemoryTransport, StubLlm / ObedientAttackerLlm, virtual clock, seeded random, temp userData under os.tmpdir(),
 // electron mock facade. Because it is the real compose.ts, capability wiring is exercised exactly as shipped.
-import { existsSync, mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { cpus, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { dirname } from 'node:path';
@@ -34,11 +34,55 @@ import { createFakeMcpCalendar } from '../fakes/fake-mcp-calendar.ts';
 import type { StubRule } from '../fakes/stub-llm.ts';
 import { StubLlm } from '../fakes/stub-llm.ts';
 import { ObedientAttackerLlm, type InjectionCase } from '../fakes/obedient-attacker-llm.ts';
-import { safeStorage as mockSafeStorage } from '../mocks/electron.ts';
+import type { FakeClaudeState } from '../fakes/fake-claude-cli.types.ts';
+import type { FakeAgyState } from '../fakes/fake-agy.types.ts';
+import { registerListener, registerUserDataDir } from '../setup-guards.ts';
+import { mediaLocalFileName } from '../../src/main/llm/local/manifest.ts';
+import { setToolServerListenerRegistry, type ToolServerListenerRecord } from '../../src/main/mcp/toolServer.ts';
+import {
+  safeStorage as mockSafeStorage,
+  dialog as mockDialog,
+  Notification as MockNotification,
+  nativeImage as mockNativeImage,
+} from '../mocks/electron.ts';
+import { FAKE_CLAUDE_DEFAULT_STATE, readFakeClaudeJournal } from '../fakes/fake-claude-cli.types.ts';
+import { FAKE_AGY_DEFAULT_STATE, readFakeAgyJournal } from '../fakes/fake-agy.types.ts';
+import { assertNoFakeViolations, readRegisteredJournals, registerFakeJournal } from './cli-fakes-hook.ts';
+import { seedWaWorld } from './waWorld.ts';
+import type { ImageFacade, ImageHandle } from '../../src/main/deps.ts';
+import { ANTIGRAVITY_TERMS_READ_ON, CONSENT_KIND_FOR } from '../../src/shared/types.ts';
+
+/** [V2] T2 6 harness options (types frozen in Wave 0; the bodies of the new options land with their owners and THROW until then). */
+export interface HarnessCliOptions {
+  claude?: Partial<FakeClaudeState> & { script?: StubRule[] };
+  agy?: Partial<FakeAgyState> & { script?: StubRule[] };
+}
+export interface HarnessWhisperOptions {
+  mode?: string;
+  transcripts?: Record<string, { language: string; text: string }>;
+}
+export type HarnessMediaEntry = { chatJid: string; msgId: string } & (
+  | { bytes: Uint8Array }
+  | { scenario: 'missing' | 'http_500_once' | 'http_500' | 'partial' | 'slow' | 'oversize' | 'wrong_bytes' }
+);
+/** [V2] one recorded native dialog (autoDialog / agy workspace trust), as __wcaTest.dialogs() reports it (T2 4.2). */
+export interface HarnessDialogRecord {
+  kind: string;
+  type: string;
+  title: string;
+  message: string;
+  detail: string;
+  buttons: string[];
+  defaultId: number;
+  cancelId: number;
+  checkboxLabel: string | null;
+  parentFocused: boolean;
+}
 
 export interface HarnessOptions {
   llm?: 'stub' | 'attacker';
-  provider?: 'local' | 'claude' | 'gemini';
+  /** [V2] widened to every ProviderId; 'claude_cli' / 'antigravity_cli' run the spawned CLI fakes (`cli`; default fake state). */
+  provider?: ProviderId;
   /** Pre-seeded profile: consents, settings, onboarding step, paired_at. Default: everything accepted, onboarding 'done', paired now. */
   profile?: Partial<{ whatsappTos: boolean; cloudConsent: boolean; onboardingDone: boolean; paired: boolean }>;
   calendar?: 'connected' | 'not_configured';
@@ -71,6 +115,16 @@ export interface HarnessOptions {
    * the sole way to observe a quit that lands WHILE `start()` is still in flight (process-lifecycle-7).
    */
   autoStart?: boolean;
+  // ---- [V2] T2 6 ------------------------------------------------------------------------------------------------
+  /** Spawns the real CLI fakes (system node.exe + tests/fakes/fake-*.mjs, the WCA_CLI_CMD seam shape) with a fake home under the temp dir. */
+  cli?: HarnessCliOptions;
+  /** Fake whisper via S-JOB (V2-W1-07). */
+  whisper?: HarnessWhisperOptions;
+  /** Seeds the standard WhatsApp read world (tests/helpers/waWorld.ts, V2-W1-05). */
+  waWorld?: boolean;
+  /** `/api/media` answers of the fake bridge (V2-W1-07). */
+  media?: HarnessMediaEntry[];
+  // NOTE: no `autoPolicy` option by design - a policy is reached only through auto:requestEnable + the scripted dialog.
 }
 
 export interface Harness {
@@ -110,6 +164,17 @@ export interface Harness {
   notifications: Array<{ title: string; body: string }>;
   /** Every `showSaveDialog` the app opened, in order (scripted by `HarnessOptions.saveDialog`). */
   saveDialogCalls: Array<{ title: string; defaultFileName: string }>;
+  // ---- [V2] T2 6 handles ---------------------------------------------------------------------------------------------
+  /** Parsed journal lines of every fake CLI invocation of this harness (fake-claude-cli / fake-agy). */
+  cliJournal(): unknown[];
+  /** Parsed journal lines of every fake whisper invocation. */
+  whisperJournal(): unknown[];
+  /** Every native dialog the app built (autoDialog, agy workspace trust), in order. */
+  readonly dialogs: HarnessDialogRecord[];
+  /** Tool-server listeners opened by this harness (T7 registry view). */
+  readonly toolServers: Array<{ name: string; listening: boolean }>;
+  /** Live job pids per kind (JobRunner.jobPids()). */
+  jobs(): Record<'cli' | 'voice', number[]>;
 }
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -166,7 +231,8 @@ const DEFAULT_RULES: StubRule[] = [
   { when: { purpose: 'draft' }, respond: { text: 'Sounds good.', stopReason: 'end' } },
 ];
 
-/** A spawn that refuses: no L3 test may ever start a child process (TESTS T1). */
+/** A spawn that refuses: no L3 test may start a supervised child (TESTS T1). [V2] The only processes an L3 test starts are the
+ *  spawned .mjs fakes (vendor CLIs / whisper, T2 6), run by the JobRunner under the system node.exe - never a vendor binary (T8). */
 const refusingSpawn: SpawnFn = ((command: string) => {
   throw new Error(`harness: nothing may be spawned in an L3 test (tried: ${command})`);
 }) as SpawnFn;
@@ -178,6 +244,18 @@ const noProcesses: ProcessQuery = {
 
 function flush(): Promise<void> {
   return new Promise<void>((done) => setImmediate(done));
+}
+/** [V2] Real-time yield for a spawned fake child (vendor CLI / whisper); the only real wait in the harness, bounded below. */
+function realWait(ms: number): Promise<void> {
+  return new Promise<void>((done) => setTimeout(done, ms));
+}
+/** Upper bound of real waits per settle()/invoke (~15 s at 10 ms): a hung fake fails the test, it never hangs the run. */
+const SETTLE_REAL_WAITS = 1_500;
+/** Drops the fake-only `script` member from a fake CLI state option. */
+function withoutScript<T extends { script?: unknown }>(o: T | undefined): Omit<T, 'script'> | Record<string, never> {
+  if (o === undefined) return {};
+  const { script: _script, ...rest } = o;
+  return rest;
 }
 
 export async function createHarness(opts: HarnessOptions = {}): Promise<Harness> {
@@ -193,6 +271,7 @@ export async function createHarness(opts: HarnessOptions = {}): Promise<Harness>
   const calendarMode = opts.calendar ?? 'connected';
 
   const userData = opts.userData ?? mkdtempSync(join(tmpdir(), 'wca-l3-'));
+  const unregisterUserData = registerUserDataDir(userData); // [V2] T7 (b)-(d) leak scan
   const resourcesDir = join(userData, 'resources');
   mkdirSync(resourcesDir, { recursive: true });
   const paths = createPaths({ userData, resourcesPath: resourcesDir, appRoot: REPO_ROOT, isPackaged: false });
@@ -207,6 +286,87 @@ export async function createHarness(opts: HarnessOptions = {}): Promise<Harness>
   ]) {
     mkdirSync(dir, { recursive: true });
   }
+
+  // ---- [V2] fake home, CLI fakes, whisper fake (T2 6; T9: never the real profile, T8: only node.exe + tests/fakes/*.mjs) ----
+  const fakesRoot = join(userData, 'wca-fakes'); // outside every dir the app wipes; removed with userData
+  const fakeHome = join(fakesRoot, 'home');
+  mkdirSync(join(fakeHome, 'AppData', 'Local'), { recursive: true });
+  mkdirSync(join(fakeHome, 'AppData', 'Roaming'), { recursive: true });
+  mkdirSync(join(fakesRoot, 'temp'), { recursive: true });
+  const fakeEnv: Record<string, string | undefined> = {
+    SystemRoot: process.env.SystemRoot ?? 'C:\\Windows',
+    USERPROFILE: fakeHome,
+    HOMEDRIVE: fakeHome.slice(0, 2),
+    HOMEPATH: fakeHome.slice(2),
+    APPDATA: join(fakeHome, 'AppData', 'Roaming'),
+    LOCALAPPDATA: join(fakeHome, 'AppData', 'Local'),
+    TEMP: join(fakesRoot, 'temp'),
+    TMP: join(fakesRoot, 'temp'),
+  };
+  const useClaude = opts.cli?.claude !== undefined || providerId === 'claude_cli';
+  const useAgy = opts.cli?.agy !== undefined || providerId === 'antigravity_cli';
+  const cliJournalFiles: Array<{ kind: 'claude' | 'agy'; file: string }> = [];
+  const fakeCommand = (
+    kind: 'claude' | 'agy',
+    state: Record<string, unknown>,
+    script: StubRule[] | undefined,
+  ): { command: string; args: string[] } => {
+    const journal = join(fakesRoot, `${kind}-journal.jsonl`);
+    const stateFile = join(fakesRoot, `${kind}-state.json`);
+    const scriptFile = join(fakesRoot, `${kind}-script.json`);
+    writeFileSync(stateFile, JSON.stringify(state));
+    writeFileSync(scriptFile, JSON.stringify({ rules: script ?? opts.rules ?? DEFAULT_RULES }));
+    cliJournalFiles.push({ kind, file: journal });
+    registerFakeJournal(kind, journal); // the cli-fakes-hook afterEach clears the registry
+    const fake = join(REPO_ROOT, 'tests', 'fakes', kind === 'claude' ? 'fake-claude-cli.mjs' : 'fake-agy.mjs');
+    return {
+      command: process.execPath,
+      args: [fake, '--fake-journal', journal, '--fake-state', stateFile, '--fake-script', scriptFile, '--fake-end'],
+    };
+  };
+  const cliCmd = {
+    claude_cli: useClaude
+      ? fakeCommand(
+          'claude',
+          { ...FAKE_CLAUDE_DEFAULT_STATE, ...withoutScript(opts.cli?.claude) },
+          opts.cli?.claude?.script,
+        )
+      : null,
+    antigravity_cli: useAgy
+      ? fakeCommand('agy', { ...FAKE_AGY_DEFAULT_STATE, ...withoutScript(opts.cli?.agy) }, opts.cli?.agy?.script)
+      : null,
+  };
+  let whisperJournalFile: string | null = null;
+  const whisperCmd = ((): { command: string; args: string[] } | undefined => {
+    if (opts.whisper === undefined) return undefined;
+    const journal = join(fakesRoot, 'whisper-journal.ndjson');
+    whisperJournalFile = journal;
+    const transcripts = join(fakesRoot, 'whisper-transcripts.json');
+    writeFileSync(transcripts, JSON.stringify({ byDuration: opts.whisper.transcripts ?? {} }));
+    registerFakeJournal('whisper', journal);
+    return {
+      command: process.execPath,
+      args: [
+        join(REPO_ROOT, 'tests', 'fakes', 'whisper-cli.mjs'),
+        '--fake-journal',
+        journal,
+        '--fake-mode',
+        opts.whisper.mode ?? 'ok',
+        '--fake-transcripts',
+        transcripts,
+        '--fake-cores',
+        String(cpus().length),
+        '--fake-end',
+      ],
+    };
+  })();
+
+  // [V2] T7 (a): every loopback tool server this harness's app opens is in the leak registry AND the harness's own view
+  const toolServers: ToolServerListenerRecord[] = [];
+  setToolServerListenerRegistry((l) => {
+    toolServers.push(l);
+    return registerListener(l);
+  });
 
   const clock = createVirtualClock(nowMs);
   const random = createSeededRandom();
@@ -237,9 +397,43 @@ export async function createHarness(opts: HarnessOptions = {}): Promise<Harness>
       s.llm.provider = providerId;
       opts.settings?.(s);
     });
-    if (providerId !== 'local') {
+    if (providerId === 'claude' || providerId === 'gemini') {
       const name = SECRET_FOR[providerId];
       repos.secrets.put(name, mockSafeStorage.encryptString(TEST_KEY[providerId]));
+    }
+    // [V2] the CLI providers need their consent at the current version (B12), like the cloud ones
+    if (profile.cloudConsent && (providerId === 'claude_cli' || providerId === 'antigravity_cli')) {
+      const kind = CONSENT_KIND_FOR[providerId];
+      repos.consents.accept(
+        kind,
+        CONSENT_VERSIONS[kind],
+        at,
+        kind === 'cloud_antigravity_cli' ? ANTIGRAVITY_TERMS_READ_ON : undefined,
+      );
+    }
+    // [V2] B7: a connected calendar profile has listed its calendars once - the target calendar is owned
+    if (calendarMode === 'connected') repos.meta.set('calendar_roles_json', JSON.stringify({ primary: 'owner' }));
+    // [V2] whisper option: the default voice tier + VAD are downloaded and verified (GGML magic, as the fake checks it)
+    if (opts.whisper !== undefined) {
+      for (const [id, kind] of [
+        ['voice-hebrew', 'asr'],
+        ['voice-vad', 'vad'],
+      ] as const) {
+        const file = join(paths.modelsDir, mediaLocalFileName(id)); // the ModelManager's own file name for this id
+        writeFileSync(file, Buffer.from([0x6c, 0x6d, 0x67, 0x67, 0]));
+        repos.models.upsert({
+          id,
+          kind,
+          path: file,
+          size: 5,
+          sha256: '0'.repeat(64) as never,
+          mtime: 0,
+          status: 'ready',
+          bytesDone: 5,
+          verifiedAt: at,
+          bench: null,
+        });
+      }
     }
     db.close();
   }
@@ -292,6 +486,33 @@ export async function createHarness(opts: HarnessOptions = {}): Promise<Harness>
     preferredLanguages: () => ['en-US'],
   };
 
+  // [V2] S-IMAGE over the electron mock's deterministic nativeImage; S-DIALOG over the mock's scripted showMessageBox
+  const handleOf = (img: ReturnType<typeof mockNativeImage.createFromBuffer>): ImageHandle => ({
+    isEmpty: () => img.isEmpty(),
+    getSize: () => img.getSize(),
+    resize: (o) => handleOf(img.resize(o)),
+    toJPEG: (q) => new Uint8Array(img.toJPEG(q)),
+  });
+  const imageFacade: ImageFacade = {
+    fromBuffer: (bytes) => handleOf(mockNativeImage.createFromBuffer(Buffer.from(bytes))),
+  };
+  /** Toasts WITH action buttons go through the mock Notification (T2 3.10: `Notification.__emitAction`) and are recorded too. */
+  const notifyWithActions = (
+    toast: { title: string; body: string; actions: string[] },
+    onAction: (index: number) => void,
+    onClick: () => void,
+  ): void => {
+    notifications.push({ title: toast.title, body: toast.body });
+    const n = new MockNotification({
+      title: toast.title,
+      body: toast.body,
+      actions: toast.actions.map((text) => ({ type: 'button' as const, text })),
+    });
+    n.on('action', (_e: unknown, index: number) => onAction(index));
+    n.on('click', () => onClick());
+    n.show();
+  };
+
   // The seams object is MUTATED after compose(): the fake bridge cannot start until the doorbell is listening.
   const seams = {
     userDataDir: userData,
@@ -306,6 +527,10 @@ export async function createHarness(opts: HarnessOptions = {}): Promise<Harness>
     timers: undefined,
     now: nowMs,
     focusCheck: undefined,
+    // [V2] the CLI / whisper fakes in the exact validated seam shape (node.exe + tests/fakes/<fake>.mjs ... --fake-end)
+    cliCmd: useClaude || useAgy ? cliCmd : undefined,
+    whisperCmd,
+    dialogScript: undefined, // L3 scripts the mock's showMessageBox instead (dialog.__script)
   };
 
   const app = await compose({
@@ -324,7 +549,19 @@ export async function createHarness(opts: HarnessOptions = {}): Promise<Harness>
     version: '0.0.0-l3',
     execPath: process.execPath,
     preferredLanguages: () => ['en-US'],
+    // ---- [V2] T2 4.3 seams ----
+    image: imageFacade,
+    dialog: (win, o) => mockDialog.showMessageBox(win, o),
+    notifyWithActions,
+    home: () => fakeHome,
+    cliEnv: fakeEnv,
+    locate: { statFile: () => null, env: fakeEnv, runWhere: async () => [] }, // never the real disk / PATH (T8, T9)
   });
+
+  const jobsLive = (): boolean => {
+    const j = app.jobPids();
+    return j.cli.length > 0 || j.voice.length > 0;
+  };
 
   // ---- the fake bridge, now that the doorbell is listening ----------------------------------------------------------
   const webhookUrl = app.doorbellUrl();
@@ -335,10 +572,27 @@ export async function createHarness(opts: HarnessOptions = {}): Promise<Harness>
     pairing: opts.pairing ?? 'connected',
   });
   seams.fakeBridge.url = bridge.url;
+  // [V2] /api/media answers and the standard WhatsApp read world
+  for (const m of opts.media ?? []) {
+    bridge.setMedia(m.chatJid, m.msgId, 'bytes' in m ? m.bytes : { scenario: m.scenario });
+  }
+  if (opts.waWorld === true) seedWaWorld(bridge.db, app.repos, { nowMs: clock.now() });
 
   // ---- push events --------------------------------------------------------------------------------------------------
   const pushes: Array<{ event: string; payload: unknown }> = [];
-  for (const event of ['health', 'dashboard', 'pairing', 'google', 'model', 'language', 'navigate'] as const) {
+  for (const event of [
+    'health',
+    'dashboard',
+    'pairing',
+    'google',
+    'model',
+    'language',
+    'navigate',
+    'auto:changed',
+    'cli:changed',
+    'queue:changed',
+    'voice:progress',
+  ] as const) {
     app.on(event, (payload) => pushes.push({ event, payload }));
   }
 
@@ -389,6 +643,12 @@ export async function createHarness(opts: HarnessOptions = {}): Promise<Harness>
     calendar,
     db: app.repos.db,
     ...(provider instanceof StubLlm ? { unmatchedLlm: () => provider.unmatched } : {}),
+    // [V2] T2 8.1 rules 10-12 sources
+    mediaRequests: () => bridge.mediaRequests,
+    fakeJournals: () => readRegisteredJournals(),
+    userDataDir: userData,
+    sweepExcludeDirs: ['wca-fakes'],
+    toasts: () => notifications,
     logText: () => logs.join('\n'),
   });
 
@@ -403,13 +663,21 @@ export async function createHarness(opts: HarnessOptions = {}): Promise<Harness>
    * backup), so a "run every pending timer" loop can never terminate. Bounded by rounds, never by a real sleep (T7).
    */
   const settle = async (): Promise<void> => {
+    let realWaits = 0;
     for (let round = 0; round < 30; round++) {
       app.poke();
       await advance(LIMITS.pokeDebounceMs);
       await advance(LIMITS.debounceMs);
       await advance(1_000);
+      // [V2] a spawned fake (vendor CLI / whisper) runs in REAL time: while a job is live or a triage is still running, the virtual
+      // clock only moves in small steps (a media retry or a backoff still elapses) and the loop yields real time to the child.
+      while (realWaits < SETTLE_REAL_WAITS && (jobsLive() || app.health().queue.running > 0)) {
+        realWaits += 1;
+        await realWait(jobsLive() ? 10 : 2);
+        if (!jobsLive()) await advance(250);
+      }
       const h = app.health();
-      if (h.queue.pending === 0 && h.queue.running === 0) return;
+      if (h.queue.pending === 0 && h.queue.running === 0 && !jobsLive()) return;
     }
   };
 
@@ -431,7 +699,14 @@ export async function createHarness(opts: HarnessOptions = {}): Promise<Harness>
       },
     );
     await flush();
+    let realWaits = 0;
     for (let i = 0; i < rounds && !settled; i++) {
+      // [V2] a spawned fake runs in real time: wait for it without moving the virtual clock (its wall-clock timers stay honest)
+      while (!settled && jobsLive() && realWaits < SETTLE_REAL_WAITS) {
+        realWaits += 1;
+        await realWait(10);
+      }
+      if (settled) break;
       await clock.advance(stepMs);
       await flush();
     }
@@ -444,14 +719,25 @@ export async function createHarness(opts: HarnessOptions = {}): Promise<Harness>
     disposed = true;
     attachLedgerSources(null);
     unregister();
+    // [V2] ledger rule 11: the fakes' journals live under the temp userData, which is removed below - read them first (the
+    // cli-fakes-hook afterEach would otherwise find no file and check nothing)
+    let journalProblem: unknown = null;
     try {
       await pumpUntil(app.shutdown());
     } finally {
       await bridge.stop();
       await calendar.stop();
       app.attachWindow(null);
+      try {
+        assertNoFakeViolations(readRegisteredJournals());
+      } catch (err) {
+        journalProblem = err;
+      }
       if (opts.userData === undefined) rmSync(userData, { recursive: true, force: true });
+      unregisterUserData();
+      setToolServerListenerRegistry(null);
     }
+    if (journalProblem !== null) throw journalProblem;
   };
 
   return {
@@ -471,6 +757,37 @@ export async function createHarness(opts: HarnessOptions = {}): Promise<Harness>
     opened,
     notifications,
     saveDialogCalls,
+    // [V2] T2 6 handles
+    cliJournal: () =>
+      cliJournalFiles.flatMap(({ kind, file }): unknown[] => {
+        let text: string;
+        try {
+          text = readFileSync(file, 'utf8');
+        } catch {
+          return [];
+        }
+        return kind === 'claude' ? readFakeClaudeJournal(text) : readFakeAgyJournal(text);
+      }),
+    whisperJournal: () => {
+      if (whisperJournalFile === null) return [];
+      let text: string;
+      try {
+        text = readFileSync(whisperJournalFile, 'utf8');
+      } catch {
+        return [];
+      }
+      return text
+        .split(/\r?\n/)
+        .filter((l) => l.trim() !== '')
+        .map((l) => JSON.parse(l) as unknown);
+    },
+    get dialogs() {
+      return app.dialogs().map((d) => ({ ...d, buttons: [...d.buttons] }));
+    },
+    get toolServers() {
+      return toolServers.map((l) => ({ name: l.name, listening: l.listening }));
+    },
+    jobs: () => app.jobPids(),
     advance,
     setWindowState: (s) => {
       if (s.focused !== undefined) windowState.focused = s.focused;

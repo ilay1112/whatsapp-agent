@@ -200,6 +200,46 @@ exports[`Ready > RTL snapshot 1`] = `
           מחובר
         </span>
       </li>
+      <li
+        class="flex items-center gap-2"
+        data-ready="0"
+        data-testid="ready-voice"
+      >
+        <span
+          class="text-text-muted"
+        >
+          <svg
+            aria-hidden="true"
+            class="shrink-0"
+            fill="none"
+            height="16"
+            stroke="currentColor"
+            stroke-width="1.5"
+            viewBox="0 0 16 16"
+            width="16"
+          >
+            <circle
+              cx="8"
+              cy="8"
+              r="6.25"
+            />
+            <path
+              d="M8 4.6V8l2.2 1.6"
+              stroke-linecap="round"
+            />
+          </svg>
+        </span>
+        <span
+          class="font-semibold"
+        >
+          הודעות קוליות
+        </span>
+        <span
+          class="text-text-muted"
+        >
+          כבוי
+        </span>
+      </li>
     </ul>
     <section
       aria-labelledby="ready-tray"

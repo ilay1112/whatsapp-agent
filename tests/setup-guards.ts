@@ -4,6 +4,13 @@
 //   T2 path guard    - node:fs / node:sqlite refuse any path under the reference bridge's private store
 //   T3 network guard - fetch / http(s).request / net.connect refuse every non-loopback host (NETWORK_FORBIDDEN_IN_TESTS)
 //   T7 leak guard    - afterEach fails on leaked fake timers, un-stopped fakes, un-closed DatabaseSync handles, leftover child PIDs
+//   [V2] T8 vendor-binary guard - no command or argv element (split on whitespace, so `cmd /c claude ...` is caught) may
+//        have the basename claude|agy|whisper-cli|llama-server|where (+ .exe/.cmd/.bat); `cmd`/`cmd.exe` with `/k` refused
+//   [V2] T9 vendor-state guard - fs reads, lists, stats AND writes refuse the real user's vendor-CLI state, with prefixes
+//        resolved from the REAL env at install time (%USERPROFILE%\.claude*, \.gemini\, \.local\bin\, %APPDATA%\npm\,
+//        %LOCALAPPDATA%\agy\, %LOCALAPPDATA%\AnthropicClaude\)
+//   [V2] T7 additions - an open tool-server listener, <userData>\run\job-*.pid.json, a non-empty <userData>\cli-runs\ or
+//        <userData>\agy-workspace\runs\, a <userData>\voice\tmp\*.wav (userData dirs are registered by the harness)
 // Everything is installed once per worker; the registries below are exported for the ledger hook and the fakes.
 import { afterEach, vi } from 'vitest';
 import cp from 'node:child_process';
@@ -57,6 +64,23 @@ const dbs = new Set<sqlite.DatabaseSync>();
 export function openDatabases(): sqlite.DatabaseSync[] {
   return [...dbs].filter((d) => d.isOpen);
 }
+/** [V2] T7 (a): every loopback listener the tool server (or a test) opens registers here; a still-listening one fails. */
+export interface TrackedListener {
+  name: string;
+  readonly listening: boolean;
+  close(): unknown;
+}
+const listeners = new Set<TrackedListener>();
+export function registerListener(l: TrackedListener): () => void {
+  listeners.add(l);
+  return () => listeners.delete(l);
+}
+/** [V2] T7 (b)-(d): per-test userData dirs (the harness registers its temp dir; the scan runs only while it still exists). */
+const userDataDirs = new Set<string>();
+export function registerUserDataDir(dir: string): () => void {
+  userDataDirs.add(dir);
+  return () => userDataDirs.delete(dir);
+}
 
 // ---------------------------------------------------------------------------------------------------------------------
 // forbidden strings / paths
@@ -76,6 +100,20 @@ export class ForbiddenSpawnError extends Error {
     this.name = 'ForbiddenSpawnError';
   }
 }
+/** [V2] T8: a vendor CLI / whisper / llama-server / where.exe or a visible `cmd /k` console was about to be spawned. */
+export class ForbiddenVendorSpawnError extends Error {
+  constructor(what: string) {
+    super(`FORBIDDEN_VENDOR_SPAWN_IN_TESTS (T8): ${what}`);
+    this.name = 'ForbiddenVendorSpawnError';
+  }
+}
+/** [V2] T9: the real user's vendor-CLI state. The message names the RULE prefix, never the resolved home path. */
+export class ForbiddenVendorStateError extends Error {
+  constructor(label: string) {
+    super(`FORBIDDEN_VENDOR_STATE_IN_TESTS (T9): ${label}`);
+    this.name = 'ForbiddenVendorStateError';
+  }
+}
 export class NetworkForbiddenError extends Error {
   constructor(host: string) {
     super(`NETWORK_FORBIDDEN_IN_TESTS: ${host}`);
@@ -89,13 +127,68 @@ function pathString(p: unknown): string {
   if (p instanceof Uint8Array) return Buffer.from(p).toString('utf8');
   return '';
 }
+// [V2] T9 prefixes, resolved ONCE from the real environment when this module loads (a test that later rewrites
+// process.env cannot move them). Compared case-insensitively on normalised backslash paths.
+interface VendorPrefix {
+  label: string;
+  /** lower-case, backslash-normalised; `exact` = the prefix may be followed by anything (`.claude*`), else a dir. */
+  prefix: string;
+  glob: boolean;
+}
+const norm = (s: string): string =>
+  s
+    .replace(/^\\\\\?\\/, '')
+    .replace(/\//g, '\\')
+    .replace(/\\+$/, '')
+    .toLowerCase();
+function vendorPrefixes(env: NodeJS.ProcessEnv): VendorPrefix[] {
+  const out: VendorPrefix[] = [];
+  const add = (base: string | undefined, rel: string, label: string, glob: boolean): void => {
+    if (base === undefined || base === '') return;
+    out.push({ label, prefix: norm(`${base}\\${rel}`), glob });
+  };
+  add(env.USERPROFILE, '.claude', '%USERPROFILE%\\.claude*', true);
+  add(env.USERPROFILE, '.gemini', '%USERPROFILE%\\.gemini\\', false);
+  add(env.USERPROFILE, '.local\\bin', '%USERPROFILE%\\.local\\bin\\', false);
+  add(env.APPDATA, 'npm', '%APPDATA%\\npm\\', false);
+  add(env.LOCALAPPDATA, 'agy', '%LOCALAPPDATA%\\agy\\', false);
+  add(env.LOCALAPPDATA, 'AnthropicClaude', '%LOCALAPPDATA%\\AnthropicClaude\\', false);
+  return out;
+}
+export const VENDOR_STATE_PREFIXES: readonly VendorPrefix[] = Object.freeze(vendorPrefixes(process.env));
+/** The label of the T9 rule a path falls under, or null. Exported for the self-test. */
+export function vendorStateRuleOf(p: string): string | null {
+  if (!/^[a-z]:[\\/]|^\\\\/i.test(p)) return null; // relative / URL-ish paths never resolve into a profile here
+  const s = norm(p);
+  for (const v of VENDOR_STATE_PREFIXES) {
+    if (v.glob ? s.startsWith(v.prefix) : s === v.prefix || s.startsWith(`${v.prefix}\\`)) return v.label;
+  }
+  return null;
+}
 export function assertAllowedPath(p: unknown): void {
   const s = pathString(p);
   if (s && FORBIDDEN_STORE_RE.test(s)) throw new ForbiddenPathError(s);
+  const rule = s ? vendorStateRuleOf(s) : null;
+  if (rule !== null) throw new ForbiddenVendorStateError(rule);
 }
+/** [V2] T8 basename rule (T2 0) - over the command AND every argv element. */
+export const VENDOR_BINARY_RE = /^(claude|agy|whisper-cli|llama-server|where)(\.exe|\.cmd|\.bat)?$/i;
+const baseNameOf = (s: string): string =>
+  s
+    .replace(/^["']+|["']+$/g, '')
+    .split(/[\\/]/)
+    .pop() ?? '';
 export function assertAllowedSpawn(command: unknown, args: unknown): void {
   const parts = [String(command), ...(Array.isArray(args) ? args.map(String) : [])];
   if (parts.some((a) => FORBIDDEN_SPAWN_RE.test(a))) throw new ForbiddenSpawnError();
+  const tokens = parts.flatMap((a) => a.split(/\s+/)).filter((a) => a !== '');
+  const hit = tokens.find((a) => VENDOR_BINARY_RE.test(baseNameOf(a)));
+  if (hit !== undefined) throw new ForbiddenVendorSpawnError(baseNameOf(hit));
+  // `cmd /k` (the visible sign-in console) - in the argv or inside a command string.
+  for (let i = 0; i < tokens.length; i += 1) {
+    if (/^cmd(\.exe)?$/i.test(baseNameOf(tokens[i]!)) && tokens.slice(i + 1).some((a) => /^\/k$/i.test(a)))
+      throw new ForbiddenVendorSpawnError('cmd /k');
+  }
 }
 export function isLoopbackHost(host: string | undefined | null): boolean {
   if (!host) return true; // node defaults to localhost
@@ -164,6 +257,8 @@ if (!g.__wcaGuardsInstalled) {
   const guardFirstArg = <F extends (...a: never[]) => unknown>(fn: F): F =>
     ((...a: unknown[]) => {
       assertAllowedPath(a[0]);
+      // [V2] T9: the second path of rename/copyFile/cp (an options object or an encoding string is harmless here)
+      if (typeof a[1] === 'string' || a[1] instanceof URL) assertAllowedPath(a[1]);
       return (fn as unknown as (...x: unknown[]) => unknown)(...a);
     }) as unknown as F;
   for (const name of [
@@ -178,6 +273,25 @@ if (!g.__wcaGuardsInstalled) {
     'createReadStream',
   ] as const) {
     (fs as unknown as Record<string, unknown>)[name] = guardFirstArg(fs[name] as (...a: never[]) => unknown);
+  }
+  // [V2] T9: writes too
+  for (const name of [
+    'writeFileSync',
+    'appendFileSync',
+    'mkdirSync',
+    'rmSync',
+    'rmdirSync',
+    'unlinkSync',
+    'renameSync',
+    'copyFileSync',
+    'cpSync',
+    'createWriteStream',
+  ] as const) {
+    (fs as unknown as Record<string, unknown>)[name] = guardFirstArg(fs[name] as (...a: never[]) => unknown);
+  }
+  for (const name of ['writeFile', 'appendFile', 'mkdir', 'rm', 'unlink', 'rename', 'copyFile', 'cp'] as const) {
+    (fs as unknown as Record<string, unknown>)[name] = guardFirstArg(fs[name] as (...a: never[]) => unknown);
+    (fsp as unknown as Record<string, unknown>)[name] = guardFirstArg(fsp[name] as (...a: never[]) => unknown);
   }
   for (const name of ['open', 'readdir', 'stat', 'lstat', 'readFile', 'access', 'opendir'] as const) {
     (fs as unknown as Record<string, unknown>)[name] = guardFirstArg(fs[name] as (...a: never[]) => unknown);
@@ -291,5 +405,44 @@ afterEach(async () => {
     children.delete(child);
   }
 
+  problems.push(...v2LeakProblems());
+
   if (problems.length) throw new Error(`T7 leak guard: ${problems.join('; ')}`);
 });
+
+/** [V2] T7 (a)-(d). Pure report (the afterEach above turns it into a failure); exported for the self-test. Closes a
+ *  leaked listener so the next test starts clean; never deletes files (the evidence stays for the failure). */
+export function v2LeakProblems(): string[] {
+  const problems: string[] = [];
+  for (const l of [...listeners]) {
+    if (l.listening) {
+      problems.push(`listener "${l.name}" was still open`);
+      try {
+        l.close();
+      } catch {
+        /* best effort */
+      }
+    }
+    listeners.delete(l);
+  }
+  const list = (dir: string): string[] => {
+    try {
+      return fs.readdirSync(dir);
+    } catch {
+      return [];
+    }
+  };
+  for (const dir of [...userDataDirs]) {
+    if (!fs.existsSync(dir)) {
+      userDataDirs.delete(dir);
+      continue;
+    }
+    const pids = list(`${dir}/run`).filter((f) => /^job-.*\.pid\.json$/i.test(f));
+    if (pids.length) problems.push(`${pids.length} job pid file(s) left in <userData>\\run`);
+    if (list(`${dir}/cli-runs`).length) problems.push('<userData>\\cli-runs is not empty');
+    if (list(`${dir}/agy-workspace/runs`).length) problems.push('<userData>\\agy-workspace\\runs is not empty');
+    const wavs = list(`${dir}/voice/tmp`).filter((f) => /\.wav$/i.test(f));
+    if (wavs.length) problems.push(`${wavs.length} .wav file(s) left in <userData>\\voice\\tmp`);
+  }
+  return problems;
+}

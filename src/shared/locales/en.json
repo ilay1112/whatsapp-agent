@@ -33,7 +33,27 @@
     "local": {
       "name": "On this computer",
       "privacy": "Your messages never leave this computer."
-    }
+    },
+    "provider": {
+      "local": "On this computer",
+      "claude_cli": "Claude - your subscription",
+      "claude_cliDesc": "Uses the Claude plan you already pay for, through the Claude Code you installed. No API key.",
+      "antigravity_cli": "Gemini - your subscription",
+      "antigravity_cliDesc": "Uses your Google AI plan through the Antigravity CLI you installed.",
+      "claude": "Claude with an API key",
+      "gemini": "Gemini with an API key"
+    },
+    "experimental": "Experimental",
+    "showExperimental": "Show experimental",
+    "advanced": "Advanced: use an API key",
+    "advancedDesc": "Use this if you do not have a subscription or the subscription route stops working.",
+    "cli": {
+      "privacy": "The analysed chat is sent to {{vendor}} through your own sign-in - without names or phone numbers."
+    },
+    "use": "Use {{provider}}",
+    "useChecking": "Checking {{vendor}}...",
+    "stillUsing": "Still using: {{provider}}",
+    "finishSteps": "Finish the steps above first"
   },
   "app": {
     "announce": {
@@ -52,7 +72,8 @@
     "settings": "Settings",
     "tryAgain": "Try again",
     "version": "Version {{version}}",
-    "wordmark": "WA Calendar Agent"
+    "wordmark": "WA Calendar Agent",
+    "cancel": "Cancel"
   },
   "calendar": {
     "eventDescription": "Added from WhatsApp by the WhatsApp Calendar Agent after you approved it.",
@@ -101,22 +122,34 @@
     "waOffline": "WhatsApp is offline - sending is paused. You can still copy the reply.",
     "writeMyOwn": "Write my own",
     "writeReplyFirst": "Write a reply first.",
-    "you": "You:"
+    "you": "You:",
+    "autoNeverState": "Automatic for this contact: never",
+    "changeProposedA11y": "change proposed",
+    "autoBlock": {
+      "addedOn": "Added automatically on <bdi>{{when}}</bdi>",
+      "seeAll": "See all automatic activity"
+    }
   },
   "consent": {
     "cancel": "Not now",
     "cloud_claude": {
-      "v1": {
-        "accept": "Send to Claude",
-        "body": "The chat being analysed is sent to Anthropic (Claude) - without names or phone numbers. Anthropic processes it under its terms. You can switch back to the AI on this computer at any time.",
-        "title": "Send chats to Claude"
+      "v2": {
+        "title": "Send chats to Claude",
+        "body": "To analyse a chat, its text is sent to Anthropic - now also voice-note transcripts and pictures.",
+        "sent": "The text of the chat being analysed; transcripts of its voice notes; pictures in it when \"Read pictures with Anthropic\" is on; older messages of this chat, or of all chats if you chose that.",
+        "never": "Names, phone numbers, your other chats (unless you chose \"all my chats\"), your calendar event titles.",
+        "who": "Anthropic processes it under its API terms.",
+        "accept": "Send to Anthropic"
       }
     },
     "cloud_gemini": {
-      "v1": {
-        "accept": "Send to Gemini",
-        "body": "The chat being analysed is sent to Google (Gemini) - without names or phone numbers. Google processes it under its terms. You can switch back to the AI on this computer at any time.",
-        "title": "Send chats to Gemini"
+      "v2": {
+        "title": "Send chats to Gemini",
+        "body": "To analyse a chat, its text is sent to Google - now also voice-note transcripts and pictures.",
+        "sent": "The text of the chat being analysed; transcripts of its voice notes; pictures in it when \"Read pictures with Google\" is on; older messages of this chat, or of all chats if you chose that.",
+        "never": "Names, phone numbers, your other chats (unless you chose \"all my chats\"), your calendar event titles.",
+        "who": "Google processes it under the Gemini API terms.",
+        "accept": "Send to Google"
       }
     },
     "detail": {
@@ -129,7 +162,8 @@
         "cloud_claude": "Anthropic, under its own terms. You can switch back to the AI on this computer at any time.",
         "cloud_gemini": "Google, under its own terms. You can switch back to the AI on this computer at any time."
       },
-      "whoTitle": "Who processes it"
+      "whoTitle": "Who processes it",
+      "goodToKnowTitle": "Good to know"
     },
     "whatsapp_tos": {
       "v1": {
@@ -137,7 +171,30 @@
         "body": "This app links to your WhatsApp as a companion device using an unofficial component. WhatsApp may not permit this; use it at your own risk. Nothing is sent without your approval.",
         "title": "WhatsApp terms"
       }
-    }
+    },
+    "cloud_claude_cli": {
+      "v1": {
+        "title": "Use your Claude subscription?",
+        "body": "The app runs the Claude Code you installed, under your own sign-in, to analyse chats.",
+        "sent": "The text of the chat being analysed; transcripts of its voice notes; pictures in it when \"Read pictures with Anthropic\" is on; older messages of this chat, or of all chats if you chose that.",
+        "never": "Names, phone numbers, your other chats (unless you chose \"all my chats\"), your calendar event titles.",
+        "who": "Anthropic processes the text under its consumer terms.",
+        "goodToKnow": "Runs the Claude Code you installed, under your own sign-in; Anthropic processes the text under its consumer terms. Anthropic changed its subscription rules several times in 2026 - if it changes again, the app shows a sign-in error and chats wait. Runs count against your 5-hour and weekly usage. Paid extra usage is off unless you turn it on.",
+        "accept": "Use my Claude subscription"
+      }
+    },
+    "cloud_antigravity_cli": {
+      "v1": {
+        "title": "Use your Gemini subscription (experimental)?",
+        "body": "The app runs the unmodified Antigravity CLI you installed, under your own sign-in, to analyse chats.",
+        "sent": "The text of the chat being analysed; transcripts of its voice notes; the last {{days}} days of this chat; never pictures.",
+        "never": "Names, phone numbers, your other chats (unless you chose \"all my chats\"), your calendar event titles.",
+        "who": "Google processes it under the Antigravity terms.",
+        "goodToKnow": "Google's terms for Antigravity forbid using it with \"third-party software, tools, or services\", and Google has suspended accounts for it; Google staff have also said that running the official CLI on your own computer is fine. The app runs the unmodified Antigravity CLI with your own sign-in and nothing else - the risk to your account is yours. Antigravity keeps a copy of every request on this computer. Google's supported way is Gemini with an API key (under Advanced). Terms read on <bdi>2026-09-28</bdi>.",
+        "accept": "I accept the risk - use Gemini"
+      }
+    },
+    "termsReadOn": "Terms read on <bdi>{{date}}</bdi>."
   },
   "dialog": {
     "dbRecovery": {
@@ -168,7 +225,18 @@
     "title": "AI model download",
     "valueText": "{{percent}} percent, about {{minutes}} minutes left",
     "valueTextShort": "{{percent}} percent",
-    "verifying": "Checking file..."
+    "verifying": "Checking file...",
+    "kind": {
+      "voice-hebrew": "Voice model (Hebrew)",
+      "voice-multilingual": "Voice model (all languages)",
+      "voice-lite": "Voice model (lite)",
+      "mmproj": "Picture reading"
+    },
+    "queued": "Queued - starts after the AI model",
+    "more": "+{{count}}",
+    "finishedVoice": "Voice model ready - voice notes will be transcribed.",
+    "finishedImages": "Picture reading ready.",
+    "downloadingShort": "{{percent}} %"
   },
   "errors": {
     "ABORTED": {
@@ -254,7 +322,8 @@
     "CLOUD_QUOTA": {
       "action": "Open AI settings",
       "body": "New chats wait until this is fixed.",
-      "title": "The AI account is out of credit or quota"
+      "title": "The AI account is out of credit or quota",
+      "bodyReset": "Your {{vendor}} usage limit is reached. It continues by itself at {{time}}. Chats wait as plain cards."
     },
     "CLOUD_UNAVAILABLE": {
       "action": "Wait",
@@ -328,7 +397,7 @@
     },
     "LLM_VCREDIST_MISSING": {
       "action": "Install Microsoft runtime",
-      "body": "The AI on this computer needs the Microsoft Visual C++ runtime.",
+      "body": "The AI on this computer needs the Microsoft Visual C++ runtime. Voice notes need it too.",
       "title": "A Microsoft runtime is missing"
     },
     "MODEL_MISSING": {
@@ -395,6 +464,121 @@
       "action": "Focus window",
       "body": "Approvals work only in the focused window.",
       "title": "Bring the window to the front first"
+    },
+    "CLI_NOT_INSTALLED": {
+      "title": "{{cli}} is not installed",
+      "body": "The subscription route needs {{cli}} on this computer. Chats wait as plain cards.",
+      "action": "Copy install command"
+    },
+    "CLI_VERSION": {
+      "title": "{{cli}} needs an update",
+      "body": "Version {{version}} is too old for the app; {{min}} or newer is needed.",
+      "action": "Copy update command"
+    },
+    "CLI_NOT_SIGNED_IN": {
+      "title": "{{cli}} is not signed in",
+      "body": "Sign in with your own account in the window that opens. The app never sees your password.",
+      "action": "Sign in"
+    },
+    "CLI_TOOLSET_MISMATCH": {
+      "title": "{{cli}} changed in a way the app does not recognise",
+      "body": "The AI is paused to stay safe. Chats wait as plain cards. You can switch to the AI on this computer.",
+      "action": "Export diagnostics"
+    },
+    "CLI_UNSTABLE": {
+      "title": "{{cli}} keeps stopping",
+      "body": "It stopped several times within a few minutes and is resting now.",
+      "action": "Test again"
+    },
+    "CLOUD_AUTH": {
+      "title": "{{vendor}} did not accept your sign-in",
+      "body": "Your account may be signed out, on hold, or no longer allowed to be used this way. Chats wait as plain cards.",
+      "action": "Sign in again"
+    },
+    "CLOUD_OVERAGE": {
+      "title": "Paid extra usage started",
+      "body": "The AI is paused so nothing is charged without you. You can allow extra usage in AI settings.",
+      "action": "Open AI settings"
+    },
+    "CAL_EVENT_GONE": {
+      "title": "The event is no longer in your calendar",
+      "body": "It was deleted or cancelled in Google. You can add it again as a new event.",
+      "action": "Add as new event"
+    },
+    "CAL_EVENT_FOREIGN": {
+      "title": "This event was not added by the agent",
+      "body": "Change it in Google Calendar.",
+      "action": "Close"
+    },
+    "CAL_UPDATE_FAILED": {
+      "title": "The change was not saved",
+      "body": "Nothing in your calendar changed.",
+      "action": "Try again"
+    },
+    "CAL_UPDATE_UNAVAILABLE": {
+      "title": "Changes to events are unavailable",
+      "body": "The calendar component is not the expected version. Adding events still works; change or cancel events in Google Calendar.",
+      "action": "Export diagnostics"
+    },
+    "AUTO_NOT_CONFIRMED": {
+      "title": "Automatic mode was not turned on",
+      "body": "It turns on only when you tick the box and choose it in the Windows dialog.",
+      "action": "Close"
+    },
+    "AUTO_CALENDAR_NOT_OWNED": {
+      "title": "This calendar is not yours",
+      "body": "Automatic mode works only in a calendar you own. Choose one under Google Calendar.",
+      "action": "Choose a calendar"
+    },
+    "AUTO_NO_TRACK_RECORD": {
+      "title": "Approve a few events first",
+      "body": "Automatic mode becomes available after you approve 3 events yourself.",
+      "action": "Close"
+    },
+    "VOICE_MODEL_MISSING": {
+      "title": "The voice model is not downloaded",
+      "body": "Voice messages wait as plain cards until it is ready.",
+      "action": "Download ({{size}})"
+    },
+    "VOICE_AUDIO_MISSING": {
+      "title": "The voice message was not received",
+      "body": "WhatsApp did not hand over the audio. It may arrive later.",
+      "action": "Try again"
+    },
+    "VOICE_DECODE_FAILED": {
+      "title": "The voice message could not be read",
+      "body": "The audio file looks damaged or unusual.",
+      "action": "Analyse again"
+    },
+    "VOICE_LOCAL_FAILED": {
+      "title": "Transcription on this computer stopped",
+      "body": "It failed several times and is resting now.",
+      "action": "Analyse again"
+    },
+    "VOICE_TOO_LONG": {
+      "title": "Longer than 15 minutes - not transcribed",
+      "body": "Listen to it on your phone.",
+      "action": "Close"
+    },
+    "VOICE_TIMEOUT": {
+      "title": "Transcription took too long",
+      "body": "A lighter voice model is faster on this computer.",
+      "action": "Try again"
+    },
+    "MEDIA_UNAVAILABLE": {
+      "title": "The picture was not received",
+      "body": "The text of the chat was still analysed.",
+      "action": "Try again"
+    },
+    "VOICE_TOO_LONG_FOR_DEVICE": {
+      "title": "Voice note too long for this computer",
+      "body": "Transcribing it here would take more than 5 minutes. The Lite voice model is faster.",
+      "action": "Use Lite"
+    },
+    "CLI_UNSAFE_CONFIG": {
+      "title": "Gemini setup on this computer is not safe to use",
+      "body": "Your Antigravity setup loads extra tools or hooks in every run. The app will not use it until they are removed.",
+      "action": "Open AI settings"
     }
   },
   "event": {
@@ -418,7 +602,9 @@
     "missing": "Missing: {{fields}}",
     "needed": "Needed",
     "noInvites": "No invitations are sent",
-    "timeUnknown": "time?"
+    "timeUnknown": "time?",
+    "updatedRev": "Updated · rev {{n}}",
+    "cancelled": "Cancelled"
   },
   "footer": {
     "undoDismiss": "Undo dismiss"
@@ -507,7 +693,8 @@
       "signing_in": "Signing in...",
       "starting": "Starting...",
       "toolset_mismatch": "The calendar component is not the expected version",
-      "unavailable": "The calendar connection stopped"
+      "unavailable": "The calendar connection stopped",
+      "update_unavailable": "Changes to events are unavailable (component version)"
     },
     "llm": {
       "consent_missing": "Your consent is needed first.",
@@ -523,7 +710,15 @@
       "self_testing": "{{provider}} - checking speed...",
       "starting": "{{provider}} - starting...",
       "verifying": "{{provider}} - checking the file...",
-      "waitingNote": "Chats wait as plain cards until it is ready."
+      "waitingNote": "Chats wait as plain cards until it is ready.",
+      "cliState": {
+        "not_installed": "{{provider}} - not installed",
+        "too_old": "{{provider}} - needs an update",
+        "not_signed_in": "{{provider}} - not signed in",
+        "unknown": "{{provider}} - sign-in unknown"
+      },
+      "not_installed": "The AI program is not installed on this computer.",
+      "not_signed_in": "The AI program is not signed in."
     },
     "ok": "All running",
     "panelTitle": "Status",
@@ -536,7 +731,9 @@
     "provider": {
       "claude": "Claude",
       "gemini": "Gemini",
-      "local": "Local model"
+      "local": "Local model",
+      "claude_cli": "Claude - your subscription",
+      "antigravity_cli": "Gemini - your subscription (experimental)"
     },
     "showDetails": "Show status details",
     "since": "for {{value}}",
@@ -553,7 +750,29 @@
       "starting": "Starting...",
       "stopped": "Stopped."
     },
-    "working": "Working on it"
+    "working": "Working on it",
+    "sub": {
+      "readTools": {
+        "trigger_chat": "Reading older messages: this chat only",
+        "all_chats": "Reading older messages: all chats"
+      },
+      "voice": {
+        "ready": "Voice notes: ready",
+        "downloading": "Voice notes: downloading {{percent}} %",
+        "off": "Voice notes: off"
+      },
+      "images": {
+        "ready": "Pictures: ready",
+        "missing": "Pictures: not downloaded",
+        "off": "Pictures: off"
+      },
+      "auto": {
+        "on": "Automatic mode: on - ends in {{count}} days",
+        "shadow": "Automatic mode: trial - {{seen}} of 3 seen",
+        "paused": "Automatic mode: paused - {{reason}}",
+        "off": "Automatic mode: off"
+      }
+    }
   },
   "ignored": {
     "empty": "Nothing to undo.",
@@ -573,7 +792,14 @@
       "manipulation": "Suspicious request",
       "older_message": "Older message",
       "personal_details": "Personal details",
-      "time_assumed": "Time assumed"
+      "time_assumed": "Time assumed",
+      "change_unclear": "Change unclear",
+      "from_image": "From a picture",
+      "image_unclear": "Hard to read",
+      "image_unread": "Picture not read",
+      "automatic": "Automatic",
+      "auto_shadow": "Trial",
+      "change_target_unclear": "Which event?"
     },
     "bridgeStatus": {
       "backoff": "Restarting shortly",
@@ -632,7 +858,15 @@
       "send_again": "Send again",
       "test_again": "Test again",
       "try_again": "Try again",
-      "update_key": "Update key"
+      "update_key": "Update key",
+      "copy_install_command": "Copy install command",
+      "copy_update_command": "Copy update command",
+      "sign_in": "Sign in",
+      "sign_in_again": "Sign in again",
+      "add_as_new_event": "Add as new event",
+      "download_voice_model": "Download the voice model",
+      "open_usage_page": "Open usage page",
+      "choose_calendar": "Choose a calendar"
     },
     "holdReason": {
       "budget": "Daily AI budget reached",
@@ -653,7 +887,9 @@
       "ready": "Ready",
       "self_testing": "Testing",
       "starting": "Starting",
-      "verifying": "Verifying"
+      "verifying": "Verifying",
+      "not_installed": "Not installed",
+      "not_signed_in": "Not signed in"
     },
     "mcpStatus": {
       "connected": "Connected",
@@ -682,6 +918,36 @@
       "qr_pending": "Scan the code",
       "timeout": "The code expired",
       "unavailable": "Not available"
+    },
+    "cliState": {
+      "not_installed": "Not installed",
+      "too_old": "Needs an update",
+      "not_signed_in": "Not signed in",
+      "unknown": "Sign-in unknown",
+      "ready": "Ready"
+    },
+    "voiceStatus": {
+      "off": "Off",
+      "downloading": "Downloading",
+      "ready": "Ready",
+      "transcribing": "Transcribing",
+      "failed": "Failed"
+    },
+    "imageKind": {
+      "invitation": "Invitation",
+      "flyer": "Poster",
+      "calendar_screenshot": "Calendar screenshot",
+      "chat_screenshot": "Chat screenshot",
+      "ticket": "Ticket",
+      "other": "Other picture",
+      "none": "No event details"
+    },
+    "changeKind": {
+      "no_change": "No change",
+      "reschedule": "New time",
+      "move": "New place",
+      "cancel": "Cancel",
+      "new_event": "New event"
     }
   },
   "language": {
@@ -732,6 +998,48 @@
     "needsReplyMany": {
       "title_one": "{{count}} chat needs your reply",
       "title_other": "{{count}} chats need your reply"
+    },
+    "auto": {
+      "added": {
+        "title": "Calendar: an event was added automatically",
+        "moved": {
+          "title": "Calendar: an event was moved automatically"
+        },
+        "cancelled": {
+          "title": "Calendar: an event was cancelled automatically"
+        }
+      },
+      "body": "Open the app to see it.",
+      "undo": "Undo",
+      "show": "Show",
+      "burst": {
+        "body": "Open the app to review them.",
+        "title_one": "{{count}} automatic calendar change",
+        "title_other": "{{count}} automatic calendar changes"
+      },
+      "undone": {
+        "title": "Calendar change undone",
+        "undoFailed": {
+          "title": "Could not undo the calendar change",
+          "body": "Open the app to see why."
+        }
+      },
+      "paused": {
+        "title": "Automatic mode paused",
+        "body": "Open the app to see why."
+      },
+      "expiring": {
+        "title": "Automatic mode ends in 3 days",
+        "body": "You can renew it in Settings."
+      }
+    },
+    "overage": {
+      "title": "The AI was paused",
+      "body": "Paid extra usage started. Open the app to decide."
+    },
+    "voiceReady": {
+      "title": "Voice notes are ready",
+      "body": "Voice messages will now be transcribed on this computer."
     }
   },
   "onboarding": {
@@ -802,7 +1110,13 @@
       "vendor": {
         "claude": "Anthropic",
         "gemini": "Google"
-      }
+      },
+      "voiceOptIn": "Also understand voice notes ({{size}}, Hebrew-optimised)",
+      "voiceNoDisk": "Needs {{size}} of free space",
+      "voiceNoRam": "Needs 8 GB of memory",
+      "picturesNote": "Pictures are read by the AI you choose. Picture reading on this computer ({{size}}) downloads only when you ask for it.",
+      "picturesNoteNoSize": "Pictures are read by the AI you choose. Picture reading on this computer downloads only when you ask for it.",
+      "voiceOptInNoSize": "Also understand voice notes (Hebrew-optimised)"
     },
     "continue": "Continue",
     "rail": {
@@ -832,7 +1146,11 @@
       "whatToDo": "What to do",
       "whatsapp": "WhatsApp",
       "whatsappPending": "not linked yet",
-      "whatsappReady": "linked"
+      "whatsappReady": "linked",
+      "voice": "Voice notes",
+      "voiceDownloading": "downloading {{percent}} % - voice messages wait until it is ready",
+      "voiceReady": "ready",
+      "voiceOff": "off"
     },
     "welcome": {
       "accept": "I understand the risk and accept it",
@@ -843,6 +1161,9 @@
       "risk1": "The app links to WhatsApp as a companion device through an unofficial component. WhatsApp does not support this.",
       "risk2": "Your WhatsApp account could be limited or blocked. Use the app at your own risk.",
       "title": "Welcome"
+    },
+    "google": {
+      "autoLater": "Later, in Settings, you can let the agent add and change events by itself."
     }
   },
   "pair": {
@@ -871,7 +1192,7 @@
         "off": "Off"
       },
       "accelerationLabel": "Graphics acceleration",
-      "budgetLabel": "Daily cloud budget",
+      "budgetLabel": "Daily cloud budget (API keys only)",
       "budgetSuffix": "tokens per day",
       "deleteModel": "Delete the model",
       "deleteModelBody": "This frees the disk space. You can download it again later.",
@@ -894,7 +1215,9 @@
       "noAccount": "Not connected",
       "reconnect": "Connect",
       "replaceKey": "Replace the key file",
-      "targetLabel": "Calendar for new events"
+      "targetLabel": "Calendar for new events",
+      "owned": "You own this calendar",
+      "shared": "This calendar is shared with you - automatic mode is not available for it"
     },
     "dialog": {
       "keep": "Keep as it is"
@@ -915,7 +1238,8 @@
       "pauseDesc": "While paused nothing is analysed, drafted, sent or created.",
       "pauseLabel": "Pause the agent",
       "timeZoneLabel": "Time zone",
-      "timeZoneValue": "{{zone}} - taken from Windows"
+      "timeZoneValue": "{{zone}} - taken from Windows",
+      "notificationsAutoNote": "Automatic calendar changes always show a notification, even when this is off."
     },
     "group": {
       "ai": "AI engine",
@@ -924,7 +1248,8 @@
       "privacy": "Privacy and data",
       "replies": "Replies",
       "rules": "Working rules",
-      "whatsapp": "WhatsApp"
+      "whatsapp": "WhatsApp",
+      "auto": "Automatic mode"
     },
     "navLabel": "Settings groups",
     "privacy": {
@@ -940,7 +1265,7 @@
       "licencesBody": "The full notices are in the file THIRD_PARTY_NOTICES.txt inside the app's folder.",
       "licencesLabel": "Open-source licences",
       "purge": "Delete now",
-      "purgeBody": "Chats, drafts and closed cards older than the retention limit are removed from this computer.",
+      "purgeBody": "Chats, drafts and closed cards older than the retention limit are removed from this computer. Pictures and voice transcripts are deleted too.",
       "purgeLabel": "Delete old data now",
       "purgeTitle": "Delete everything past the limit?",
       "purged": "{{items}} removed",
@@ -949,17 +1274,17 @@
       "row": {
         "calendar": {
           "name": "Google Calendar",
-          "what": "The busy and free times, and the events you approved",
+          "what": "The busy and free times, the events you approved, and the changes and cancellations you approved or that automatic mode made",
           "who": "Google"
         },
         "claude": {
-          "name": "Claude (cloud AI)",
-          "what": "The text of the chat being analysed, without names or phone numbers",
+          "name": "Claude with an API key",
+          "what": "The text of the chat being analysed, without names or phone numbers; transcripts of voice notes; pictures when that is on; older messages",
           "who": "Anthropic"
         },
         "gemini": {
-          "name": "Gemini (cloud AI)",
-          "what": "The text of the chat being analysed, without names or phone numbers",
+          "name": "Gemini with an API key",
+          "what": "The text of the chat being analysed, without names or phone numbers; transcripts of voice notes; pictures when that is on; older messages",
           "who": "Google"
         },
         "local": {
@@ -971,6 +1296,21 @@
           "name": "WhatsApp",
           "what": "The replies you approved",
           "who": "The person you are replying to"
+        },
+        "claude_cli": {
+          "name": "Claude - your subscription",
+          "what": "The text of the chat being analysed, without names or phone numbers; transcripts of voice notes; pictures when \"Read pictures with Anthropic\" is on; older messages of this chat (or of all chats if you chose that)",
+          "who": "Anthropic, through your own Claude Code sign-in"
+        },
+        "antigravity_cli": {
+          "name": "Gemini - your subscription (experimental)",
+          "what": "The same text, voice transcripts and older messages; never pictures. Antigravity also keeps a copy of each request on this computer.",
+          "who": "Google, through your own Antigravity sign-in"
+        },
+        "voice": {
+          "name": "Voice notes",
+          "what": "Nothing - transcribed on this computer",
+          "who": "Nobody"
         }
       },
       "tableLabel": "What leaves this computer"
@@ -1003,7 +1343,10 @@
       "policyLabel": "Rule for this chat",
       "removePolicy": "Remove the rule",
       "unknownDesc": "Off by default: only chats with people in your contacts are analysed.",
-      "unknownLabel": "Analyse unknown senders"
+      "unknownLabel": "Analyse unknown senders",
+      "autoColumn": "Automatic",
+      "autoInherit": "As everyone",
+      "autoNever": "Never"
     },
     "saveFailed": "Not saved",
     "saved": "Saved",
@@ -1017,6 +1360,64 @@
       "wipeBody": "The WhatsApp link, the stored chats and every draft on this computer are deleted. Events already in your calendar stay.",
       "wipeLabel": "Unlink and erase",
       "wipeTitle": "Unlink and erase everything?"
+    },
+    "voice": {
+      "title": "Voice notes",
+      "desc": "Voice notes are always transcribed on this computer. Nothing is sent anywhere.",
+      "off": "Off",
+      "hebrew": "Hebrew-optimised (recommended)",
+      "multilingual": "Any language, detected automatically",
+      "lite": "Lite - faster, less accurate",
+      "confirmDownload": "Download the {{name}} voice model ({{size}})?",
+      "bench": "Speed on this computer: about {{seconds}} s per minute of audio",
+      "test": "Test",
+      "testing": "Testing...",
+      "suggestLite": "Slow on this computer - the Lite model is faster.",
+      "useLite": "Use Lite",
+      "maxNote": "Notes longer than 15 minutes are not transcribed.",
+      "waiting": "Downloading {{percent}} % - voice notes wait as plain cards",
+      "benchUnknown": "Speed on this computer: not measured yet",
+      "confirmDownloadNoSize": "Download the {{name}} voice model?",
+      "delete": "Delete",
+      "deleteTitle": "Delete the voice model ({{size}})?",
+      "deleteTitleNoSize": "Delete the voice model?",
+      "download": "Download",
+      "keep": "Keep it",
+      "status": {
+        "none": "not downloaded",
+        "ready": "ready"
+      }
+    },
+    "images": {
+      "title": "Pictures",
+      "enabled": "Read pictures",
+      "enabledDesc": "Dates and places written in a picture (an invitation, a poster) become event suggestions. What was read is always shown on the card.",
+      "cloud": "Read pictures with {{vendor}}",
+      "cloudDesc": "Pictures are sent to {{vendor}}. Agreed on <bdi>{{date}}</bdi>.",
+      "localOnly": "With this AI, pictures are read on this computer.",
+      "local": "Picture reading on this computer",
+      "localDesc": "Used when the cloud AI does not read pictures. Downloads only when you ask.",
+      "restartNote": "The AI on this computer restarts to load picture reading (about 30 seconds).",
+      "cloudDescNoConsent": "Pictures are sent to {{vendor}} only after you agree to the current text.",
+      "download": "Download",
+      "localReady": "ready"
+    },
+    "readTools": {
+      "title": "Let the AI read older messages",
+      "desc": "The AI can look further back when a message refers to something said earlier.",
+      "off": "Off",
+      "trigger": "Of this chat only",
+      "all": "Of all my chats",
+      "allWarn": "With a cloud AI this sends parts of other chats to {{vendor}}.",
+      "days": "How far back",
+      "refused": "Not changed - your approval is needed first.",
+      "agyNote": "With this AI the app hands over the last {{days}} days of this chat instead; the AI cannot look further by itself.",
+      "confirmTitle": "Let the AI read all your chats?",
+      "confirmBody": "When a message refers to something said elsewhere, the AI may read other chats. With a cloud AI, parts of them are sent to {{vendor}}.",
+      "confirmAllow": "Allow",
+      "confirmKeep": "Keep this chat only",
+      "daysValue_one": "{{count}} day",
+      "daysValue_other": "{{count}} days"
     }
   },
   "setup": {
@@ -1033,6 +1434,22 @@
     "whatsapp": {
       "action": "Link WhatsApp",
       "text": "WhatsApp is not linked yet."
+    },
+    "consentV2": {
+      "text": "Your approval is needed again for {{vendor}} - it now also covers voice-note transcripts and pictures.",
+      "action": "Review"
+    },
+    "auto": {
+      "paused": "Automatic mode is paused - {{reason}}.",
+      "trialEarly": "Automatic mode - trial: {{seen}} of 3 decisions seen so far.",
+      "trialReady": "Automatic mode - trial: {{wouldAdd}} would have been added, {{wouldChange}} changed.",
+      "expiring": "Automatic mode ends in {{count}} days.",
+      "expired": "Automatic mode ended on <bdi>{{date}}</bdi>. Events wait for your approval again.",
+      "review": "Review",
+      "trialReadyTotal": "Automatic mode - trial: {{wouldAuto}} would have been done automatically."
+    },
+    "voice": {
+      "downloading": "Voice notes: model downloading {{percent}} %."
     }
   },
   "sheet": {
@@ -1044,7 +1461,15 @@
     "event": "Event",
     "loading": "Loading the card...",
     "title": "Item",
-    "whatAiRead": "What the AI read"
+    "whatAiRead": "What the AI read",
+    "autoBlock": "Added automatically on <bdi>{{when}}</bdi>",
+    "provider": {
+      "local": "AI on this computer",
+      "claude_cli": "Claude (your subscription)",
+      "antigravity_cli": "Gemini (your subscription, experimental)",
+      "claude": "Claude (API key)",
+      "gemini": "Gemini (API key)"
+    }
   },
   "tray": {
     "open": "Open",
@@ -1059,11 +1484,20 @@
       "attention": "Needs attention - open the app",
       "paused": "Paused",
       "setup": "Setting up",
-      "wa_offline": "WhatsApp offline"
+      "wa_offline": "WhatsApp offline",
+      "active_claude_cli": "Active - Claude (your subscription)",
+      "active_antigravity_cli": "Active - Gemini (your subscription)",
+      "active_claude_api": "Active - Claude (API key)",
+      "active_gemini_api": "Active - Gemini (API key)"
     },
     "tooltip": "WhatsApp Calendar Agent",
     "tooltipWaiting_one": "WhatsApp Calendar Agent - {{count}} waiting",
-    "tooltipWaiting_other": "WhatsApp Calendar Agent - {{count}} waiting"
+    "tooltipWaiting_other": "WhatsApp Calendar Agent - {{count}} waiting",
+    "auto": {
+      "on": "Automatic mode: on - click to pause",
+      "shadow": "Automatic mode: trial - click to stop",
+      "paused": "Automatic mode: paused - open to resume"
+    }
   },
   "trayHint": {
     "body": "Closing the window does not stop it. You will find it next to the clock, under the ^ arrow (hidden icons). To quit: right-click the icon, then Quit.",
@@ -1073,5 +1507,387 @@
   "welcome": {
     "promise": "Nothing is sent or scheduled without your approval.",
     "start": "Get started"
+  },
+  "change": {
+    "line": {
+      "reschedule": "Change: <bdi>{{from}}</bdi> <arrow/> <bdi>{{to}}</bdi>",
+      "move": "Place: <bdi>{{from}}</bdi> <arrow/> <bdi>{{to}}</bdi>",
+      "cancel": "Cancel: <bdi>{{title}}</bdi>, <bdi>{{when}}</bdi>"
+    },
+    "a11y": {
+      "reschedule": "Change from {{from}} to {{to}}",
+      "move": "Place change from {{from}} to {{to}}",
+      "cancel": "Cancel {{title}}, {{when}}"
+    },
+    "approve": "Approve change",
+    "approving": "Changing...",
+    "approved": "Changed in calendar",
+    "keepTime": "Keep {{time}}",
+    "keepPlace": "Keep the old place",
+    "cancelEvent": "Cancel event",
+    "cancelling": "Cancelling...",
+    "cancelled": "Cancelled in calendar",
+    "keepIt": "Keep it",
+    "pendingChip": "Change proposed - see Needs reply",
+    "latestOnly": "Changes apply to the latest event of this chat.",
+    "nowInCalendar": "Now in your calendar",
+    "drift": "In Google it is now <bdi>{{when}}</bdi> - apply the change anyway?",
+    "applyAnyway": "Apply anyway",
+    "keepGoogle": "Keep Google's",
+    "applyAgain": "Apply again",
+    "titleNotApplied": "Changes to the event name are not applied - edit it in Google Calendar.",
+    "byYou": "You changed this in the chat"
+  },
+  "undo": {
+    "button": "Undo",
+    "undoing": "Undoing...",
+    "undone": "Undone",
+    "until": "Undo available until <bdi>{{when}}</bdi>",
+    "expired": "Undo no longer available",
+    "removed": "Undone - removed from your calendar",
+    "restored": "Undone - back in your calendar",
+    "blockedChanged": "You changed this event in Google after it was added - undo would overwrite your change.",
+    "blockedChangedShort": "You changed this in Google after it was added",
+    "blockedStarted": "The event has already started - undo is not available.",
+    "blockedStartedShort": "It has already started",
+    "restoreRefused": "Google did not restore the cancelled event.",
+    "addBack": "Add it back",
+    "failed": "Could not undo",
+    "announce": "Undone.",
+    "restoreOriginal": "Restore original",
+    "restoringOriginal": "Restoring...",
+    "originalRestored": "Original time restored"
+  },
+  "badge": {
+    "change_unclear": {
+      "long": "Not sure this changes the event - the draft asks"
+    },
+    "from_image": {
+      "long": "Read from a picture"
+    },
+    "image_unclear": {
+      "long": "Hard to read - check the picture"
+    },
+    "image_unread": {
+      "long": "The picture was not read"
+    },
+    "automatic": {
+      "long": {
+        "create": "Added automatically",
+        "update": "Moved automatically",
+        "cancel": "Cancelled automatically"
+      }
+    },
+    "auto_shadow": {
+      "long": "Would have been automatic"
+    },
+    "change_target_unclear": {
+      "long": "Which event? This chat has more than one - the change would apply to the latest"
+    }
+  },
+  "auto": {
+    "intro": "The agent adds and changes events in <bdi>{{calendar}}</bdi> by itself. Replies always wait for you.",
+    "happensTitle": "What happens without asking you",
+    "happens": {
+      "people": "only with people you have written to, in chats where you wrote in the last day",
+      "window": "within the next 30 days, 5 minutes to 4 hours long",
+      "limits": "up to 3 per contact a day and 15 a day in total",
+      "notify": "each one shows a notification with Undo",
+      "replies": "replies still wait for your approval",
+      "ends": "ends by itself after {{days}} days"
+    },
+    "neverTitle": "What never happens",
+    "never": {
+      "delete": "deleting an event",
+      "invite": "inviting anyone",
+      "send": "sending a WhatsApp message",
+      "media": "anything from a voice note or a picture",
+      "unsure": "anything the AI was unsure about or that carries a warning",
+      "foreign": "changing events the agent did not add"
+    },
+    "scope": {
+      "edits": "Also change events when the contact asks",
+      "cancels": "Also cancel events when the contact asks",
+      "cancelsDesc": "A cancelled event stays restorable - Undo brings it back.",
+      "quiet": "Not during quiet hours (22:00-07:00)",
+      "validity": "Ends after",
+      "lockedWhileLive": "To change these, stop automatic mode and turn it on again.",
+      "validityDays_one": "{{count}} day",
+      "validityDays_other": "{{count}} days"
+    },
+    "enableTrial": "Start a 24-hour trial",
+    "enableNow": "Turn on now",
+    "endShadow": "Turn on for real",
+    "pause": "Pause",
+    "resume": "Resume",
+    "stop": "Stop",
+    "renew": "Renew",
+    "waitingDialog": "Waiting for your answer in the Windows dialog...",
+    "openActivity": "See automatic activity",
+    "state": {
+      "off": "Off - events wait for your approval.",
+      "expired": "Ended on <bdi>{{date}}</bdi>. Events wait for your approval.",
+      "shadowEarly": "Trial until <bdi>{{time}}</bdi> - {{seen}} of 3 decisions seen. Nothing is changed for real.",
+      "shadowReady": "Trial until <bdi>{{time}}</bdi>: {{wouldAdd}} to add, {{wouldChange}} to change. You approved {{same}} of them unchanged. Nothing was changed for real.",
+      "paused": "Paused - {{reason}}.",
+      "on_one": "On - {{used}} of {{limit}} today · ends in {{count}} day.",
+      "on_other": "On - {{used}} of {{limit}} today · ends in {{count}} days.",
+      "shadowReadyTotal": "Trial until <bdi>{{time}}</bdi>: {{wouldAuto}} would have been done automatically. You approved {{same}} of them unchanged. Nothing was changed for real."
+    },
+    "pausedReason": {
+      "user": "you paused it",
+      "circuit_breaker_rate": "it reached today's limit",
+      "circuit_breaker_undo": "you undid two changes today, so it stopped to be safe",
+      "circuit_breaker_unknown": "one change could not be confirmed",
+      "unattended": "the app was not opened for a week",
+      "calendar_disconnected": "Google Calendar is not connected",
+      "snapshot_changed": "the calendar, account, AI or app version changed since you turned it on"
+    },
+    "pre": {
+      "connect": "Connect Google Calendar first.",
+      "notOwned": "Only for a calendar you own - <bdi>{{calendar}}</bdi> is shared with you.",
+      "trackRecord": "Available after you approve 3 events yourself ({{count}} of 3 so far).",
+      "rate": "Try again in an hour.",
+      "providerWarning": "With Gemini - your subscription (experimental) nothing will happen automatically; every event will wait for you."
+    },
+    "notAutomatic": "Not automatic: {{reason}}",
+    "reason": {
+      "no_policy": "automatic mode is off",
+      "policy_shadow": "trial only",
+      "policy_paused": "automatic mode is paused",
+      "policy_expired": "automatic mode has ended",
+      "snapshot_changed": "the calendar, account, AI or app version changed",
+      "calendar_disconnected": "Google Calendar is not connected",
+      "calendar_not_owned": "the calendar is not yours",
+      "unknown_contact": "you have not written to this contact before",
+      "chat_opted_out": "you turned it off for this contact",
+      "chat_tainted": "a message in this chat looked suspicious this week",
+      "no_user_participation": "you have not written in this chat in the last 24 hours",
+      "no_user_echo": "you have not confirmed the plan in the chat",
+      "badge_red": "there is a warning on this card",
+      "badge_amber": "something on this card needs checking",
+      "badge_info": "there is a note on this card",
+      "blocked_tool_call": "the AI tried something it is not allowed to do",
+      "suspicious": "the message may be trying to steer the AI",
+      "assumed_hour": "the hour was assumed",
+      "missing_fields": "details are missing",
+      "low_confidence": "the AI was not sure",
+      "intent_not_eligible": "this kind of request is never automatic",
+      "title_rejected": "the event title needs checking",
+      "media_derived": "it came from a voice note or a picture",
+      "provider_unsafe": "the AI used for this card may not act automatically",
+      "beyond_horizon": "it is more than 30 days away",
+      "too_long": "its length is outside 5 minutes to 4 hours",
+      "too_soon": "it starts too soon",
+      "quiet_hours": "it arrived during quiet hours",
+      "conflict": "you are busy then",
+      "duplicate": "a similar event already exists",
+      "auto_budget": "today's limit for automatic changes was reached",
+      "edits_not_in_scope": "automatic changes to events are off",
+      "cancel_not_in_scope": "automatic cancelling is off",
+      "cancel_too_soon": "the event is less than 24 hours away",
+      "not_app_event": "the agent did not add this event",
+      "wrong_item": "the event belongs to another conversation",
+      "not_own_copy": "the event is not yours",
+      "event_has_attendees": "the event has guests or repeats",
+      "event_cancelled": "the event is already cancelled",
+      "modified_in_google": "you changed the event in Google",
+      "move_too_far": "it moves the event by more than 14 days",
+      "edit_budget": "this event was already changed automatically twice",
+      "unknown_prev_state": "the current event could not be read",
+      "no_track_record": "approve 3 events yourself first",
+      "ok": "all checks passed",
+      "undo_unavailable": "changes to events are unavailable, so it could not be undone",
+      "content_rejected": "the title or place contains a link, a number or unusual characters",
+      "cross_chat_rows": "the AI read messages from other chats",
+      "multiple_events": "this chat has more than one event"
+    },
+    "dialog": {
+      "title": "Turn on automatic mode?",
+      "titleRenew": "Renew automatic mode?",
+      "message": "Events will be added to and changed in '{{calendar}}' without asking you first.",
+      "ends": "Ends on {{date}}.",
+      "checkbox": "I understand events can be added or moved without asking me",
+      "cancel": "Cancel",
+      "trial": "Start a 24-hour trial",
+      "now": "Turn on now",
+      "renew": "Renew for {{days}} days"
+    },
+    "strip": {
+      "title": "Done automatically - last 7 days ({{count}})",
+      "hide": "Hide",
+      "show": "Show",
+      "more": "Show all in Automatic activity"
+    },
+    "verb": {
+      "added": "added",
+      "movedFrom": "moved from <bdi>{{when}}</bdi>",
+      "placeChanged": "place changed",
+      "cancelled": "cancelled",
+      "movedFromPlain": "moved from {{when}}"
+    },
+    "neverForContact": "Never automatic for this contact",
+    "allowAgain": "Allow again",
+    "neverToast": "Automatic changes turned off for this contact",
+    "announce": {
+      "added": "Added automatically: {{when}}.",
+      "moved": "Moved automatically: {{when}}.",
+      "cancelled": "Cancelled automatically: {{when}}.",
+      "state": "Automatic mode: {{state}}."
+    },
+    "stateWord": {
+      "on": "on",
+      "shadow": "trial",
+      "paused": "paused",
+      "off": "off"
+    },
+    "calendarFallback": "your calendar"
+  },
+  "activity": {
+    "title": "Automatic activity",
+    "back": "Automatic mode",
+    "today": "Today",
+    "yesterday": "Yesterday",
+    "notAutomatic": "Not automatic",
+    "wouldAdd": "Would have been added",
+    "wouldChange": "Would have been changed",
+    "export": "Export (JSON)",
+    "exportNote": "Times, kinds and reasons only - no titles, names or messages.",
+    "exported": "Exported",
+    "retention": "Entries are kept for 180 days (decisions for 90 days).",
+    "empty": "Nothing happened automatically yet.",
+    "older": "Show older",
+    "stateOn_one": "On · {{used}} of {{limit}} today · ends in {{count}} day",
+    "stateOn_other": "On · {{used}} of {{limit}} today · ends in {{count}} days"
+  },
+  "voice": {
+    "label": "Voice message · <bdi>{{duration}}</bdi>",
+    "durationA11y": "{{minutes}} minutes {{seconds}} seconds",
+    "lang": {
+      "he": "Hebrew",
+      "en": "English",
+      "other": "Other language"
+    },
+    "transcriptLabel": "Transcript",
+    "caution": "Transcribed on this computer - may contain mistakes",
+    "cautionSheet": "Transcribed on this computer with the {{model}} voice model - may contain mistakes",
+    "model": {
+      "hebrew": "Hebrew",
+      "multilingual": "all-languages",
+      "lite": "lite"
+    },
+    "noSpeech": "No speech detected",
+    "notTranscribed": "Not transcribed",
+    "removed": "Transcript was removed after {{days}} days",
+    "holdModel": "Voice notes: model not downloaded",
+    "transcribing": "Transcribing a voice note (<bdi>{{duration}}</bdi>)..."
+  },
+  "image": {
+    "label": "Picture",
+    "readLabel": "Text read from the picture",
+    "caution": "Read from the picture - may contain mistakes",
+    "alt": "Picture sent by {{name}}",
+    "sheetTitle": "The picture",
+    "whatRead": "What the AI read from the picture",
+    "asWritten": {
+      "date": "Date as written: <bdi>{{v}}</bdi>",
+      "time": "Time as written: <bdi>{{v}}</bdi>",
+      "place": "Place as written: <bdi>{{v}}</bdi>"
+    },
+    "checkAgainst": "Check against the picture",
+    "unread": {
+      "no_local_reader": "Picture not read - picture reading is not downloaded",
+      "disabled": "Picture not read - turned off",
+      "provider_cannot": "Picture not read by this AI",
+      "media_unavailable": "The picture was not received",
+      "read_failed": "Could not read the picture"
+    },
+    "action": {
+      "download": "Download picture reading ({{size}})",
+      "turnOn": "Turn on in Settings",
+      "chooseAi": "Choose an AI that can read pictures"
+    },
+    "removed": "Picture was removed after {{days}} days"
+  },
+  "cli": {
+    "checking": "Looking for {{cli}} on this computer...",
+    "notInstalled": "{{cli}} is not installed on this computer.",
+    "runThis": "Run this in PowerShell, then come back:",
+    "neverInstalls": "The app never installs anything itself.",
+    "commandLabel": "Install command / Update command",
+    "copyCommand": "Copy command",
+    "openInstallPage": "Open install page",
+    "checkAgain": "Check again",
+    "checkedAgo": "Checked {{value}} ago",
+    "tooOld": "{{cli}} {{version}} is too old - version {{min}} or newer is needed.",
+    "wingetHint": "Installed with WinGet? Use: <bdi dir=\"ltr\">winget upgrade Anthropic.ClaudeCode</bdi>",
+    "notSignedIn": "{{cli}} {{version}} is installed but not signed in.",
+    "signIn": "Sign in",
+    "signInNote": {
+      "claude_cli": "Sign-in opens in Anthropic's own window. The app never sees your password.",
+      "antigravity_cli": "Antigravity opens your browser to sign in; close the console window when it says you are signed in."
+    },
+    "waitingSignIn": "Finish signing in in the window that opened. It can take up to a minute for the app to notice.",
+    "unknown": "Could not tell whether you are signed in.",
+    "ready": "Ready - {{cli}} {{version}}, signed in.",
+    "usageResets": "usage resets <bdi>{{time}}</bdi>",
+    "model": "Model",
+    "modelHintClaude": "as available on your plan",
+    "modelHintAgy": "as reported by the CLI",
+    "recommended": "recommended",
+    "test": "Run a test",
+    "testNote": "(uses a little of your usage)",
+    "testing": "Testing...",
+    "testOk": "Works - answered in about {{seconds}} s",
+    "testBusy": "Testing is limited while the AI is busy",
+    "consentDate": "Agreed to send chats on <bdi>{{date}}</bdi>.",
+    "withdraw": "Withdraw",
+    "limits": {
+      "title": "Usage limits",
+      "runsPerHour": "Up to {{count}} AI runs per hour",
+      "runsDesc": "Your subscription's usage window is shared with your own use of {{vendor}}.",
+      "overage": "Allow paid extra usage",
+      "overageDesc": "When off, the AI pauses as soon as your plan starts charging for extra usage.",
+      "overageConfirmTitle": "Allow paid extra usage?",
+      "overageConfirmBody": "When your plan's included usage runs out, Anthropic may charge you for the AI's runs.",
+      "overageAllow": "Allow",
+      "overageKeepOff": "Keep it off"
+    },
+    "exePath": "Claude Code location",
+    "exeChange": "Change...",
+    "exeAuto": "Use automatic",
+    "agy": {
+      "disclosureTitle": "Experimental - read before using",
+      "disclosure": "Google's terms for Antigravity forbid using it with \"third-party software, tools, or services\", and Google has suspended accounts for it; Google staff have also said that running the official CLI on your own computer is fine. The app runs the unmodified Antigravity CLI with your own sign-in and nothing else - the risk to your account is yours. Antigravity keeps a copy of every request on this computer. Google's supported way is Gemini with an API key (under Advanced). Terms read on <bdi>{{termsDate}}</bdi>.",
+      "noTools": "This AI cannot look up older messages by itself; the app hands it the last {{days}} days of this chat.",
+      "picturesLocal": "Pictures are read on this computer while this AI is selected.",
+      "noAuto": "Automatic mode does nothing while this AI is selected.",
+      "workspaceTitle": "Antigravity needs to trust the app's working folder once.",
+      "workspaceBody": "This changes one line in your Antigravity settings file:",
+      "workspaceBackup": "A backup of the file is saved next to it. Nothing else in the file is touched.",
+      "workspaceAllow": "Allow the app's folder...",
+      "workspaceDone": "Done - a backup was saved next to the file.",
+      "workspaceBusy": "Close Antigravity first, then try again.",
+      "dialogTitle": "Change your Antigravity settings?",
+      "dialogOk": "Change one line"
+    },
+    "geminiCliNote": "Looking for the Gemini CLI? It no longer accepts Google AI Pro or Ultra sign-ins, so it cannot use your subscription. Use this experimental option or Gemini with an API key.",
+    "command": {
+      "claudeUpdate": "claude update",
+      "agyInstall": "irm https://antigravity.google/cli/install.ps1 | iex",
+      "claudeInstall": "irm https://claude.ai/install.ps1 | iex"
+    },
+    "checkedJustNow": "Checked just now",
+    "exeAutomatic": "Found automatically",
+    "exePicked": "Chosen by you",
+    "name": {
+      "claude_cli": "Claude Code",
+      "antigravity_cli": "Antigravity"
+    },
+    "usageResetsPlain": "usage resets {{time}}",
+    "vendor": {
+      "claude_cli": "Anthropic",
+      "antigravity_cli": "Google"
+    }
   }
 }

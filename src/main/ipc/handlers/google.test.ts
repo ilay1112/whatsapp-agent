@@ -22,7 +22,7 @@ function wizard(over: Partial<GoogleWizardState> = {}): GoogleWizardState {
 }
 const CONNECTED = wizard({ status: 'connected', hasCredentials: true, accountEmail: 'user@example.test' });
 const CALENDARS: CalendarInfo[] = [
-  { id: 'primary', name: 'Personal', primary: true, timeZone: 'Asia/Jerusalem', writable: true },
+  { id: 'primary', name: 'Personal', primary: true, timeZone: 'Asia/Jerusalem', writable: true, accessRole: 'owner' },
 ];
 
 describe('no channel carries a file path', () => {

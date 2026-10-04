@@ -126,3 +126,61 @@ describe('styles.css - shared class recipes (UX 2.6 names are normative)', () =>
     expect(css).toContain('.icon-dir:dir(rtl)');
   });
 });
+
+// [V2] UX2 section 1 (owner V2-W1-12): no new colour tokens; the new states map onto the v1 families, the closed icon
+// list grows by five, and the three voice codes (solid / dashed / DOTTED) survive forced colours.
+describe('styles.css - v2 recipes (UX2 1.1-1.4)', () => {
+  it.each([
+    'chip-info',
+    'chip-ok',
+    'chip-amber',
+    'chip-red',
+    'chip-shadow',
+    'chip-experimental',
+    'media-rule',
+    'media-caution',
+    'change-arrow',
+    'event-cancelled',
+    'note-amber',
+    'disclosure-warn',
+    'command-field',
+    'icon',
+    'icon-mic',
+    'icon-image',
+    'icon-undo',
+    'icon-auto',
+    'icon-terminal',
+    'icon-alert',
+  ])('defines @utility %s', (name) => {
+    expect(css).toMatch(new RegExp(`@utility\\s+${name}\\s*\\{`));
+  });
+
+  it('adds no colour token beyond the v1 set (UX2 1.2)', () => {
+    const tokens = new Set(propertyNames.filter((p) => p.startsWith('--color-')));
+    expect(tokens.size).toBe(19);
+  });
+
+  it('draws the media rule DOTTED and the shadow chip DASHED, also under forced colours', () => {
+    expect(css).toMatch(/@utility media-rule\s*\{[^}]*1px dotted var\(--color-line-strong\)/s);
+    expect(css).toMatch(/@utility chip-shadow\s*\{[^}]*1px dashed var\(--color-accent\)/s);
+    const forced = css.slice(css.indexOf('@media (forced-colors: active)'));
+    expect(forced).toMatch(/\.chip-shadow\s*\{[^}]*border-style:\s*dashed/s);
+    expect(forced).toMatch(/\.media-rule\s*\{[^}]*dotted/s);
+    expect(css).toMatch(/@utility event-cancelled\s*\{[^}]*line-through/s);
+  });
+
+  it('mirrors the undo icon in RTL and no other v2 icon', () => {
+    expect(css).toMatch(/@utility icon-undo\s*\{[^}]*&:dir\(rtl\)\s*\{\s*transform:\s*scaleX\(-1\)/s);
+    for (const name of ['icon-mic', 'icon-image', 'icon-auto', 'icon-terminal']) {
+      const block = css.slice(css.indexOf(`@utility ${name}`)).split('\n}')[0]!;
+      expect(block, name).not.toContain(':dir(rtl)');
+    }
+  });
+
+  it('icons are inline SVG data URIs painted with currentColor - no network, no vendor logo', () => {
+    expect(css).toMatch(/@utility icon\s*\{[^}]*background-color:\s*currentColor/s);
+    const urls = [...css.matchAll(/url\("([^"]+)"\)/g)].map((m) => m[1]!);
+    expect(urls.length).toBeGreaterThanOrEqual(6);
+    for (const u of urls) expect(u.startsWith('data:image/svg+xml,')).toBe(true);
+  });
+});

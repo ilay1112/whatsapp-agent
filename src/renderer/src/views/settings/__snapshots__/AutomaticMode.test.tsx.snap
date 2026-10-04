@@ -1,0 +1,272 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`AutomaticMode - RTL > RTL snapshot (off) and (on) 1`] = `
+<section
+  aria-labelledby="settings-h-auto"
+  class="flex flex-col gap-3 border-t border-line pt-4"
+  data-testid="settings-group-auto"
+  id="settings-group-auto"
+>
+  <h2
+    class="m-0 text-md font-semibold"
+    id="settings-h-auto"
+  >
+    מצב אוטומטי
+  </h2>
+  <div
+    class="flex flex-wrap items-center gap-2 rounded-md border border-line bg-surface p-3"
+    data-state="none"
+    data-testid="auto-state-card"
+  >
+    <span
+      aria-hidden="true"
+      class="icon icon-auto text-accent"
+    />
+    <span
+      class="grow basis-60"
+      role="status"
+    >
+      כבוי - אירועים ממתינים לאישור שלך.
+    </span>
+  </div>
+  <p
+    class="m-0"
+  >
+    הסוכן מוסיף ומשנה אירועים ביומן 
+    <bdi>
+      היומן שלך
+    </bdi>
+     בעצמו. תשובות תמיד ממתינות לך.
+  </p>
+  <div
+    class="flex flex-wrap gap-4"
+  >
+    <div
+      class="flex min-w-60 grow basis-60 flex-col gap-1"
+    >
+      <h3
+        class="m-0 text-base font-semibold"
+        id="auto-happens-title"
+      >
+        מה קורה בלי לשאול אותך
+      </h3>
+      <ul
+        aria-labelledby="auto-happens-title"
+        class="m-0 flex flex-col gap-1 ps-5"
+        data-testid="auto-happens"
+      >
+        <li>
+          רק עם אנשים שכתבת להם, בשיחות שכתבת בהן ביממה האחרונה
+        </li>
+        <li>
+          בתוך 30 הימים הקרובים, באורך של 5 דקות עד 4 שעות
+        </li>
+        <li>
+          עד 3 ביום לכל איש קשר ועד 15 ביום בסך הכול
+        </li>
+        <li>
+          על כל אחד מופיעה התראה עם אפשרות ביטול
+        </li>
+        <li>
+          תשובות עדיין ממתינות לאישור שלך
+        </li>
+        <li>
+          מסתיים מעצמו אחרי 30 ימים
+        </li>
+      </ul>
+    </div>
+    <div
+      class="flex min-w-60 grow basis-60 flex-col gap-1"
+    >
+      <h3
+        class="m-0 text-base font-semibold"
+        id="auto-never-title"
+      >
+        מה אף פעם לא קורה
+      </h3>
+      <ul
+        aria-labelledby="auto-never-title"
+        class="m-0 flex flex-col gap-1 ps-5"
+        data-testid="auto-never"
+      >
+        <li>
+          מחיקת אירוע
+        </li>
+        <li>
+          הזמנת אנשים
+        </li>
+        <li>
+          שליחת הודעת וואטסאפ
+        </li>
+        <li>
+          שום דבר שמקורו בהודעה קולית או בתמונה
+        </li>
+        <li>
+          שום דבר שהבינה לא הייתה בטוחה בו או שיש עליו אזהרה
+        </li>
+        <li>
+          שינוי אירועים שהסוכן לא הוסיף
+        </li>
+      </ul>
+    </div>
+  </div>
+  <div
+    class="flex flex-col"
+  >
+    <div
+      class="flex flex-wrap items-center gap-3 border-b border-line py-2"
+    >
+      <span
+        class="grow basis-60"
+        id="auto-scope-edits-label"
+      >
+        לשנות גם אירועים כשאיש הקשר מבקש
+      </span>
+      <button
+        aria-checked="true"
+        aria-labelledby="auto-scope-edits-label"
+        class="switch"
+        data-testid="auto-scope-edits"
+        role="switch"
+        type="button"
+      >
+        <span
+          class="switch-thumb"
+        >
+          <svg
+            aria-hidden="true"
+            class="shrink-0"
+            fill="none"
+            height="12"
+            stroke="currentColor"
+            stroke-width="1.75"
+            viewBox="0 0 16 16"
+            width="12"
+          >
+            <path
+              d="m3.2 8.4 3.2 3.3 6.4-7"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            />
+          </svg>
+        </span>
+      </button>
+    </div>
+    <div
+      class="flex flex-wrap items-center gap-3 border-b border-line py-2"
+    >
+      <span
+        class="flex grow basis-60 flex-col"
+      >
+        <span
+          id="auto-scope-cancels-label"
+        >
+          לבטל גם אירועים כשאיש הקשר מבקש
+        </span>
+        <span
+          class="text-sm text-text-muted"
+          id="auto-scope-cancels-desc"
+        >
+          אירוע שבוטל נשאר ניתן לשחזור - ביטול השינוי מחזיר אותו.
+        </span>
+      </span>
+      <button
+        aria-checked="false"
+        aria-describedby="auto-scope-cancels-desc"
+        aria-labelledby="auto-scope-cancels-label"
+        class="switch"
+        data-testid="auto-scope-cancels"
+        role="switch"
+        type="button"
+      >
+        <span
+          class="switch-thumb"
+        />
+      </button>
+    </div>
+    <div
+      class="flex flex-wrap items-center gap-3 border-b border-line py-2"
+    >
+      <span
+        class="grow basis-60"
+        id="auto-scope-quiet-label"
+      >
+        לא בשעות השקטות (22:00-07:00)
+      </span>
+      <button
+        aria-checked="true"
+        aria-labelledby="auto-scope-quiet-label"
+        class="switch"
+        data-testid="auto-scope-quiet"
+        role="switch"
+        type="button"
+      >
+        <span
+          class="switch-thumb"
+        >
+          <svg
+            aria-hidden="true"
+            class="shrink-0"
+            fill="none"
+            height="12"
+            stroke="currentColor"
+            stroke-width="1.75"
+            viewBox="0 0 16 16"
+            width="12"
+          >
+            <path
+              d="m3.2 8.4 3.2 3.3 6.4-7"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            />
+          </svg>
+        </span>
+      </button>
+    </div>
+    <div
+      class="flex flex-wrap items-center gap-3 py-2"
+    >
+      <label
+        class="grow basis-60"
+        for="auto-scope-validity-select"
+      >
+        מסתיים אחרי
+      </label>
+      <select
+        class="field w-40"
+        data-testid="auto-scope-validity"
+        id="auto-scope-validity-select"
+      >
+        <option
+          value="30"
+        >
+          30 ימים
+        </option>
+        <option
+          value="90"
+        >
+          90 ימים
+        </option>
+      </select>
+    </div>
+  </div>
+  <div
+    class="flex flex-wrap items-center justify-end gap-2"
+  >
+    <button
+      class="btn btn-outline"
+      data-testid="auto-enable-now"
+      type="button"
+    >
+      הפעלה עכשיו
+    </button>
+    <button
+      class="btn btn-outline"
+      data-testid="auto-enable-trial"
+      type="button"
+    >
+      התחלת ניסיון של 24 שעות
+    </button>
+  </div>
+</section>
+`;

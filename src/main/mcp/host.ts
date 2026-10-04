@@ -15,6 +15,7 @@ import type { McpToolCaller, McpToolClass, McpToolName, McpCallerSource, McpErro
 import type { ChildHandle, ChildSpec } from '../proc/supervisor';
 import type { Clock, Logger } from '../deps';
 import type { AuditEntry, AuditKind, EpochMs } from '../../shared/types';
+import { eventTextHasEtag, isEtagFieldRejection } from './projection';
 
 export interface McpHostDeps {
   execPath: string; // process.execPath (ELECTRON_RUN_AS_NODE=1)
@@ -34,6 +35,9 @@ export interface McpHost extends McpCallerSource {
    *  McpCapabilityError and audits 'tool_blocked' {nameSha8,nameLen,verdict:'blocked_not_exposed',runId:0} - and (2) fails with 'unavailable'
    *  unless status is connected | needs_sign_in | signing_in. There is NO un-narrowed `caller` property. */
   callerFor<C extends McpToolClass>(cls: C): McpToolCaller<C>;
+  /** [V2 ADD] (C2 11 McpHostV2) B4 update surface of the last verified tools/list. */
+  updateSurface(): { available: true } | { available: false; problem: UpdateSurfaceProblem };
+  /** list-calendars accessRole per calendar, refreshed by adminClient.listCalendars() and persisted to meta.calendar_roles_json (B7). */
 }
 
 // ---------------------------------------------------------------------------------------------------------------------
@@ -51,14 +55,49 @@ export const MCP_BACKOFF_MS = [2_000, 10_000, 60_000] as const;
 export const MCP_BREAKER = { maxExits: 3, windowMs: 600_000 } as const;
 export const MCP_STABLE_AFTER_MS = 60_000;
 
-/** The three READ-class tools MUST advertise `readOnlyHint:true` - an extra closed gate, never the classifier (ARCH 5.1). */
-export const READ_ONLY_HINT_TOOLS: readonly McpToolName[] = ['get-current-time', 'get-freebusy', 'list-events'];
+/** [V2 CHANGE] start() now verifies tools/list === the EIGHT names of MCP_TOOLS (else 'toolset_mismatch' - whole surface, v1 rule), readOnlyHint:true on
+ *  these four, destructiveHint:true on update-event. */
+export const READ_ONLY_HINT_TOOLS: readonly McpToolName[] = [
+  'get-current-time',
+  'get-freebusy',
+  'list-events',
+  'get-event',
+];
+export const DESTRUCTIVE_HINT_TOOLS: readonly McpToolName[] = ['update-event'];
+/** B4 narrow fail-closed guard, evaluated on the same tools/list: update-event.inputSchema.properties.status.enum must contain 'cancelled' AND
+ *  properties.ifMatch must exist. Failure disables the UPDATE surface only (callerFor('write') refuses 'update-event' with 'unavailable' and the
+ *  audit 'toolset_mismatch' {reason:'status_missing'|'ifmatch_missing'}); creates keep working; AppHealth.calendar.updatesAvailable = false;
+ *  ErrorCode CAL_UPDATE_UNAVAILABLE. No soft-cancel branch exists. */
+export type UpdateSurfaceProblem = 'status_missing' | 'ifmatch_missing';
+export type UpdateSurface = { available: true } | { available: false; problem: UpdateSurfaceProblem };
+
+/** B4 guard over one tools/list (pure). `status` is checked first: without it a cancel is impossible whatever else is there. */
+export function verifyUpdateSurface(
+  tools: ReadonlyArray<{ name: string; inputSchema: unknown; annotations?: unknown }>,
+): { available: true } | { available: false; problem: UpdateSurfaceProblem } {
+  const tool = Array.isArray(tools)
+    ? tools.find((t) => t !== null && typeof t === 'object' && t.name === 'update-event')
+    : undefined;
+  const schema = tool?.inputSchema;
+  const props =
+    schema !== null && typeof schema === 'object' ? (schema as { properties?: unknown }).properties : undefined;
+  const properties = props !== null && typeof props === 'object' ? (props as Record<string, unknown>) : {};
+  const status = properties.status;
+  const statusEnum = status !== null && typeof status === 'object' ? (status as { enum?: unknown }).enum : undefined;
+  if (!Array.isArray(statusEnum) || !statusEnum.includes('cancelled'))
+    return { available: false, problem: 'status_missing' };
+  const ifMatch = properties.ifMatch;
+  if (ifMatch === null || typeof ifMatch !== 'object') return { available: false, problem: 'ifmatch_missing' };
+  return { available: true };
+}
 /** Required fields of our app-authored schemas that must exist in the server's own `inputSchema.required`. */
 export const REQUIRED_INPUT_FIELDS: Readonly<Record<string, readonly string[]>> = {
   'get-freebusy': ['calendars', 'timeMin', 'timeMax'],
   'list-events': ['calendarId'],
   'create-event': ['calendarId', 'summary', 'start', 'end'],
   'manage-accounts': ['action'],
+  'get-event': ['calendarId', 'eventId'], // [V2] research v2-event-editing 1.7
+  'update-event': ['calendarId', 'eventId'], // [V2]
 };
 /** Statuses in which a tool call may leave the app at all. */
 const CALLABLE: readonly McpStatus[] = ['connected', 'needs_sign_in', 'signing_in'];
@@ -145,11 +184,11 @@ export function buildMcpSpawnSpec(
 /** Shape of `tools/list` we verify against; only the fields the startup contract reads. */
 export interface ToolListEntry {
   name: string;
-  annotations?: { readOnlyHint?: boolean } | undefined;
-  inputSchema?: { required?: string[] | undefined } | undefined;
+  annotations?: { readOnlyHint?: boolean; destructiveHint?: boolean } | undefined;
+  inputSchema?: { required?: string[] | undefined; properties?: Record<string, unknown> | undefined } | undefined;
 }
 
-/** Startup contract of ARCHITECTURE 5.1. `null` = the toolset is exactly what we enabled; a string = the reason it is not. */
+/** Startup contract of ARCHITECTURE 5.1 + [V2] B3. `null` = the toolset is exactly what we enabled; a string = the reason it is not. */
 export function verifyToolset(tools: readonly ToolListEntry[]): string | null {
   const expected = Object.keys(MCP_TOOLS).sort();
   const got = [...new Set(tools.map((t) => t.name))].sort();
@@ -157,6 +196,9 @@ export function verifyToolset(tools: readonly ToolListEntry[]): string | null {
   for (const tool of tools) {
     if (READ_ONLY_HINT_TOOLS.includes(tool.name as McpToolName) && tool.annotations?.readOnlyHint !== true)
       return 'readonly_hint';
+    // [V2] B3: update-event must announce itself as destructive (an extra closed gate on the server we spawn).
+    if (DESTRUCTIVE_HINT_TOOLS.includes(tool.name as McpToolName) && tool.annotations?.destructiveHint !== true)
+      return 'destructive_hint';
     const required = REQUIRED_INPUT_FIELDS[tool.name];
     if (required === undefined) continue;
     const declared = tool.inputSchema?.required ?? [];
@@ -195,6 +237,9 @@ export interface McpHostExtras {
   callTimeoutMs?: number;
   startupTimeoutMs?: number;
   appVersion?: string;
+  /** [V2] Called whenever updateSurface() changes (startup guard, or a pre-flight get-event without etag - F12). compose.ts feeds
+   *  HealthHub.setCalendarUpdates(s.available) from it (AppHealth.calendar.updatesAvailable). */
+  onUpdateSurface?: (s: UpdateSurface) => void;
 }
 
 /** `McpHost` plus the Supervisor registration (seams 18): `childSpec()` is consumed by compose.ts only. */
@@ -312,11 +357,48 @@ export function createMcpHost(deps: McpHostDeps & McpHostExtras): McpHostWithChi
   const exitCbs: Array<(info: { code: number | null; signal: string | null }) => void> = [];
   const statusCbs = new Set<(s: McpStatus) => void>();
   let starting: Promise<McpStatus> | null = null;
+  /** [V2] B4 guard result of the LAST verified tools/list; null = never verified (fail closed: unavailable). */
+  let listSurface: UpdateSurface | null = null;
+  /** [V2] F12: a get-event of this server came back without an etag (or its `fields` enum refused 'etag'): insertions 6/7 are missing.
+   *  Sticky for the lifetime of the host - the bundle cannot gain the insertions while it runs. */
+  let etagMissing = false;
 
   const setStatus = (s: McpStatus): void => {
     if (s === state) return;
     state = s;
     for (const cb of [...statusCbs]) cb(s);
+  };
+
+  const currentSurface = (): UpdateSurface => {
+    // Before the first verified tools/list nothing can be known about the server: fail closed. The frozen problem type has no
+    // "unknown" member, so 'status_missing' stands for "not verified" (ops/agent-notes/V2-W1-02-calendar-mcp.md, REQUESTS).
+    if (listSurface === null) return { available: false, problem: 'status_missing' };
+    if (!listSurface.available) return listSurface;
+    // F12: without an etag the If-Match insertion cannot work - the If-Match half of the surface is missing (frozen type, see notes).
+    if (etagMissing) return { available: false, problem: 'ifmatch_missing' };
+    return listSurface;
+  };
+  const surfaceChanged = (before: UpdateSurface): void => {
+    const after = currentSurface();
+    const same =
+      before.available === after.available && (before.available || after.available || before.problem === after.problem);
+    if (!same) deps.onUpdateSurface?.(after);
+  };
+  const markEtagMissing = (): void => {
+    if (etagMissing) return;
+    const before = currentSurface();
+    etagMissing = true;
+    audit?.('toolset_mismatch', null, { reason: 'etag_missing', count: 0 }, now());
+    log?.error('mcp.update_surface_unavailable', { reason: 'etag_missing' });
+    surfaceChanged(before);
+  };
+  /** [V2] F12 observation on OUR OWN get-event result: the projection needs an etag for every pre-flight. */
+  const observeGetEvent = (text: string, isError: boolean): void => {
+    if (isError) {
+      if (isEtagFieldRejection(text)) markEtagMissing();
+      return;
+    }
+    if (eventTextHasEtag(text) === false) markEtagMissing();
   };
 
   const teardown = async (next: McpStatus): Promise<void> => {
@@ -373,11 +455,20 @@ export function createMcpHost(deps: McpHostDeps & McpHostExtras): McpHostWithChi
       // (2) The calendar answers only while it is actually usable.
       const c = client;
       if (c === null || !CALLABLE.includes(state)) return { ok: false, error: 'unavailable' };
+      // (3) [V2] B4: the UPDATE surface only - no update-event leaves the app while the patch is not proven (creates keep working).
+      if (tool === 'update-event') {
+        const surface = currentSurface();
+        if (!surface.available) {
+          audit?.('toolset_mismatch', null, { reason: surface.problem, count: 0 }, now());
+          return { ok: false, error: 'unavailable' };
+        }
+      }
       try {
         const res = await c.callTool({ name: tool, arguments: args }, undefined, { signal, timeout: callTimeoutMs });
         const text = textOfContent(res.content);
         const isError = res.isError === true;
         observeResult(tool, args, text, isError);
+        if (tool === 'get-event') observeGetEvent(text, isError);
         if (isError) {
           const mapped = classifyMcpErrorText(text);
           if (mapped === 'auth') {
@@ -439,6 +530,16 @@ export function createMcpHost(deps: McpHostDeps & McpHostExtras): McpHostWithChi
         await teardown('toolset_mismatch');
         return state;
       }
+      // [V2] B4 narrow guard on the same tools/list: a missing status enum / ifMatch disables the UPDATE surface only.
+      const before = currentSurface();
+      listSurface = verifyUpdateSurface(
+        (listed.tools ?? []).map((t) => ({ name: t.name, inputSchema: t.inputSchema })),
+      );
+      if (!listSurface.available) {
+        audit?.('toolset_mismatch', null, { reason: listSurface.problem, count: (listed.tools ?? []).length }, now());
+        log?.error('mcp.update_surface_unavailable', { reason: listSurface.problem });
+      }
+      surfaceChanged(before);
       setStatus('needs_sign_in');
       // One internal admin call decides sign-in state; the SDK client itself never leaves this closure.
       const probe = await callerFor('admin')('manage-accounts', { action: 'list', account_id: 'personal' });
@@ -477,6 +578,8 @@ export function createMcpHost(deps: McpHostDeps & McpHostExtras): McpHostWithChi
     },
     pid: () => childPid,
     callerFor,
+    // [V2 ADD] B4: the guard result of the last verified tools/list, narrowed by the F12 etag observation. A status query, not a capability.
+    updateSurface: () => currentSurface(),
     childSpec(): ChildSpec {
       return {
         name: 'calendar-mcp',

@@ -187,28 +187,29 @@ exports[`ChooseAi - embedded in Settings > RTL snapshot 1`] = `
       </div>
       <div
         class="flex flex-col gap-2 rounded-md p-3 border border-line bg-surface"
+        data-active="0"
         data-selected="0"
-        data-testid="ai-card-claude"
+        data-testid="ai-card-claude_cli"
       >
         <label
           class="flex items-start gap-2"
         >
           <input
-            data-testid="choose-ai-claude"
+            data-testid="choose-ai-claude_cli"
             name="ai-provider"
             type="radio"
-            value="claude"
+            value="claude_cli"
           />
           <span
             class="grow font-semibold"
           >
-            Claude (בענן)
+            Claude - המנוי שלך
           </span>
         </label>
         <p
           class="m-0 text-text-muted"
         >
-          מהיר וחזק. השיחה שמנותחת נשלחת אל Anthropic.
+          משתמש במנוי Claude שכבר יש לך, דרך Claude Code שהתקנת. בלי מפתח API.
         </p>
         <p
           class="m-0 flex items-start gap-2 text-sm text-text-muted"
@@ -234,64 +235,91 @@ exports[`ChooseAi - embedded in Settings > RTL snapshot 1`] = `
             />
           </svg>
           <span>
-            השיחה שמנותחת נשלחת אל חברת Anthropic - בלי שמות ובלי מספרי טלפון.
+            השיחה שמנותחת נשלחת אל Anthropic דרך החשבון שלך - בלי שמות ובלי מספרי טלפון.
           </span>
         </p>
-      </div>
-      <div
-        class="flex flex-col gap-2 rounded-md p-3 border border-line bg-surface"
-        data-selected="0"
-        data-testid="ai-card-gemini"
-      >
-        <label
-          class="flex items-start gap-2"
+        <section
+          class="flex flex-wrap items-center gap-2"
+          data-selected="false"
+          data-size="compact"
+          data-state="not_installed"
+          data-testid="connect-claude_cli"
         >
-          <input
-            data-testid="choose-ai-gemini"
-            name="ai-provider"
-            type="radio"
-            value="gemini"
+          <span
+            aria-hidden="true"
+            class="icon icon-terminal text-warn"
           />
           <span
-            class="grow font-semibold"
+            class="grow text-sm"
+            role="status"
           >
-            Gemini (בענן)
+            Claude Code לא מותקן במחשב הזה.
           </span>
-        </label>
-        <p
-          class="m-0 text-text-muted"
-        >
-          מהיר, ויש מסלול חינמי. השיחה שמנותחת נשלחת אל Google.
-        </p>
-        <p
-          class="m-0 flex items-start gap-2 text-sm text-text-muted"
-        >
-          <svg
-            aria-hidden="true"
-            class="shrink-0"
-            fill="none"
-            height="16"
-            stroke="currentColor"
-            stroke-width="1.5"
-            viewBox="0 0 16 16"
-            width="16"
+          <button
+            class="btn btn-outline"
+            data-testid="connect-copy-claude_cli"
+            type="button"
           >
-            <path
-              d="M8 1.8 3.2 3.6v4.1c0 3 2 5.1 4.8 6.5 2.8-1.4 4.8-3.5 4.8-6.5V3.6L8 1.8Z"
-              stroke-linejoin="round"
-            />
-            <path
-              d="m5.9 7.9 1.5 1.6 2.9-3.1"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-            />
-          </svg>
-          <span>
-            השיחה שמנותחת נשלחת אל חברת Google - בלי שמות ובלי מספרי טלפון.
-             במסלול החינמי ייתכן ש-Google תשתמש בטקסט שלכם כדי לשפר את המודלים שלה.
-          </span>
-        </p>
+            העתקת פקודת ההתקנה
+          </button>
+        </section>
       </div>
+      <button
+        aria-controls="ai-experimental-cards"
+        aria-expanded="false"
+        class="btn btn-quiet self-start"
+        data-testid="ai-show-experimental"
+        type="button"
+      >
+        <span
+          aria-hidden="true"
+          class="icon-dir inline-block"
+        >
+          ›
+        </span>
+        הצגת אפשרויות ניסיוניות
+      </button>
+      <button
+        aria-controls="ai-advanced-cards"
+        aria-expanded="false"
+        class="btn btn-quiet self-start"
+        data-testid="ai-advanced"
+        type="button"
+      >
+        <span
+          aria-hidden="true"
+          class="icon-dir inline-block"
+        >
+          ›
+        </span>
+        מתקדם: שימוש במפתח API
+      </button>
+    </div>
+    <div
+      class="flex flex-col gap-1"
+    >
+      <label
+        class="flex items-start gap-2"
+      >
+        <input
+          checked=""
+          data-testid="onboarding-voice-optin"
+          type="checkbox"
+        />
+        <span
+          class="flex flex-col"
+        >
+          <span>
+            להבין גם הודעות קוליות (מותאם לעברית)
+          </span>
+        </span>
+      </label>
+      <p
+        class="m-0 text-sm text-text-muted"
+        data-testid="onboarding-pictures-note"
+      >
+        את התמונות קוראת הבינה שבחרתם. קריאת תמונות במחשב הזה יורדת רק כשמבקשים אותה.
+      </p>
     </div>
     <div
       class="mt-auto flex flex-wrap items-center gap-2 pt-4"

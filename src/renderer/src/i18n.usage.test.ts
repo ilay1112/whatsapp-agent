@@ -29,6 +29,7 @@ const DYNAMIC_PREFIXES: readonly string[] = [
   'setup.', // SetupTask x text|action
   'consent.', // ConsentKind x version
   'tray.status.', // tray status line (W1-12)
+  'download.kind.', // [V2] DownloadKind x file id (DownloadPill.downloadNameKey; enumerated in locales.test.ts)
 ];
 
 /**
@@ -42,11 +43,32 @@ const DYNAMIC_PREFIXES: readonly string[] = [
  * prefix is covered otherwise. The scanner now reads the key forms those packages actually use (see QUOTED_KEY_RE), so
  * the exemptions are no longer needed. Do not re-add a prefix here to silence a dead key: reference it or delete it.
  */
-const SEEDED_FOR_OTHER_PACKAGES: readonly string[] = [];
+const SEEDED_FOR_OTHER_PACKAGES: readonly string[] = [
+  // [V2] Seeded by V2-W0-scaffold from UX2 10/14/17 (v2-build-plan 1.2) for the Wave 1 screens that do not exist yet.
+  // V2-W1-11 (dashboard: change / undo / badge / auto chips / voice / image bubbles) and V2-W1-12 (settings, Connect card, tray
+  // copy, onboarding, activity page) delete their entries as they reference the keys - the staleness tests below enforce it.
+  'undo.',
+  'auto.',
+  'voice.',
+  'image.',
+  'download.queued',
+  'notify.overage.',
+  'notify.voiceReady.',
+  'sheet.autoBlock',
+  'sheet.provider.',
+];
 
 /** Individual keys seeded for another package (same rule as above, but their prefix is shared with this package). */
 const SEEDED_KEYS: readonly string[] = [
   'app.name', // window title + tray tooltip, set by main through the Electron facade (W1-12), never through t()
+  // [V2] V2-W1-12: UX2 keys whose screen has no data / channel yet (REQUESTS in ops/agent-notes/V2-W1-12-renderer-settings.md):
+  'activity.notAutomatic', // shadow / fallback rows need a decisions read channel (auto:listWrites carries writes only)
+  'activity.wouldAdd',
+  'activity.wouldChange',
+  'cli.withdraw', // no consent-withdraw channel exists (C2 8)
+  'cli.exeAuto', // "Use automatic" needs a channel that resets llm.cli.claudeExePath to '' (cli:pickExe only sets a path)
+  'cli.agy.dialogTitle', // main-owned native dialog text (V2-W1-06 / V2-W1-09, cli:allowWorkspace)
+  'cli.agy.dialogOk',
 ];
 
 /** `t('x')`, `i18n.t('x')` and the shell's `tRef.current('x')` key-builder helper. */

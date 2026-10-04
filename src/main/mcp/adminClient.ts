@@ -1,7 +1,7 @@
 // src/main/mcp/adminClient.ts   (GoogleAuthService / wizard / settings ONLY; never agent/**, llm/**)
 // Frozen signatures pasted verbatim from docs/specs/contracts.md (owner W1-05); bodies implemented by W1-05.
 import { sanitiseTitle } from './projection';
-import type { CalendarInfo } from '../../shared/types';
+import { CALENDAR_ACCESS_ROLES, type CalendarAccessRole, type CalendarInfo } from '../../shared/types';
 import type { McpResult, McpToolCaller } from './readClient';
 
 export interface AccountInfo {
@@ -27,8 +27,46 @@ export const ACCOUNT_ID = 'personal';
 /** CalendarInfo.name is UNTRUSTED (other people can share a calendar with a hostile name). */
 export const CALENDAR_NAME_MAX = 60;
 const TIME_ZONE_RE = /^[A-Za-z0-9_+\-/]{1,64}$/;
-const WRITABLE_ROLES = new Set(['owner', 'writer']);
+const WRITABLE_ROLES = new Set<CalendarAccessRole>(['owner', 'writer']);
 const BAD = { ok: false, error: 'bad_response' } as const;
+/** Google calendarList roles the app knows; 'unknown' is the fail-closed bucket, never a value the server can send us into. */
+const KNOWN_ROLES: readonly CalendarAccessRole[] = CALENDAR_ACCESS_ROLES.filter((r) => r !== 'unknown');
+
+/** [V2] C2 11: the server's per-calendar `accessRole` -> CalendarAccessRole; anything else or absent => 'unknown' (NOT owned, B7). */
+export function accessRoleOf(raw: unknown): CalendarAccessRole {
+  return typeof raw === 'string' && (KNOWN_ROLES as readonly string[]).includes(raw)
+    ? (raw as CalendarAccessRole)
+    : 'unknown';
+}
+
+/** [V2] B7: `{[calendarId]: accessRole}` of one list-calendars answer - the value persisted to meta.calendar_roles_json. */
+export function calendarRolesOf(calendars: readonly CalendarInfo[]): Record<string, CalendarAccessRole> {
+  const roles: Record<string, CalendarAccessRole> = Object.create(null) as Record<string, CalendarAccessRole>;
+  for (const c of calendars) roles[c.id] = c.accessRole;
+  return { ...roles };
+}
+
+/**
+ * [V2] B7: meta.calendar_roles_json -> roles. Absent, unparsable or odd values never grant anything: a calendar that is missing or
+ * whose role is not one of CALENDAR_ACCESS_ROLES reads as absent (= not owned). compose.ts wires this into AutoPolicyService.calendarRoles.
+ */
+export function parseCalendarRolesJson(text: string | null): Readonly<Record<string, CalendarAccessRole>> {
+  if (typeof text !== 'string' || text.length === 0 || text.length > 64 * 1024) return {};
+  let root: unknown;
+  try {
+    root = JSON.parse(text);
+  } catch {
+    return {};
+  }
+  if (!isObject(root)) return {};
+  const out: Record<string, CalendarAccessRole> = {};
+  for (const [id, role] of Object.entries(root)) {
+    if (id.length === 0 || id.length > 256 || id === '__proto__') continue;
+    const r = accessRoleOf(role);
+    if (r !== 'unknown') out[id] = r;
+  }
+  return out;
+}
 
 type Json = Record<string, unknown>;
 const isObject = (v: unknown): v is Json => typeof v === 'object' && v !== null && !Array.isArray(v);
@@ -91,13 +129,15 @@ export function projectCalendars(text: string): McpResult<CalendarInfo[]> {
     const id = str(raw, 'id');
     if (id === null || id.length === 0 || id.length > 256) return BAD;
     const zone = str(raw, 'timeZone');
-    const role = str(raw, 'accessRole');
+    const accessRole = accessRoleOf(raw.accessRole);
     out.push({
       id,
       name: sanitiseTitle(str(raw, 'summary') ?? str(raw, 'name') ?? '').slice(0, CALENDAR_NAME_MAX),
       primary: raw.primary === true || id === 'primary',
       timeZone: zone !== null && TIME_ZONE_RE.test(zone) ? zone : '',
-      writable: role === null ? true : WRITABLE_ROLES.has(role),
+      // [V2] C2 11: `writable` keeps its v1 meaning (owner or writer) but a MISSING role no longer collapses to writable.
+      writable: WRITABLE_ROLES.has(accessRole),
+      accessRole,
     });
   }
   return { ok: true, value: out };

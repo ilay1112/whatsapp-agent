@@ -7,11 +7,12 @@ import { win32 as path } from 'node:path';
 import type { Clock, Logger } from '../deps';
 import type { AppPaths } from '../paths';
 import type { McpHost } from './host';
-import type { McpAdminClient } from './adminClient';
+import { calendarRolesOf, type McpAdminClient } from './adminClient';
 import type { McpReadClient, McpErrorKind } from './readClient';
 import type {
   AuditEntry,
   AuditKind,
+  CalendarAccessRole,
   CalendarInfo,
   CredentialsProblem,
   EpochMs,
@@ -47,6 +48,13 @@ export interface GoogleAuthDeps {
     unlink(path: string): Promise<void>;
     exists(path: string): boolean;
   };
+}
+
+/** [V2] Additive, optional (the frozen GoogleAuthDeps is unchanged). */
+export interface GoogleAuthExtras {
+  /** B7: every successful list-calendars persists {[calendarId]: accessRole} to meta.calendar_roles_json (absent = not owned).
+   *  compose.ts wires it to repos.meta.set('calendar_roles_json', JSON.stringify(roles)). */
+  persistCalendarRoles?: (roles: Readonly<Record<string, CalendarAccessRole>>) => void;
 }
 
 // ---------------------------------------------------------------------------------------------------------------------
@@ -150,7 +158,7 @@ function defaultFs(googleDir: string): NonNullable<GoogleAuthDeps['fs']> {
   };
 }
 
-export function createGoogleAuth(deps: GoogleAuthDeps): GoogleAuthService {
+export function createGoogleAuth(deps: GoogleAuthDeps & GoogleAuthExtras): GoogleAuthService {
   const io = deps.fs ?? defaultFs(deps.paths.googleDir);
   const cbs = new Set<(s: GoogleWizardState) => void>();
   let hasCredentials = io.exists(deps.paths.googleCredentials);
@@ -188,6 +196,15 @@ export function createGoogleAuth(deps: GoogleAuthDeps): GoogleAuthService {
     });
 
   /** One `manage-accounts list` round trip; also refreshes the displayed account e-mail. */
+  /** [V2] B7: the roles of the last list-calendars answer; a persistence failure never breaks the wizard (it only keeps auto off). */
+  const persistRoles = (calendars: readonly CalendarInfo[]): void => {
+    try {
+      deps.persistCalendarRoles?.(calendarRolesOf(calendars));
+    } catch {
+      deps.log.warn('google.calendar_roles_persist_failed', {});
+    }
+  };
+
   const pollAccount = async (): Promise<'active' | 'waiting' | McpErrorKind> => {
     const res = await deps.admin.manageAccounts('list');
     if (!res.ok) return res.error;
@@ -258,6 +275,7 @@ export function createGoogleAuth(deps: GoogleAuthDeps): GoogleAuthService {
       if (!smoke.ok) return fail(errorCodeFor(smoke.error));
       const calendars = await deps.admin.listCalendars();
       if (!calendars.ok) return fail(errorCodeFor(calendars.error));
+      persistRoles(calendars.value);
       deps.audit(
         'settings_changed',
         null,
@@ -288,6 +306,7 @@ export function createGoogleAuth(deps: GoogleAuthDeps): GoogleAuthService {
     async listCalendars() {
       const res = await deps.admin.listCalendars();
       if (!res.ok) return { ok: false, error: { code: errorCodeFor(res.error) } };
+      persistRoles(res.value);
       return { ok: true, value: res.value };
     },
 

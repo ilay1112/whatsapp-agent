@@ -133,7 +133,7 @@ describe('actions triggers (CONTRACTS 15.2)', () => {
     expect(
       db
         .prepare(
-          `UPDATE actions SET state='approved', approved_at=1, approved_final_json='{}' WHERE id='a1' AND state='pending'`,
+          `UPDATE actions SET state='approved', approved_at=1, approved_final_json='{}', approved_by='user' WHERE id='a1' AND state='pending'`,
         )
         .run().changes,
     ).toBe(1);
@@ -231,10 +231,15 @@ describe('createRepos', () => {
     expect(Object.keys(repos).sort()).toEqual([
       'actions',
       'audit',
+      'autoDecisions', // [V2] C2 16.1 new repos
+      'autoPolicies',
+      'autoWrites',
       'chats',
       'consents',
       'db',
+      'eventRevisions',
       'items',
+      'mediaCache',
       'meta',
       'models',
       'proposals',
@@ -244,6 +249,7 @@ describe('createRepos', () => {
       'runs',
       'secrets',
       'settings',
+      'transcripts',
     ]);
     // a smoke path through the wiring: chat -> item -> proposal -> action -> queue
     const chat = repos.chats.upsertFromBridge('972550000009@s.whatsapp.net', null, true, 1_000);

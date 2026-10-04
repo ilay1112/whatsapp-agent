@@ -27,6 +27,7 @@ Rules for agents:
 
 - Remote: `origin` = https://github.com/ilay1112/whatsapp-agent.git, branch `main`. **The repository is PUBLIC.** Work is committed locally and pushed to it.
 - Before every push: scan what is being published for phone numbers, WhatsApp chat/group ids, tokens, keys and real message text. Synthetic test JIDs `9725500000NN@s.whatsapp.net` are fine; anything that looks real is not. (On 2026-09-28 one real WhatsApp group id was found in the vendored Go test fixture `vendor/whatsapp-bridge-src/media_serve_test.go` and scrubbed from history before the first push.)
+- Before every push also run `git ls-files -o -i --exclude-standard -- src tests scripts resources docs ops build` and confirm nothing but caches is listed: an ignore rule must never hide source. (Until 2026-09-30 a bare `store/` rule silently excluded `src/renderer/src/store/` from every commit, so the public repo could not build.)
 - Commits are authored as `ilay1 <ilay1112@users.noreply.github.com>` (no personal e-mail in a public history).
 - Subagents never commit or push; the orchestrator does, only from a green or explicitly-noted state, staging explicit paths (never `git add -A` while a workflow is editing the tree).
 

@@ -1,0 +1,56 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`VoiceBubble > RTL snapshot (he) 1`] = `
+<div
+  class="flex max-w-full flex-col gap-1 rounded-md rounded-ss-xs bg-quote px-3 py-2"
+  data-status="done"
+  data-testid="voice-bubble"
+>
+  <div
+    class="flex flex-wrap items-center gap-2 text-sm text-text-muted"
+  >
+    <span
+      aria-hidden="true"
+      class="icon icon-mic"
+    />
+    <span
+      class="grow"
+    >
+      הודעה קולית · 
+      <bdi>
+        <span
+          aria-label="0 דקות ו-42 שניות"
+          class="tnum"
+          data-testid="voice-duration"
+        >
+          0:42
+        </span>
+      </bdi>
+    </span>
+    <span
+      class="chip"
+      data-testid="voice-lang"
+    >
+      עברית
+    </span>
+  </div>
+  <div
+    aria-hidden="true"
+    class="media-rule"
+  />
+  <p
+    class="msg-text m-0 text-base"
+    data-testid="voice-transcript"
+    dir="auto"
+    lang="he"
+  >
+    בוא נזיז ל-5, אני עסוקה עד אז
+  </p>
+  <p
+    class="media-caution m-0"
+    data-testid="voice-caution"
+  >
+    תומלל במחשב הזה - ייתכנו טעויות
+  </p>
+</div>
+`;

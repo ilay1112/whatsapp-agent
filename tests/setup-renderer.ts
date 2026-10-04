@@ -35,6 +35,9 @@ import type {
   ConsentState,
   KeyStatus,
   SecretName,
+  AutoState,
+  CliStatus,
+  VoiceState,
 } from '../src/shared/types.ts';
 
 // ---------------------------------------------------------------------------------------------------------------------
@@ -88,10 +91,13 @@ const EVENT_DAY = ((): string => {
 export const defaultHealth: AppHealth = {
   overall: 'ok',
   whatsapp: { state: 'online', since: NOW },
-  llm: { state: 'ready', since: NOW, provider: 'local', model: 'gemma-4-E4B-it-Q4_K_M' },
-  calendar: { state: 'connected', since: NOW },
+  llm: { state: 'ready', since: NOW, provider: 'local', model: 'gemma-4-E4B-it-Q4_K_M', quota: null },
+  calendar: { state: 'connected', since: NOW, updatesAvailable: true },
   queue: { pending: 0, running: 0 },
   paused: false,
+  // [V2 ADD] C2 3 sub-lines
+  voice: { state: 'off', since: NOW },
+  auto: { state: 'off', expiresAt: null, pausedReason: null },
 };
 export const defaultChat: ChatView = {
   chatRef: 1,
@@ -100,6 +106,7 @@ export const defaultChat: ChatView = {
   sendable: true,
   isKnown: true,
   policy: 'default',
+  autoPolicy: 'inherit', // [V2]
 };
 export const defaultCard: ItemCard = {
   itemId: 1,
@@ -152,6 +159,14 @@ export const defaultCard: ItemCard = {
   calendar: null,
   editingLocked: false,
   updatedAt: NOW,
+  // [V2 ADD] C2 1.5 ItemCard fields
+  triggerKind: 'text',
+  change: null,
+  changePending: false,
+  undo: null,
+  auto: null,
+  image: null,
+  voice: null,
 };
 export const defaultDetail: ItemDetail = {
   ...defaultCard,
@@ -164,8 +179,23 @@ const llmConfig: LlmConfig = {
   geminiModel: DEFAULT_SETTINGS.llm.geminiModel,
   local: { tier: 'auto', acceleration: 'auto', forceCpu: false },
   keys: { anthropic_api_key: { present: false, last4: '' }, gemini_api_key: { present: false, last4: '' } },
-  consents: { whatsapp_tos: true, cloud_claude: false, cloud_gemini: false },
+  consents: {
+    whatsapp_tos: true,
+    cloud_claude: false,
+    cloud_gemini: false,
+    cloud_claude_cli: false, // [V2]
+    cloud_antigravity_cli: false, // [V2]
+  },
   usageToday: { inputTokens: 0, outputTokens: 0, budget: DEFAULT_SETTINGS.llm.cloudDailyTokenBudget },
+  // [V2 ADD] C2 1.5 LlmConfig.cli / quota
+  cli: {
+    claudeModel: DEFAULT_SETTINGS.llm.cli.claudeModel,
+    agyModel: DEFAULT_SETTINGS.llm.cli.agyModel,
+    maxRunsPerHour: DEFAULT_SETTINGS.llm.cli.maxRunsPerHour,
+    allowOverage: false,
+    claudeExePathSet: false,
+  },
+  quota: null,
 };
 const modelPlan: ModelPlan = {
   recommendedTier: 'small',
@@ -200,6 +230,7 @@ const modelPlan: ModelPlan = {
     },
   ],
   suggestSmaller: false,
+  mmproj: null, // [V2]
 };
 const progress: DownloadProgress = {
   tier: 'small',
@@ -220,12 +251,45 @@ const google: GoogleWizardState = {
 };
 const onboarding: OnboardingState = {
   step: 'done',
-  checklist: { ai: 'ready', aiPercent: null, whatsapp: 'ready', calendar: 'ready' },
+  checklist: { ai: 'ready', aiPercent: null, whatsapp: 'ready', calendar: 'ready', voice: 'off', voicePercent: null }, // [V2] + voice
   userDataCloudSynced: false,
 };
 const hardware: HardwareInfo = { ramGiB: 16, gpus: [], freeDiskGiB: 100, recommendedTier: 'small' };
 const consent: ConsentState = { kind: 'cloud_claude', currentVersion: 1, acceptedVersion: null, acceptedAt: null };
 const keyStatus: KeyStatus = { present: false, last4: '' };
+// [V2 ADD] defaults of the new view models (C2 1.5)
+const autoState: AutoState = {
+  policy: null,
+  preconditions: {
+    calendarConnected: true,
+    calendarOwned: true,
+    approvedCreates: 0,
+    approvedCreatesNeeded: 3,
+    providerAllowsAuto: true,
+    updatesAvailable: true,
+  },
+  shadowTally: null,
+  usedToday: { writes: 0, limit: 15 },
+  undoableCount: 0,
+};
+const cliStatus: CliStatus = {
+  provider: 'claude_cli',
+  state: 'not_installed',
+  version: null,
+  minVersion: '2.1.248',
+  quota: null,
+  lastTest: null,
+  workspaceTrusted: null,
+};
+const voiceState: VoiceState = {
+  enabled: false,
+  tier: 'auto',
+  resolvedTier: null,
+  model: null,
+  vad: { status: 'none' },
+  secPerAudioSec: null,
+  suggestLite: false,
+};
 
 export const IPC_DEFAULTS: { [C in IpcChannel]: IpcRes<C> } = {
   'app:getBootstrap': {
@@ -289,13 +353,47 @@ export const IPC_DEFAULTS: { [C in IpcChannel]: IpcRes<C> } = {
   'google:status': google,
   'google:disconnect': { ...google, status: 'not_configured', hasCredentials: false },
   'google:listCalendars': {
-    calendars: [{ id: 'primary', name: 'Personal', primary: true, timeZone: 'Asia/Jerusalem', writable: true }],
+    calendars: [
+      {
+        id: 'primary',
+        name: 'Personal',
+        primary: true,
+        timeZone: 'Asia/Jerusalem',
+        writable: true,
+        accessRole: 'owner',
+      },
+    ],
   },
   'settings:get': DEFAULT_SETTINGS,
   'settings:set': DEFAULT_SETTINGS,
   'external:open': null,
   'data:purgeNow': { itemsPurged: 0 },
   'diagnostics:export': { saved: true },
+  // ---- [V2 ADD] the 24 C2 8 channels (schema-valid defaults; V2-W1-12 owns this file from Wave 1 on) ----
+  'item:undoChange': { outcome: 'done', item: defaultDetail },
+  'item:getImage': { dataUrl: 'data:image/jpeg;base64,' },
+  'item:restoreOriginal': { outcome: 'done', item: defaultDetail },
+  'item:cancelEvent': { outcome: 'done', item: defaultDetail },
+  'wa:setReadScope': { scope: 'trigger_chat' },
+  'auto:getState': autoState,
+  'auto:requestEnable': autoState,
+  'auto:disable': autoState,
+  'auto:pause': autoState,
+  'auto:resume': autoState,
+  'auto:endShadow': autoState,
+  'auto:undo': { outcome: 'done', item: defaultDetail },
+  'auto:listWrites': { writes: [] },
+  'auto:export': { saved: true },
+  'cli:getStatus': cliStatus,
+  'cli:signIn': { opened: true },
+  'cli:setOverage': cliStatus,
+  'cli:test': { ok: true, ms: 1200 },
+  'cli:pickExe': cliStatus,
+  'cli:previewWorkspaceChange': { diffLine: '', settingsFileExists: false, agyRunning: false },
+  'cli:allowWorkspace': cliStatus,
+  'voice:getState': voiceState,
+  'voice:selfTest': { ok: true, secPerAudioSec: null },
+  'voice:retry': defaultDetail,
 };
 
 // ---------------------------------------------------------------------------------------------------------------------

@@ -9,6 +9,7 @@ import { createIngest, type Ingest } from './ingest';
 import { createRepos, openDb, type Db, type Repos } from '../db/index';
 import { createFakeBridgeDb, type FakeBridgeDb } from '../../../tests/fakes/fake-bridge-db';
 import { createVirtualClock, type VirtualClock } from '../../../tests/helpers/virtualClock';
+import { seedCalendarEvent } from '../../../tests/golden/testDb';
 import type { Logger } from '../deps';
 import type { Stage0Fn, Stage0Input, Stage0Verdict } from '../agent/stage0';
 import { LIMITS } from '../../shared/types';
@@ -867,6 +868,7 @@ describe('ingest - outbound rows (ARCHITECTURE 4.6 step 5)', () => {
           text: 'see you at 5',
         }),
         NOW,
+        'user',
       ),
     ).toBe('ok');
     h.fake.addMessage({
@@ -892,6 +894,7 @@ describe('ingest - outbound rows (ARCHITECTURE 4.6 step 5)', () => {
       actionId,
       JSON.stringify({ v: 1, kind: 'send_reply', itemId, chatRef: 1, proposalVersion: 1, text: 'see you at 5' }),
       NOW,
+      'user',
     );
     h.fake.addMessage({
       id: 'late',
@@ -942,6 +945,223 @@ describe('ingest - outbound rows (ARCHITECTURE 4.6 step 5)', () => {
     expect(fresh).not.toBeNull();
     expect(fresh?.id).not.toBe(itemId);
     expect(h.repos.actions.byId(actionId)?.state).toBe('superseded');
+  });
+});
+
+describe('[V2-W1-07] ingest - self trigger enqueue half (F28, P2 2 item 5)', () => {
+  /** A known chat with an editable app event (in_calendar, created by the app, start in two days). */
+  function chatWithEvent(h: Harness): { chatId: ChatRef; sourceItemId: ItemId } {
+    const chat = h.repos.chats.upsertFromBridge(CHAT_A, null, true, NOW);
+    const seeded = seedCalendarEvent(h.repos, chat, {
+      title: 'meeting',
+      startLocal: '2026-09-23T15:00',
+      endLocal: '2026-09-23T16:00',
+      createdAt: NOW - 2 * DAY,
+    });
+    return { chatId: chat.id, sourceItemId: seeded.item.id };
+  }
+  function own(h: Harness, id: string, content: string, at = NOW): void {
+    h.fake.addMessage({ id, chatJid: CHAT_A, sender: 'me', content, fromMe: true, timestamp: goTs(h.fake, at) });
+  }
+  const selfSeen = (h: Harness): Stage0Input[] => h.seen.filter((i) => i.selfTrigger === true);
+  function openWithDraft(
+    h: Harness,
+    chatId: ChatRef,
+    text: string,
+    at: number,
+  ): { itemId: ItemId; actionId: ActionId } {
+    const item = h.repos.items.createOpen({
+      chatId,
+      triggerMsgId: 'trigger',
+      triggerTs: at - 60_000,
+      analysis: 'done',
+      holdReason: null,
+      now: at,
+    });
+    const proposal = h.repos.proposals.insertNext({
+      itemId: item.id,
+      provider: 'user',
+      model: 'test',
+      extraction: null,
+      draftText: text,
+      replyLang: 'en',
+      event: null,
+      freeBusy: null,
+      suspicious: false,
+      createdAt: at,
+    });
+    h.repos.items.update(item.id, { replyState: 'draft', currentProposalId: proposal.id }, at);
+    const action = h.repos.actions.insertPending({
+      itemId: item.id,
+      proposalId: proposal.id,
+      chatId,
+      payload: { v: 1, kind: 'send_reply', itemId: item.id, chatRef: chatId, proposalVersion: 1, text },
+      now: at,
+    });
+    return { itemId: item.id, actionId: action.id };
+  }
+  /** A reply the app sent a day ago; its item is closed since (no open item is left in the chat). */
+  function sentReply(h: Harness, chatId: ChatRef, text: string, waMsgId: string): void {
+    const at = NOW - DAY;
+    const { itemId, actionId } = openWithDraft(h, chatId, text, at);
+    const a = h.repos.actions.byId(actionId)!;
+    expect(h.repos.actions.markApprovedExecuting(actionId, a.canonicalJson, at, 'user')).toBe('ok');
+    h.repos.actions.markDone(actionId, { kind: 'send_reply', waMsgId }, at);
+    h.repos.items.update(itemId, { closedReason: 'answered_elsewhere', closedAt: at }, at);
+    expect(h.repos.items.openForChat(chatId)).toBeNull();
+  }
+
+  it('opens an item for the own row (trigger = that row) and enqueues the chat when none is open', async () => {
+    const h = harness();
+    const { chatId, sourceItemId } = chatWithEvent(h);
+    own(h, 'self1', 'lets make it 5 instead', NOW - 30_000);
+
+    await h.ingest.scanNow();
+
+    const item = h.repos.items.openForChat(chatId);
+    expect(item).not.toBeNull();
+    expect(item!.id).not.toBe(sourceItemId);
+    expect(item!.triggerMsgId).toBe('self1');
+    expect(item!.triggerTs).toBe(NOW - 30_000);
+    expect(item!.analysis).toBe('queued');
+    expect(item!.calendarEventId).toBeNull();
+    expect(h.repos.queue.size()).toBe(1);
+    expect(selfSeen(h)).toHaveLength(1);
+    expect(selfSeen(h)[0]!.message.fromMe).toBe(true);
+    expect(h.changed).toEqual([[item!.id]]);
+    expect(h.repos.chats.byId(chatId)?.lastOutboundTs).toBe(NOW - 30_000);
+  });
+
+  it('keeps an open item OPEN, supersedes only its pending send_reply and re-queues it', async () => {
+    const h = harness();
+    const { chatId } = chatWithEvent(h);
+    const { itemId } = openWithDraft(h, chatId, 'our draft', NOW);
+    own(h, 'self2', 'actually 5pm works better');
+
+    await h.ingest.scanNow();
+
+    const item = h.repos.items.byId(itemId)!;
+    expect(item.closedReason).toBeNull();
+    expect(item.replyState).toBe('answered_elsewhere');
+    expect(item.analysis).toBe('queued');
+    expect(item.triggerMsgId).toBe('self2');
+    expect(h.repos.items.openForChat(chatId)?.id).toBe(itemId);
+    expect(h.repos.actions.forItem(itemId).map((a) => a.state)).toEqual(['superseded']);
+    expect(h.repos.queue.size()).toBe(1);
+  });
+
+  it('an app send matched by its approved text (no time window) is never a self trigger', async () => {
+    const h = harness();
+    const { chatId } = chatWithEvent(h);
+    sentReply(h, chatId, 'sure, 5 works', 'wa-sent-1');
+    own(h, 'other-id', 'sure, 5 works');
+    await h.ingest.scanNow();
+    expect(h.repos.items.openForChat(chatId)).toBeNull();
+    expect(h.repos.queue.size()).toBe(0);
+    expect(selfSeen(h)).toHaveLength(0);
+  });
+
+  it('an app send matched by its recorded wa id is never a self trigger', async () => {
+    const h = harness();
+    const { chatId } = chatWithEvent(h);
+    sentReply(h, chatId, 'sure, 5 works', 'wa-sent-2');
+    own(h, 'wa-sent-2', 'text as the phone stored it');
+    await h.ingest.scanNow();
+    expect(h.repos.items.openForChat(chatId)).toBeNull();
+    expect(selfSeen(h)).toHaveLength(0);
+  });
+
+  it('a different own text after an app send is still a self trigger', async () => {
+    const h = harness();
+    const { chatId } = chatWithEvent(h);
+    sentReply(h, chatId, 'sure, 5 works', 'wa-sent-3');
+    own(h, 'self-after', 'hmm, make it 6 after all');
+    await h.ingest.scanNow();
+    expect(h.repos.items.openForChat(chatId)?.triggerMsgId).toBe('self-after');
+  });
+
+  it('without an editable event the own row keeps the v1 path exactly (no S0 call, no item)', async () => {
+    const h = harness();
+    h.repos.chats.upsertFromBridge(CHAT_A, null, true, NOW);
+    own(h, 'plain', 'lets make it 5 instead');
+    await h.ingest.scanNow();
+    expect(h.repos.items.openForChat(h.repos.chats.byJid(CHAT_A)!.id)).toBeNull();
+    expect(h.seen).toHaveLength(0);
+    expect(h.repos.queue.size()).toBe(0);
+  });
+
+  it('an open item with a pending v1 event approval keeps the v1 path (not re-queued, not closed)', async () => {
+    const h = harness();
+    const { chatId } = chatWithEvent(h);
+    const { itemId } = openWithDraft(h, chatId, 'our draft', NOW);
+    h.repos.items.update(itemId, { eventState: 'proposed' }, NOW);
+    own(h, 'self3', 'see you then');
+    await h.ingest.scanNow();
+    const item = h.repos.items.byId(itemId)!;
+    expect(item.analysis).toBe('done');
+    expect(item.closedReason).toBeNull();
+    expect(item.replyState).toBe('answered_elsewhere');
+    expect(h.repos.queue.size()).toBe(0);
+    expect(selfSeen(h)).toHaveLength(0);
+  });
+
+  it('a held S0 verdict falls back to the v1 answered_elsewhere closure', async () => {
+    const h = harness();
+    const { chatId } = chatWithEvent(h);
+    h.setVerdict(() => ({ kind: 'held', reason: 'paused' }));
+    const { itemId } = openWithDraft(h, chatId, 'our draft', NOW);
+    own(h, 'self4', 'make it 6');
+    await h.ingest.scanNow();
+    expect(selfSeen(h)).toHaveLength(1);
+    expect(h.repos.items.byId(itemId)!.closedReason).toBe('answered_elsewhere');
+    expect(h.repos.queue.size()).toBe(0);
+  });
+
+  it('an own row our approved send produced within 120 s keeps the open item untouched (v1)', async () => {
+    const h = harness();
+    const { chatId } = chatWithEvent(h);
+    const { itemId, actionId } = openWithDraft(h, chatId, 'see you at 5', NOW);
+    const a = h.repos.actions.byId(actionId)!;
+    expect(h.repos.actions.markApprovedExecuting(actionId, a.canonicalJson, NOW, 'user')).toBe('ok');
+    own(h, 'ours', 'see you at 5', NOW + 30_000);
+    await h.ingest.scanNow();
+    expect(h.repos.items.byId(itemId)!.replyState).toBe('draft');
+    expect(selfSeen(h)).toHaveLength(0);
+  });
+
+  it('a backlog own row (history replay) or an own voice note is never a self trigger', async () => {
+    const h = harness();
+    const { chatId } = chatWithEvent(h);
+    h.setOnline(false);
+    h.setSyncing(true);
+    own(h, 'old', 'make it 6', NOW - LIMITS.syncMaxAgeMs - 60_000);
+    await h.ingest.scanNow();
+    expect(h.repos.items.openForChat(chatId)).toBeNull();
+    h.setOnline(true);
+    h.setSyncing(false);
+    h.fake.addMessage({
+      id: 'own-voice',
+      chatJid: CHAT_A,
+      sender: 'me',
+      content: '',
+      mediaType: 'audio',
+      fromMe: true,
+      timestamp: goTs(h.fake, NOW),
+    });
+    await h.ingest.scanNow();
+    expect(h.repos.items.openForChat(chatId)).toBeNull();
+    expect(selfSeen(h)).toHaveLength(0);
+  });
+
+  it('a deferred verdict (edit-lock) re-arms and defers the queue row', async () => {
+    const h = harness();
+    const { chatId } = chatWithEvent(h);
+    h.setVerdict(() => ({ kind: 'deferred', until: NOW + 90_000 }));
+    own(h, 'self5', 'make it 6');
+    await h.ingest.scanNow();
+    expect(h.repos.items.openForChat(chatId)?.triggerMsgId).toBe('self5');
+    expect(h.repos.queue.nextDue(NOW + 60_000)).toBeNull();
+    expect(h.repos.queue.nextDue(NOW + 90_000)?.chatId).toBe(chatId);
   });
 });
 

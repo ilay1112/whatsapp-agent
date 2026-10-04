@@ -1,6 +1,8 @@
-// src/main/health/healthHub.ts - AppHealth aggregator (build-plan section 3; owner W1-01).
+// src/main/health/healthHub.ts - AppHealth aggregator (build-plan section 3; owner W1-01; v2 deltas V2-W1-10-main-platform).
 import { overallOf } from '../../shared/health';
 import type { AppHealth, BridgeStatus, HealthPart, LlmStatus, McpStatus, PairingState } from '../../shared/health';
+import type { AutoPausedReason, AutoPolicyState, LlmQuota } from '../../shared/types';
+import type { VoiceStatus } from '../../shared/health';
 import { ERROR_SEVERITY } from '../../shared/errors';
 import type { ErrorCode } from '../../shared/errors';
 import type { EpochMs, ProviderId } from '../../shared/types';
@@ -16,6 +18,15 @@ export interface HealthHub {
   setCalendar(s: HealthPartInput<McpStatus>): void;
   setQueue(q: { pending: number; running: number }): void;
   setPaused(b: boolean): void;
+  // ---- [V2 ADD] v2-build-plan section 3 seam (C2 3 shapes) - Wave 0 stubs, owner V2-W1-10-main-platform ----
+  setVoice(v: HealthPartInput<VoiceStatus>): void;
+  setAuto(a: {
+    state: AutoPolicyState | 'off';
+    expiresAt: EpochMs | null;
+    pausedReason: AutoPausedReason | null;
+  }): void;
+  setLlmQuota(q: LlmQuota | null): void;
+  setCalendarUpdates(available: boolean): void;
   get(): AppHealth; // overall = overallOf(parts, severity) after every change ; `since` = time of the last STATE change
   pairing(): PairingState;
   onChange(cb: (h: AppHealth) => void): () => void;
@@ -58,11 +69,24 @@ export function createHealthHub(deps: { now: () => EpochMs }): HealthHub {
   const listeners = new Set<(h: AppHealth) => void>();
   let lastEmitted = '';
 
+  // [V2] boot values of the four new AppHealth fields (C2 3). updatesAvailable starts FALSE (fail closed: the update surface is
+  // available only once the startup guard verified it, B4). None of them feeds overallOf(): the status panel keeps three rows
+  // (ARCH-v2 11) and voice / auto / quota / updates are sub-lines only, so they never turn the pill amber on their own.
+  const voice: MutablePart<VoiceStatus> = { state: 'off', code: undefined, since: start };
+  let auto: AppHealth['auto'] = { state: 'off', expiresAt: null, pausedReason: null };
+  let llmQuota: LlmQuota | null = null;
+  let calendarUpdatesAvailable = false;
+
   const snapshot = (): AppHealth => {
     const parts = {
       whatsapp: freezePart(whatsapp),
-      llm: { ...freezePart(llmPart), provider: llmProvider, model: llmModel },
-      calendar: freezePart(calendar),
+      llm: {
+        ...freezePart(llmPart),
+        provider: llmProvider,
+        model: llmModel,
+        quota: llmQuota === null ? null : { ...llmQuota },
+      },
+      calendar: { ...freezePart(calendar), updatesAvailable: calendarUpdatesAvailable },
     };
     return {
       overall: overallOf(parts, severityOf),
@@ -71,6 +95,8 @@ export function createHealthHub(deps: { now: () => EpochMs }): HealthHub {
       calendar: parts.calendar,
       queue: { ...queue },
       paused,
+      voice: freezePart(voice),
+      auto: { ...auto },
     };
   };
 
@@ -118,6 +144,23 @@ export function createHealthHub(deps: { now: () => EpochMs }): HealthHub {
     },
     setPaused(b) {
       paused = b;
+      publish();
+    },
+    // ---- [V2] sub-line setters (C2 3). Each copies its input, so a caller mutating its own object later cannot change get().
+    setVoice(v) {
+      applyPart(voice, v);
+      publish();
+    },
+    setAuto(a) {
+      auto = { state: a.state, expiresAt: a.expiresAt, pausedReason: a.pausedReason };
+      publish();
+    },
+    setLlmQuota(q) {
+      llmQuota = q === null ? null : { resetsAt: q.resetsAt, usingOverage: q.usingOverage };
+      publish();
+    },
+    setCalendarUpdates(available) {
+      calendarUpdatesAvailable = available;
       publish();
     },
     get: snapshot,

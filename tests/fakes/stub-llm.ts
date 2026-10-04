@@ -1,16 +1,32 @@
 // tests/fakes/stub-llm.ts - rule-based scripted LlmProvider (TESTS 3.3 + CONTRACTS 16; owner W1-10).
 // Not spawnable, so it may import src/** types (type-only) and the virtual clock.
-import { readFileSync } from 'node:fs';
+// [V2] v2 deltas (V2-W0-scaffold; owner V2-W1-03 from Wave 1 on): `loop` + `capabilities.images` (C2 9, StubLlmV2Additions of C2 17),
+// `when.purpose 'read_image'`, `when.imageSha256`, image-part recording, and the null-event defaults for v1-shaped extraction fixtures.
+import { createHash } from 'node:crypto';
+import { readFileSync, writeFileSync } from 'node:fs';
 import { LlmError } from '../../src/main/llm/types.ts';
-import type { CallOpts, LlmMessage, LlmProvider, LlmResponse, LlmTool, LlmToolCall } from '../../src/main/llm/types.ts';
-import type { JsonSchemaLcd, ProviderId } from '../../src/shared/types.ts';
+import type {
+  CallOpts,
+  LlmImagePart,
+  LlmMessage,
+  LlmProvider,
+  LlmResponse,
+  LlmTool,
+  LlmToolCall,
+} from '../../src/main/llm/types.ts';
+import type { JsonSchemaLcd, ProviderId, ProviderLoop } from '../../src/shared/types.ts';
 import type { ProviderErrorCode } from '../../src/shared/errors.ts';
 import type { Clock } from '../../src/main/deps.ts';
 import type { GoldenCase } from '../helpers/goldenLoader.ts';
 
 export type StubRule = {
   when: {
-    purpose?: 'extract' | 'draft';
+    purpose?: 'extract' | 'draft' | 'read_image'; // [V2] + read_image (V1)
+    /** [V2] sha256 hex of the decoded bytes of the (first) image part of the user turn (V1 READ-IMAGE). */
+    imageSha256?: string;
+    /** [V2] T2 3.1 step 5: the stage the spawned CLI fakes match on (derived from argv there). StubLlm matches it against
+     *  `purpose`; `smoke` never matches here (only the CLI provider-start smoke run has that stage). */
+    stage?: 'extract' | 'draft' | 'read_image' | 'smoke';
     contains?: string;
     notContains?: string;
     turn?: number;
@@ -34,6 +50,9 @@ export interface StubLlmOptions {
   model?: string;
   rules: StubRule[];
   clock?: Clock;
+  /** [V2] C2 9 `loop` (default 'turn') and `capabilities.images` (default false). */
+  loop?: ProviderLoop;
+  capabilities?: { images: boolean };
 }
 export interface StubCall {
   kind: 'structured' | 'chat';
@@ -42,6 +61,39 @@ export interface StubCall {
   tools: LlmTool[];
   schema?: unknown;
   opts: CallOpts;
+  /** [V2] image parts seen in the user turn(s) of this call (mime + sha256 of the decoded bytes; the bytes are never kept). */
+  images: Array<{ mime: LlmImagePart['mime']; sha256: string; bytes: number }>;
+}
+
+/** [V2] The four B20 fields S1 v2 always returns. A v1-shaped extraction fixture (no `change` key) gets the null-event defaults the
+ *  S1 v2 few-shots use (C2 5: refersToExisting:false, change:'no_change', changeConfidence:'high'; confidence 'high') so v1 scenarios
+ *  stay schema-valid under the v2 ExtractionSchema. A fixture that sets any of the four keeps its own values (and may stay invalid). */
+export const V1_EXTRACTION_DEFAULTS = {
+  refersToExisting: false,
+  change: 'no_change',
+  changeConfidence: 'high',
+  confidence: 'high',
+} as const;
+function withV2ExtractionDefaults(purpose: string, value: unknown): unknown {
+  if (purpose !== 'extract' || typeof value !== 'object' || value === null || Array.isArray(value)) return value;
+  const o = value as Record<string, unknown>;
+  if (!('intent' in o)) return value;
+  const out: Record<string, unknown> = { ...o };
+  for (const [k, v] of Object.entries(V1_EXTRACTION_DEFAULTS)) if (!(k in out)) out[k] = v;
+  return out;
+}
+/** [V2] image parts of the user turns (V1 passes [image, text]). */
+function imagePartsOf(messages: LlmMessage[]): LlmImagePart[] {
+  const out: LlmImagePart[] = [];
+  for (const m of messages) {
+    if (m.role !== 'user' || typeof m.content === 'string') continue;
+    for (const part of m.content) if (part.type === 'image') out.push(part);
+  }
+  return out;
+}
+function sha256OfBase64(b64: string): { sha256: string; bytes: number } {
+  const buf = Buffer.from(b64, 'base64');
+  return { sha256: createHash('sha256').update(buf).digest('hex'), bytes: buf.byteLength };
 }
 
 type Respond = StubRule['respond'];
@@ -54,7 +106,14 @@ const isHang = (r: Respond): r is { hang: true } => 'hang' in r;
 function userText(messages: LlmMessage[]): string {
   return messages
     .filter((m): m is Extract<LlmMessage, { role: 'user' }> => m.role === 'user')
-    .map((m) => m.content)
+    .map((m) =>
+      typeof m.content === 'string'
+        ? m.content
+        : m.content
+            .filter((p): p is { type: 'text'; text: string } => p.type === 'text')
+            .map((p) => p.text)
+            .join('\n'),
+    )
     .join('\n');
 }
 /** Turn index of THIS call: 0 for the first model turn of the stage, +1 per assistant message already in the history. */
@@ -68,6 +127,9 @@ function toolResultNames(messages: LlmMessage[]): string[] {
 export class StubLlm implements LlmProvider {
   readonly id: ProviderId;
   readonly model: string;
+  /** [V2] C2 9 / C2 17 StubLlmV2Additions. Mutable through setLoop / setCapabilities (tests only). */
+  loop: ProviderLoop;
+  capabilities: { images: boolean };
   readonly calls: StubCall[] = [];
   /** CONTRACTS 16 view of `calls` (kind + messages + tool names). */
   readonly seen: Array<{ kind: 'structured' | 'chat'; messages: LlmMessage[]; toolNames: string[] }> = [];
@@ -89,6 +151,16 @@ export class StubLlm implements LlmProvider {
     this.rules = [...opts.rules];
     this.used = this.rules.map(() => 0);
     this.clock = opts.clock;
+    this.loop = opts.loop ?? 'turn';
+    this.capabilities = { images: opts.capabilities?.images ?? false };
+  }
+
+  /** [V2] C2 17 StubLlmV2Additions. */
+  setLoop(loop: ProviderLoop): void {
+    this.loop = loop;
+  }
+  setCapabilities(c: { images: boolean }): void {
+    this.capabilities = { images: c.images };
   }
 
   /** CONTRACTS 16: sequence-style scripting on top of the rules (structured answers / chat responses consumed in order). */
@@ -101,7 +173,7 @@ export class StubLlm implements LlmProvider {
     this.record('structured', messages, [], opts, schema);
     if (this.queuedStructured.length > 0) {
       await this.pause(0, opts.signal);
-      return this.queuedStructured.shift() as T;
+      return withV2ExtractionDefaults(opts.purpose, this.queuedStructured.shift()) as T;
     }
     const hit = this.match(messages, opts);
     if (hit === null) {
@@ -114,7 +186,7 @@ export class StubLlm implements LlmProvider {
     if (isHang(r)) return await this.hang<T>(opts.signal);
     if (isStructured(r)) {
       opts.onUsage?.({ inputTokens: 200, outputTokens: 40 });
-      return r.structured as T;
+      return withV2ExtractionDefaults(opts.purpose, r.structured) as T;
     }
     // A draft-shaped rule answered a structured call: that is a scripting mistake, not a model failure.
     this.unmatched += 1;
@@ -161,8 +233,47 @@ export class StubLlm implements LlmProvider {
     return Promise.resolve();
   }
 
-  static fromGoldenCase(c: GoldenCase): StubLlm {
-    return new StubLlm({ rules: c.stub.rules });
+  /** [V2-W1-03] T2 7.2: the case's rules, played by a stub that looks like the provider under test (`id` / `loop` / `capabilities`,
+   *  default `local` / `turn` / no images). A case that carries a full V1 read (`imageRead`, P2 15.2) and no `read_image` rule gets one,
+   *  so the picture stage answers exactly what the row states. */
+  static fromGoldenCase(
+    c: GoldenCase,
+    opts: {
+      id?: ProviderId;
+      model?: string;
+      loop?: ProviderLoop;
+      capabilities?: { images: boolean };
+      clock?: Clock;
+    } = {},
+  ): StubLlm {
+    const rules = [...c.stub.rules];
+    const read = (c as GoldenCase & { imageRead?: Record<string, unknown> }).imageRead;
+    if (read !== undefined && !rules.some((r) => r.when.purpose === 'read_image' || r.when.stage === 'read_image'))
+      rules.unshift({ when: { purpose: 'read_image' }, respond: { structured: read } });
+    return new StubLlm({
+      rules,
+      ...(opts.id !== undefined ? { id: opts.id } : {}),
+      ...(opts.model !== undefined ? { model: opts.model } : {}),
+      ...(opts.loop !== undefined ? { loop: opts.loop } : {}),
+      ...(opts.capabilities !== undefined ? { capabilities: opts.capabilities } : {}),
+      ...(opts.clock !== undefined ? { clock: opts.clock } : {}),
+    });
+  }
+  /** [V2-W1-03] The rules this stub plays (read-only view; the parity suite writes them with `toCliScript`). */
+  get scriptRules(): readonly StubRule[] {
+    return this.rules;
+  }
+  /** [V2] T2 3.9: writes the rules as the `--fake-script` file of the spawned CLI fakes (3.1/3.2) so one golden case runs
+   *  unchanged on local (this stub), claude_cli and antigravity_cli. `when.stage` defaults to `when.purpose`. */
+  toCliScript(path: string): void {
+    const rules = this.rules.map((r) => ({
+      ...r,
+      when: {
+        ...r.when,
+        ...(r.when.stage === undefined && r.when.purpose !== undefined ? { stage: r.when.purpose } : {}),
+      },
+    }));
+    writeFileSync(path, JSON.stringify({ id: this.id, model: this.model, rules }), 'utf8');
   }
   static fromScriptFile(path: string): StubLlm {
     const parsed = JSON.parse(readFileSync(path, 'utf8')) as { id?: ProviderId; model?: string; rules?: StubRule[] };
@@ -191,6 +302,7 @@ export class StubLlm implements LlmProvider {
       tools: [...tools],
       opts,
       ...(schema === undefined ? {} : { schema }),
+      images: imagePartsOf(messages).map((p) => ({ mime: p.mime, ...sha256OfBase64(p.base64) })),
     });
     this.seen.push({ kind, messages: [...messages], toolNames: tools.map((t) => t.name) });
   }
@@ -204,10 +316,15 @@ export class StubLlm implements LlmProvider {
       if (rule.times !== undefined && this.used[i]! >= rule.times) continue;
       const w = rule.when;
       if (w.purpose !== undefined && w.purpose !== opts.purpose) continue;
+      if (w.stage !== undefined && w.stage !== opts.purpose) continue; // [V2]
       if (w.contains !== undefined && !text.includes(w.contains)) continue;
       if (w.notContains !== undefined && text.includes(w.notContains)) continue;
       if (w.turn !== undefined && w.turn !== turn) continue;
       if (w.hasToolResultFor !== undefined && !results.includes(w.hasToolResultFor)) continue;
+      if (w.imageSha256 !== undefined) {
+        const first = imagePartsOf(messages)[0];
+        if (first === undefined || sha256OfBase64(first.base64).sha256 !== w.imageSha256) continue;
+      }
       this.used[i] = this.used[i]! + 1;
       return { rule, index: i };
     }

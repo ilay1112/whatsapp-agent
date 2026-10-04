@@ -25,6 +25,7 @@ import {
   createTaskkillOnlyQuery,
   handleFromChildProcess,
   isChildName,
+  isExactCliExePath,
   isInsideDir,
   isSamePath,
   parsePidFile,
@@ -1190,5 +1191,93 @@ describe('frozen-signature conformance', () => {
     const sup = createSupervisor(frozenOnly);
     sup.register(spec({ name: 'calendar-mcp', start: () => Promise.reject(new Error('not started in this test')) }));
     expect(sup.state('calendar-mcp')).toBe('stopped');
+  });
+});
+
+// =====================================================================================================================
+// [V2] owner V2-W1-06-claude-cli: quit order (jobs before stopAll) and the B31 exact CLI-exe rule of parsePidFile.
+// =====================================================================================================================
+describe('[V2] stopAll kills jobs first (B2 quit order)', () => {
+  it('jobs.killAll() resolves before the first child is stopped (call-order spy)', async () => {
+    const order: string[] = [];
+    const child = scriptedChild({ pid: 1, exePath: path.join(resourcesDir, 'llama.exe') });
+    const sup = createSupervisor({
+      runDir,
+      now: () => clock.now(),
+      log: (event, meta) => logs.push({ event, meta }),
+      clock,
+      processQuery,
+      killSync: (pid) => killSyncCalls.push(pid),
+      random: fixedRandom(0),
+      jobs: {
+        killAll: async () => {
+          order.push('jobs.killAll:start');
+          await Promise.resolve();
+          order.push('jobs.killAll:end');
+        },
+      },
+    });
+    sup.onState((name, s) => {
+      if (s === 'stopping') order.push(`stop:${name}`);
+    });
+    sup.register(spec({ name: 'llama', start: () => Promise.resolve(child.handle) }));
+    await sup.start('llama');
+    await sup.stopAll({ graceMs: 100 });
+    expect(order).toEqual(['jobs.killAll:start', 'jobs.killAll:end', 'stop:llama']);
+  });
+
+  it('a failing jobs.killAll() is logged by reason and never blocks stopping the children', async () => {
+    const child = scriptedChild({ pid: 2, exePath: path.join(resourcesDir, 'bridge.exe') });
+    const sup = createSupervisor({
+      runDir,
+      now: () => clock.now(),
+      log: (event, meta) => logs.push({ event, meta }),
+      clock,
+      processQuery,
+      killSync: (pid) => killSyncCalls.push(pid),
+      jobs: { killAll: () => Promise.reject(new RangeError('x')) },
+    });
+    sup.register(spec({ name: 'bridge', start: () => Promise.resolve(child.handle) }));
+    await sup.start('bridge');
+    await sup.stopAll({ graceMs: 100 });
+    expect(sup.state('bridge')).toBe('stopped');
+    expect(logs).toContainEqual({ event: 'proc_jobs_kill_failed', meta: { reason: 'RangeError' } });
+  });
+});
+
+describe('[V2] parsePidFile - recorded CLI exe paths (B31 exact match)', () => {
+  const cli = (): string => path.join(tmpDir, 'home', '.local', 'bin', 'claude.exe');
+  const body = (exePath: string): string => JSON.stringify({ pid: 10, exePath, startedAt: 1_000 });
+
+  it('accepts the exact recorded string only', () => {
+    expect(parsePidFile(body(cli()), [], [], [cli()])).toEqual({
+      pid: 10,
+      exePath: path.resolve(cli()),
+      startedAt: 1_000,
+    });
+    expect(isExactCliExePath(cli(), cli())).toBe(true);
+  });
+
+  it.each<[string, (p: string) => string]>([
+    ['case variant', (p) => p.toUpperCase()],
+    ['trailing space', (p) => `${p} `],
+    ['leading space', (p) => ` ${p}`],
+    ['parent-dir', (p) => [path.dirname(p), 'x', '..', 'claude.exe'].join(path.sep)],
+    ['.cmd', (p) => p.replace(/\.exe$/, '.cmd')],
+    ['.exe.cmd', (p) => `${p}.cmd`],
+  ])('rejects a %s of the recorded path', (_n, variant) => {
+    expect(parsePidFile(body(variant(cli())), [], [], [cli()])).toBeNull();
+  });
+
+  it('a recorded value that is itself unsafe is never accepted (relative, .., whitespace, .cmd, empty)', () => {
+    const bad = [
+      'claude.exe',
+      [path.dirname(cli()), '..', 'claude.exe'].join(path.sep),
+      `${cli()} `,
+      cli().replace(/\.exe$/, '.cmd'),
+      '',
+    ];
+    for (const rec of bad) expect(isExactCliExePath(rec, rec)).toBe(false);
+    expect(isExactCliExePath(cli(), 42 as unknown as string)).toBe(false);
   });
 });

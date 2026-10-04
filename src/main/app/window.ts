@@ -233,6 +233,9 @@ export function installTrayHintCoachMark(win: BrowserWindow, deps: CoachMarkDeps
 export interface QuitDeps {
   setQuitting: () => void; // makes the close handler let the window close
   stopQueue: () => Promise<void>; // TriageQueue.stop() + abortInFlight()
+  /** [V2] B2: JobRunner.killAll() - every whisper / vendor-CLI job is killed BEFORE the supervised children stop. Optional so the
+   *  v1 wiring compiles; V2-W2-01 passes it. */
+  killJobs?: () => Promise<void>;
   drainExecutor: (ms: number) => Promise<void>; // ActionExecutor.drain()
   stopChildren: (opts: { graceMs: number }) => Promise<void>; // Supervisor.stopAll() : llama, calendar-mcp, bridge
   writeLastOnline: () => void; // meta.last_online_ts (backlog gate)
@@ -247,7 +250,8 @@ export interface QuitDeps {
 export const QUIT_DRAIN_MS = 5_000;
 export const QUIT_CHILD_GRACE_MS = 3_000;
 
-/** Pure order: setQuitting -> stopQueue -> drainExecutor -> stopChildren -> writeLastOnline -> closeDb -> destroyTray -> exit. */
+/** Pure order: setQuitting -> stopQueue -> [V2] killJobs -> drainExecutor -> stopChildren -> writeLastOnline -> closeDb -> destroyTray
+ *  -> exit. */
 export async function runQuitSequence(deps: QuitDeps): Promise<void> {
   const log = deps.log.child('quit');
   let exited = false;
@@ -273,6 +277,8 @@ export async function runQuitSequence(deps: QuitDeps): Promise<void> {
   });
   const sequence = (async (): Promise<'done'> => {
     await step('stopQueue', () => deps.stopQueue());
+    const killJobs = deps.killJobs;
+    if (killJobs !== undefined) await step('killJobs', () => killJobs());
     await step('drainExecutor', () => deps.drainExecutor(Math.min(QUIT_DRAIN_MS, deps.timeoutMs)));
     await step('stopChildren', () => deps.stopChildren({ graceMs: QUIT_CHILD_GRACE_MS }));
     await step('writeLastOnline', () => deps.writeLastOnline());

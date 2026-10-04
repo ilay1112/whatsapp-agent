@@ -3,24 +3,46 @@
 // (wordmark, HealthPill, DownloadPill, pause, language, gear), the setup strip, the footer, the two live regions, the
 // toast, the first-open coach mark and the DB_RECOVERY dialog. It owns NO business logic: every side effect goes through
 // api.ts, and approvals live on the cards (W1-15).
+// [V2] V2-W1-12 (UX2 2, 11.9, 12): + the `auto:changed` / `cli:changed` / `queue:changed` subscriptions, the downloader
+// QUEUE for the DownloadPill (llm / voice / picture reading), the status-panel sub-lines' navigation, SetupStrip rows 4-9,
+// the Settings group / Automatic activity routing and the v2 announcements ("Undone.", automatic writes, policy state,
+// voice / picture model ready). Nothing here can turn automatic mode on: the strip's "Turn on for real" / "Resume" rows
+// only NAVIGATE to Settings > Automatic mode, where the guarded buttons live.
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import type { Bootstrap, ChatView, DownloadProgress, ItemDetail, Lang, OnboardingStep } from '@shared/types';
+import type {
+  AutoState,
+  AutoWriteView,
+  Bootstrap,
+  ChatView,
+  DownloadProgress,
+  ItemDetail,
+  Lang,
+  ModelFileId,
+  OnboardingStep,
+} from '@shared/types';
+import { CONSENT_VERSIONS, LIMITS, VOICE_TIERS } from '@shared/types';
 import { localToEpochMs } from '@shared/when';
 import type { AppHealth } from '@shared/health';
 import type { ErrorCode } from '@shared/errors';
 import type { View } from '@shared/ipc';
-import { api, on, onApprovalSuccess } from './api';
+import { api, events, on, onApprovalSuccess, onUndoSuccess } from './api';
 import { applyDocumentLanguage, dirOf } from './i18n';
 import { installFocusGuard, useHealthStore, type SetupTask } from './store/health';
 import { useSettingsStore } from './store/settings';
+import { useAutoStore } from './store/auto';
+import { useCliStore } from './store/cli';
+import { formatDate, formatWeekdayTime } from '@shared/i18n/format';
+import { ConsentDialog, cloudConsentKindOf } from './components/ConsentDialog';
+import { downloadKindOf, downloadTargetOf } from './components/DownloadPill';
+import type { SetupRowDetails } from './components/SetupStrip';
 import { useDashboardStore } from './store/dashboard';
 import { HealthPill, type HealthPart } from './components/HealthPill';
 import { DownloadPill, type DownloadPillProgress } from './components/DownloadPill';
 import { SetupStrip } from './components/SetupStrip';
 import { LanguageToggle } from './components/LanguageToggle';
 import { Dashboard } from './views/Dashboard';
-import { Settings } from './views/Settings';
+import { Settings, type SettingsGroup } from './views/Settings';
 import { Welcome } from './views/Onboarding/Welcome';
 import { ChooseAi } from './views/Onboarding/ChooseAi';
 import { LinkWhatsApp } from './views/Onboarding/LinkWhatsApp';
@@ -33,11 +55,13 @@ const TOAST_MS = 6_000;
 
 const DOWNLOAD_PILL_STATUSES = ['downloading', 'paused', 'verifying', 'failed'] as const;
 
-/** DownloadProgress carries every ModelFileStatus; the pill is shown for four of them (UX 5.3). */
+/** DownloadProgress carries every ModelFileStatus; the pill is shown for four of them (UX 5.3). [V2] Any visible file of
+ *  the one downloader queue (llm / voice / picture reading); `voice-vad` rides silently and is never shown (UX2 2.1). */
 export function toPillProgress(p: DownloadProgress | null): DownloadPillProgress | null {
   if (!p) return null;
   const status = DOWNLOAD_PILL_STATUSES.find((s) => s === p.status);
   if (!status) return null;
+  if (downloadKindOf(p.tier) === null) return null;
   return {
     tier: p.tier,
     status,
@@ -81,14 +105,64 @@ export function announceWhenOf(item: ItemDetail, lang: Lang): string {
   }
 }
 
-/** UX 5.4 conditions, most blocking first. */
-export function setupTasksOf(health: AppHealth | null, hidden: readonly SetupTask[]): SetupTask[] {
+/** [V2] the facts SetupStrip rows 4-9 need besides AppHealth (UX2 2.3). */
+export interface SetupFacts {
+  auto: AutoState | null;
+  /** A voice model file is in the downloader queue (downloading / paused / verifying). */
+  voiceDownloadPercent: number | null;
+  now: number;
+}
+
+const MS_DAY = 86_400_000;
+/** UX2 2.3 row 7 / 9 windows. */
+const AUTO_EXPIRING_DAYS = 3;
+const AUTO_EXPIRED_SHOWN_DAYS = 7;
+
+/** UX 5.4 conditions + UX2 2.3 rows 4-9, most blocking first (SetupStrip keeps at most two). */
+export function setupTasksOf(
+  health: AppHealth | null,
+  hidden: readonly SetupTask[],
+  facts: SetupFacts = { auto: null, voiceDownloadPercent: null, now: Date.now() },
+): SetupTask[] {
   if (!health) return [];
   const tasks: SetupTask[] = [];
   if (['needs_pairing', 'not_started', 'logged_out'].includes(health.whatsapp.state)) tasks.push('whatsapp');
-  if (['model_missing', 'key_missing', 'consent_missing', 'failed'].includes(health.llm.state)) tasks.push('ai');
+  // [V2] row 4: an API-key cloud provider whose consent is below the current version is the "approval needed again" row,
+  // not the generic "AI is not set up" row.
+  const consentV2 =
+    health.llm.state === 'consent_missing' && (health.llm.provider === 'claude' || health.llm.provider === 'gemini');
+  if (['model_missing', 'key_missing', 'consent_missing', 'failed'].includes(health.llm.state) && !consentV2)
+    tasks.push('ai');
   if (health.calendar.state === 'not_configured') tasks.push('calendar');
+  if (consentV2) tasks.push('consent_v2');
+  const policy = facts.auto?.policy ?? null;
+  if (policy?.state === 'paused') tasks.push('auto_paused');
+  if (policy?.state === 'shadow') tasks.push('auto_trial');
+  if (policy?.state === 'on' && policy.expiresAt - facts.now <= AUTO_EXPIRING_DAYS * MS_DAY)
+    tasks.push('auto_expiring');
+  if (facts.voiceDownloadPercent !== null) tasks.push('voice_download');
+  if (policy?.state === 'expired' && facts.now - policy.expiresAt <= AUTO_EXPIRED_SHOWN_DAYS * MS_DAY)
+    tasks.push('auto_expired');
   return tasks.filter((task) => !hidden.includes(task));
+}
+
+/** [V2] UX2 11.9: "Added automatically: {{when}}." - trusted fields only (the start time), never the title. */
+export function announceAutoWrite(row: AutoWriteView, lang: Lang): { key: string; when: string } | null {
+  const zone = row.event.timeZone;
+  if (row.event.startLocal === '' || zone === '') return null;
+  let start: number;
+  try {
+    start = localToEpochMs(row.event.startLocal, zone);
+  } catch {
+    return null;
+  }
+  const key =
+    row.kind === 'create'
+      ? 'auto.announce.added'
+      : row.kind === 'update'
+        ? 'auto.announce.moved'
+        : 'auto.announce.cancelled';
+  return { key, when: formatWeekdayTime(start, lang, zone) };
 }
 
 /** The diary-leaf tray glyph (UX 12.2 shows it inline in the coach mark; the same signature object as the date tab). */
@@ -153,6 +227,16 @@ export function App() {
   const [bootstrap, setBootstrap] = useState<Bootstrap | null>(null);
   const [bootError, setBootError] = useState<ErrorCode | null>(null);
   const [view, setView] = useState<View>('dashboard');
+  // [V2] which Settings group (or the Automatic activity sub-page) the gear / a sub-line / a setup row opens.
+  const [settingsGroup, setSettingsGroup] = useState<SettingsGroup | 'activity'>('general');
+  const [settingsNonce, setSettingsNonce] = useState(0);
+  const [consentReview, setConsentReview] = useState(false);
+  // [V2] the clock the setup rows are measured with ("ends in 3 days"); sampled, never read during render.
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const tick = setInterval(() => setNow(Date.now()), 60_000);
+    return () => clearInterval(tick);
+  }, []);
   const [step, setStep] = useState<OnboardingStep>('welcome');
   const [coachMark, setCoachMark] = useState(false);
   const [polite, setPolite] = useState('');
@@ -160,6 +244,9 @@ export function App() {
 
   const health = useHealthStore((s) => s.health);
   const progress = useHealthStore((s) => s.progress);
+  const downloads = useHealthStore((s) => s.downloads);
+  const autoState = useAutoStore((s) => s.state);
+  const autoRows = useAutoStore((s) => s.rows);
   const hiddenSetupTasks = useHealthStore((s) => s.hiddenSetupTasks);
   const hideSetupTask = useHealthStore((s) => s.hideSetupTask);
   const settings = useSettingsStore((s) => s.settings);
@@ -225,6 +312,9 @@ export function App() {
         setView(r.value.onboardingStep === 'done' ? 'dashboard' : 'onboarding');
         setStep(r.value.onboardingStep);
         void useDashboardStore.getState().refresh();
+        // [V2] automatic-mode state + strip rows (hydrate only READS - nothing here can enable), and the Connect cards.
+        void useAutoStore.getState().hydrate();
+        void useCliStore.getState().refresh();
       })
       .catch(() => {
         // A REJECTED invoke (preload gone, channel torn down) used to leave the window on "Loading..." for ever with
@@ -248,6 +338,10 @@ export function App() {
     const offs = [
       on('health:changed', (h) => store.setHealth(h)),
       on('model:progress', (p) => store.setProgress(p)),
+      // [V2] C2 8 push events (payloads are view models / numbers only)
+      useAutoStore.getState().subscribe(),
+      events.onCliChanged((status) => useCliStore.getState().setStatus(status)),
+      events.onQueueChanged((q) => store.setQueue(q)),
       on('ui:languageChanged', ({ lang, dir }) => {
         void i18nRef.current.changeLanguage(lang);
         applyDocumentLanguage(lang, dir);
@@ -285,10 +379,57 @@ export function App() {
     announce('overall', tRef.current(`health.${overall}`));
   }, [overall, announce]);
 
-  const downloadDone = progress?.status === 'ready';
+  // [V2] UX2 2.1: only completions are announced, and they name the file ("Voice model ready - ...").
+  const doneKind = progress?.status === 'ready' ? downloadKindOf(progress.tier) : null;
   useEffect(() => {
-    if (downloadDone) announce('download', tRef.current('download.finished'));
-  }, [downloadDone, announce]);
+    if (doneKind === null) return;
+    const key =
+      doneKind === 'voice'
+        ? 'download.finishedVoice'
+        : doneKind === 'mmproj'
+          ? 'download.finishedImages'
+          : 'download.finished';
+    announce('download', tRef.current(key));
+  }, [doneKind, announce]);
+
+  // [V2] UX2 11.9: policy state change "Automatic mode: {{state}}." (throttled 10 s like every polite kind).
+  const policyState = autoState?.policy?.state ?? null;
+  const policyWord =
+    policyState === null
+      ? null
+      : policyState === 'on' || policyState === 'shadow' || policyState === 'paused'
+        ? policyState
+        : 'off';
+  const lastPolicyWord = useRef<string | null>(null);
+  useEffect(() => {
+    if (policyWord === null) return;
+    const previous = lastPolicyWord.current;
+    lastPolicyWord.current = policyWord;
+    if (previous === null || previous === policyWord) return;
+    announce('autoState', tRef.current('auto.announce.state', { state: tRef.current(`auto.stateWord.${policyWord}`) }));
+  }, [policyWord, announce]);
+
+  // [V2] UX2 11.9: an automatic write that lands while the window is focused is announced from trusted fields only.
+  const seenWrites = useRef<Set<string> | null>(null);
+  useEffect(() => {
+    if (seenWrites.current === null) {
+      if (autoRows.length > 0 || useAutoStore.getState().fetchedAt > 0) {
+        seenWrites.current = new Set(autoRows.map((r) => r.autoWriteId));
+      }
+      return;
+    }
+    const lang: Lang = i18nRef.current.language === 'he' ? 'he' : 'en';
+    for (const row of autoRows) {
+      if (seenWrites.current.has(row.autoWriteId)) continue;
+      seenWrites.current.add(row.autoWriteId);
+      if (!document.hasFocus()) continue;
+      const a = announceAutoWrite(row, lang);
+      if (a) announce('autoWrite', tRef.current(a.key, { when: a.when }), 'polite', false);
+    }
+  }, [autoRows, announce]);
+
+  // [V2] UX2 11.4: "Undone." after any in-window Undo door succeeded (never throttled).
+  useEffect(() => onUndoSuccess(() => announce('undo', tRef.current('undo.announce'), 'polite', false)), [announce]);
 
   useEffect(() => {
     if (savedAt > 0) announce('saved', tRef.current('app.announce.saved'));
@@ -352,33 +493,85 @@ export function App() {
     if (r.ok) useHealthStore.getState().setHealth(r.value);
   }, [health?.paused]);
 
-  const onHealthAction = useCallback((part: HealthPart, code?: ErrorCode) => {
-    if (part === 'whatsapp' && (code === 'WA_LOGGED_OUT' || !code)) {
-      setView('onboarding');
-      setStep('link_whatsapp');
-      return;
-    }
-    if (part === 'calendar' && !code) {
-      setView('onboarding');
-      setStep('google');
-      return;
-    }
-    if (
-      code === 'INTERNAL' ||
-      code === 'BRIDGE_SPAWN_REFUSED' ||
-      code === 'BRIDGE_TS_FORMAT' ||
-      code === 'CAL_TOOLSET_MISMATCH'
-    ) {
-      void api.exportDiagnostics();
-      return;
-    }
+  /** [V2] Opens Settings at a group (or the Automatic activity sub-page); the nonce remounts it so it scrolls there. */
+  const openSettings = useCallback((group: SettingsGroup | 'activity') => {
+    setSettingsGroup(group);
+    setSettingsNonce((n) => n + 1);
     setView('settings');
   }, []);
 
-  const onSetupAction = useCallback((task: SetupTask) => {
-    setView('onboarding');
-    setStep(task === 'whatsapp' ? 'link_whatsapp' : task === 'ai' ? 'choose_ai' : 'google');
-  }, []);
+  const onHealthAction = useCallback(
+    (part: HealthPart, code?: ErrorCode) => {
+      if (part === 'whatsapp' && (code === 'WA_LOGGED_OUT' || !code)) {
+        setView('onboarding');
+        setStep('link_whatsapp');
+        return;
+      }
+      if (part === 'calendar' && !code) {
+        setView('onboarding');
+        setStep('google');
+        return;
+      }
+      if (
+        code === 'INTERNAL' ||
+        code === 'BRIDGE_SPAWN_REFUSED' ||
+        code === 'BRIDGE_TS_FORMAT' ||
+        code === 'CAL_TOOLSET_MISMATCH'
+      ) {
+        void api.exportDiagnostics();
+        return;
+      }
+      openSettings(part === 'llm' ? 'ai' : 'general');
+    },
+    [openSettings],
+  );
+
+  /** [V2] UX2 2.2 sub-line click: WhatsApp -> Working rules, AI -> AI engine, Calendar -> Automatic mode. */
+  const onSubline = useCallback(
+    (part: HealthPart) => openSettings(part === 'whatsapp' ? 'rules' : part === 'llm' ? 'ai' : 'auto'),
+    [openSettings],
+  );
+
+  const onSetupAction = useCallback(
+    (task: SetupTask, secondary?: true) => {
+      switch (task) {
+        case 'whatsapp':
+        case 'ai':
+        case 'calendar':
+          setView('onboarding');
+          setStep(task === 'whatsapp' ? 'link_whatsapp' : task === 'ai' ? 'choose_ai' : 'google');
+          return;
+        case 'consent_v2':
+          setConsentReview(true);
+          return;
+        case 'auto_trial':
+          // "Stop" is the fail-safe direction: one click, no dialog (I10). "Turn on for real" / "Review" only navigate:
+          // the guarded button lives in Settings > Automatic mode.
+          if (secondary) {
+            void api.disableAuto().then((r) => r.ok && useAutoStore.getState().setState(r.value));
+            return;
+          }
+          openSettings('auto');
+          return;
+        default:
+          // auto_paused (Resume needs a focused click in Settings; secondary = Settings) and Renew (expiring / expired)
+          openSettings('auto');
+      }
+    },
+    [openSettings],
+  );
+
+  /** [V2] SetupStrip row 4: the active API-key provider's consent at the CURRENT version (the v2 text). */
+  const reviewProvider =
+    health?.llm.provider === 'claude' || health?.llm.provider === 'gemini' ? health.llm.provider : null;
+  const onConsentReviewAccept = useCallback(async () => {
+    setConsentReview(false);
+    if (!reviewProvider) return;
+    const kind = cloudConsentKindOf(reviewProvider);
+    await api.acceptConsent(kind, CONSENT_VERSIONS[kind]);
+    const h = await api.getHealth();
+    if (h.ok) useHealthStore.getState().setHealth(h.value);
+  }, [reviewProvider]);
 
   const goToStep = useCallback((next: OnboardingStep) => {
     setStep(next);
@@ -456,7 +649,46 @@ export function App() {
 
   const onboarding = view === 'onboarding';
   const pillProgress = toPillProgress(progress);
-  const tasks = onboarding ? [] : setupTasksOf(health, hiddenSetupTasks);
+  // [V2] UX2 2.1: every visible file of the downloader queue, in main's arrival order (never re-sorted).
+  const pillQueue = Object.values(downloads)
+    .map((d) => toPillProgress(d ?? null))
+    .filter((d): d is DownloadPillProgress => d !== null);
+  const voiceDownload = VOICE_TIERS.map((tier) => downloads[tier]).find(
+    (d) => d !== undefined && d.status !== 'failed',
+  );
+  const tasks = onboarding
+    ? []
+    : setupTasksOf(health, hiddenSetupTasks, {
+        auto: autoState,
+        voiceDownloadPercent:
+          voiceDownload && voiceDownload.bytesTotal > 0
+            ? Math.floor((voiceDownload.bytesDone / voiceDownload.bytesTotal) * 100)
+            : voiceDownload
+              ? 0
+              : null,
+        now,
+      });
+  const policy = autoState?.policy ?? null;
+  const setupDetails: SetupRowDetails = {
+    consent_v2: { vendor: t(reviewProvider === 'gemini' ? 'cli.vendor.antigravity_cli' : 'cli.vendor.claude_cli') },
+    auto_paused: { reason: t(`auto.pausedReason.${policy?.pausedReason ?? 'user'}`) },
+    auto_trial: {
+      seen: autoState?.shadowTally?.decisions ?? 0,
+      wouldAuto: autoState?.shadowTally?.wouldAuto ?? 0,
+      ready: (autoState?.shadowTally?.decisions ?? 0) >= LIMITS.autoMinShadowDecisions,
+    },
+    auto_expiring: { days: policy ? Math.max(0, Math.ceil((policy.expiresAt - now) / 86_400_000)) : 0 },
+    voice_download: {
+      percent:
+        voiceDownload && voiceDownload.bytesTotal > 0
+          ? Math.floor((voiceDownload.bytesDone / voiceDownload.bytesTotal) * 100)
+          : 0,
+    },
+    auto_expired: {
+      date: policy ? formatDate(policy.expiresAt, language, settings?.general.timeZone ?? 'Asia/Jerusalem') : '',
+    },
+  };
+  const pillTarget = (tier: ModelFileId | undefined) => (tier ? downloadTargetOf(tier) : undefined);
   const paused = health?.paused ?? settings?.agent.paused ?? false;
 
   return (
@@ -466,13 +698,14 @@ export function App() {
         className={`flex h-12 shrink-0 items-center gap-2 px-4 ${paused ? 'border-b-2 border-warn' : 'border-b border-line'} bg-surface`}
       >
         <span className="text-md font-semibold whitespace-nowrap max-roomy:sr-only">{t('app.wordmark')}</span>
-        {!onboarding && health ? <HealthPill health={health} onAction={onHealthAction} /> : null}
+        {!onboarding && health ? <HealthPill health={health} onAction={onHealthAction} onSubline={onSubline} /> : null}
         <DownloadPill
           progress={pillProgress}
-          onPause={() => void api.pauseDownload()}
-          onResume={() => void api.resumeDownload()}
-          onCancel={() => void api.cancelDownload()}
-          onRetry={() => void api.startDownload()}
+          queue={pillQueue.length > 0 ? pillQueue : undefined}
+          onPause={(target) => void api.pauseDownload(target ?? pillTarget(pillProgress?.tier))}
+          onResume={(target) => void api.resumeDownload(target ?? pillTarget(pillProgress?.tier))}
+          onCancel={(target) => void api.cancelDownload(target ?? pillTarget(pillProgress?.tier))}
+          onRetry={(target) => void api.startDownload(target ?? pillTarget(pillProgress?.tier))}
         />
         <span className="grow" />
         {!onboarding ? (
@@ -493,14 +726,16 @@ export function App() {
             data-testid="settings-toggle"
             className="icon-btn"
             aria-label={view === 'settings' ? t('header.backToDashboard') : t('app.settings')}
-            onClick={() => setView(view === 'settings' ? 'dashboard' : 'settings')}
+            onClick={() => (view === 'settings' ? setView('dashboard') : openSettings('general'))}
           >
             {view === 'settings' ? <ChevronBackIcon /> : <GearIcon />}
           </button>
         ) : null}
       </header>
 
-      {tasks.length > 0 ? <SetupStrip tasks={tasks} onAction={onSetupAction} onHide={hideSetupTask} /> : null}
+      {tasks.length > 0 ? (
+        <SetupStrip tasks={tasks} details={setupDetails} onAction={onSetupAction} onHide={hideSetupTask} />
+      ) : null}
 
       <div className="min-h-0 grow">
         {onboarding ? (
@@ -522,7 +757,7 @@ export function App() {
             {step === 'ready' || step === 'done' ? <Ready onDone={() => goToStep('done')} /> : null}
           </main>
         ) : view === 'settings' ? (
-          <Settings />
+          <Settings key={settingsNonce} initialGroup={settingsGroup} />
         ) : (
           <Dashboard />
         )}
@@ -564,14 +799,16 @@ export function App() {
           onBlur={() => setToastPaused(false)}
         >
           <span>{t(toast.key)}</span>
-          {toast.itemId != null ? (
+          {toast.itemId != null || toast.onUndo ? (
             <button
               type="button"
               className="btn btn-quiet ms-2"
               data-testid="toast-undo"
               onClick={() => {
                 const itemId = toast.itemId;
-                if (itemId != null) void api.restore(itemId);
+                // [V2] a toast may carry its own undo (e.g. "Never automatic" -> inherit again, W1-11)
+                if (toast.onUndo) toast.onUndo();
+                else if (itemId != null) void api.restore(itemId);
                 setToast(null);
               }}
             >
@@ -579,6 +816,17 @@ export function App() {
             </button>
           ) : null}
         </div>
+      ) : null}
+
+      {/* [V2] SetupStrip row 4 "Review": the v2 consent text of the active API-key provider (UX2 2.3, 7.5) */}
+      {reviewProvider ? (
+        <ConsentDialog
+          kind={cloudConsentKindOf(reviewProvider)}
+          version={CONSENT_VERSIONS[cloudConsentKindOf(reviewProvider)]}
+          open={consentReview}
+          onAccept={() => void onConsentReviewAccept()}
+          onCancel={() => setConsentReview(false)}
+        />
       ) : null}
 
       {coachMark ? (

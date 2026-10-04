@@ -30,6 +30,7 @@ const PLAN: ModelPlan = {
   selectedTier: 'small',
   tiers: MODEL_TIERS.map(tierInfo),
   suggestSmaller: false,
+  mmproj: null, // [V2] C2 1.5
 };
 function progress(t: ModelTier): DownloadProgress {
   return { tier: t, status: 'downloading', bytesDone: 1, bytesTotal: 2, bytesPerSec: 1, etaSec: 1, errorCode: null };

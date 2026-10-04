@@ -29,8 +29,10 @@ class MockApp extends EventEmitter {
   setPath(name: string, value: string): void {
     this.paths.set(name, value);
   }
+  /** [V2] T2 3.10: settable (readSeams v2 validates the fake paths against it). */
+  appPath: string | null = null;
   getAppPath(): string {
-    return process.cwd();
+    return this.appPath ?? process.cwd();
   }
   getVersion(): string {
     return '0.1.0-test';
@@ -141,8 +143,11 @@ export class MockWebContents extends EventEmitter {
 }
 
 const windows = new Set<BrowserWindow>();
+let nextWindowId = 1;
 export class BrowserWindow extends EventEmitter {
   static readonly instances: BrowserWindow[] = [];
+  /** [V2] Electron's numeric window id (dialog.messageBoxes records it as parentWindowId, T2 3.10). */
+  readonly id: number = nextWindowId++;
   readonly webContents = new MockWebContents();
   readonly options: Record<string, unknown>;
   visible = false;
@@ -326,24 +331,48 @@ export class Menu {
   }
   popup(): void {}
 }
+/** [V2] T2 3.10: toast action buttons (Electron's NotificationAction shape). */
+export interface MockNotificationAction {
+  type: 'button';
+  text: string;
+}
 export class Notification extends EventEmitter {
-  static readonly shown: Array<{ title: string; body: string }> = [];
+  /** `actions` is present only when the toast carried action buttons (v1 assertions on {title, body} stay exact). */
+  static readonly shown: Array<{ title: string; body: string; actions?: string[] }> = [];
   /** Every constructed toast, so a test can drive `instances.at(-1)!.emit('click')` (the facade wires click -> notifier.handleClick). */
   static readonly instances: Notification[] = [];
   static supported = true;
   readonly title: string;
   readonly body: string;
-  constructor(opts: { title: string; body: string }) {
+  readonly actions: MockNotificationAction[];
+  constructor(opts: { title: string; body: string; actions?: MockNotificationAction[] }) {
     super();
     this.title = opts.title;
     this.body = opts.body;
+    this.actions = opts.actions ?? [];
     Notification.instances.push(this);
+  }
+  /** [V2] T2 3.10: activates action button `actionIndex` of toast `index` (L3 proof of the toast Undo door). */
+  static __emitAction(index: number, actionIndex: number): void {
+    const n = Notification.instances[index];
+    if (n === undefined) throw new Error(`no notification #${index}`);
+    n.emit('action', { sender: n }, actionIndex);
+  }
+  /** [V2] clicks toast `index`. */
+  static __emitClick(index: number): void {
+    const n = Notification.instances[index];
+    if (n === undefined) throw new Error(`no notification #${index}`);
+    n.emit('click', { sender: n });
   }
   static isSupported(): boolean {
     return Notification.supported;
   }
   show(): void {
-    Notification.shown.push({ title: this.title, body: this.body });
+    Notification.shown.push({
+      title: this.title,
+      body: this.body,
+      ...(this.actions.length > 0 ? { actions: this.actions.map((a) => a.text) } : {}),
+    });
   }
   close(): void {}
 }
@@ -364,13 +393,32 @@ export const dialog = {
   nextOpen: null as null | { canceled: boolean; filePaths: string[] },
   nextSave: null as null | { canceled: boolean; filePath?: string },
   nextMessageBox: { response: 0 },
+  /** [V2] T2 3.10: scripted FIFO for showMessageBox; once scripted, an exhausted script answers `opts.cancelId` (Cancel). */
+  messageBoxScript: [] as Array<{ response: number; checkboxChecked: boolean }>,
+  messageBoxScripted: false,
+  /** [V2] every showMessageBox call: the parent window id (null = none) and the REAL options object. */
+  messageBoxes: [] as Array<{ parentWindowId: number | null; opts: Record<string, unknown> }>,
+  __script(entries: Array<{ response: number; checkboxChecked: boolean }>): void {
+    this.messageBoxScript.push(...entries);
+    this.messageBoxScripted = true;
+  },
   showOpenDialog(_w?: unknown, _o?: unknown): Promise<{ canceled: boolean; filePaths: string[] }> {
     return Promise.resolve(this.nextOpen ?? { canceled: true, filePaths: [] });
   },
   showSaveDialog(_w?: unknown, _o?: unknown): Promise<{ canceled: boolean; filePath?: string }> {
     return Promise.resolve(this.nextSave ?? { canceled: true });
   },
-  showMessageBox(_w?: unknown, _o?: unknown): Promise<{ response: number; checkboxChecked: boolean }> {
+  showMessageBox(w?: unknown, o?: unknown): Promise<{ response: number; checkboxChecked: boolean }> {
+    // Electron's overloads: (options) or (window, options)
+    const opts = (o ?? w ?? {}) as Record<string, unknown>;
+    const win = o === undefined ? null : (w as { id?: number } | null);
+    this.messageBoxes.push({ parentWindowId: typeof win?.id === 'number' ? win.id : null, opts });
+    if (this.messageBoxScripted) {
+      const next = this.messageBoxScript.shift();
+      if (next !== undefined) return Promise.resolve({ ...next });
+      const cancelId = typeof opts.cancelId === 'number' ? opts.cancelId : 0;
+      return Promise.resolve({ response: cancelId, checkboxChecked: false });
+    }
     return Promise.resolve({ response: this.nextMessageBox.response, checkboxChecked: false });
   },
   showErrorBox(_t: string, _c: string): void {},
@@ -408,9 +456,59 @@ export const session = {
   },
 };
 export const powerMonitor = new EventEmitter();
+/** [V2] T2 3.10: a deterministic NativeImage stand-in. getSize() reads PNG IHDR / JPEG SOF0 dims from the buffer (0x0 otherwise);
+ *  resize() keeps the aspect like Electron when only one side is given; toJPEG() returns a small deterministic buffer. */
+export interface MockNativeImage {
+  size: number;
+  isEmpty(): boolean;
+  getSize(): { width: number; height: number };
+  resize(o: { width?: number; height?: number; quality?: string }): MockNativeImage;
+  toJPEG(quality: number): Buffer;
+  toPNG(): Buffer;
+  toDataURL(): string;
+}
+function mockDims(b: Buffer): { width: number; height: number } {
+  if (b.length >= 24 && b.readUInt32BE(0) === 0x89504e47)
+    return { width: b.readUInt32BE(16), height: b.readUInt32BE(20) };
+  if (b.length >= 4 && b[0] === 0xff && b[1] === 0xd8) {
+    let off = 2;
+    while (off + 9 <= b.length && b[off] === 0xff) {
+      const marker = b[off + 1]!;
+      if (marker === 0xc0 || marker === 0xc2)
+        return { height: b.readUInt16BE(off + 5), width: b.readUInt16BE(off + 7) };
+      off += 2 + b.readUInt16BE(off + 2);
+    }
+  }
+  return { width: 0, height: 0 };
+}
+function mockImage(bytes: Buffer, dims: { width: number; height: number }): MockNativeImage {
+  const img: MockNativeImage = {
+    size: bytes.length,
+    isEmpty: () => bytes.length === 0 || dims.width === 0,
+    getSize: () => ({ ...dims }),
+    resize: (o) => {
+      const w =
+        o.width ??
+        (o.height !== undefined && dims.height > 0 ? Math.round((dims.width * o.height) / dims.height) : dims.width);
+      const h =
+        o.height ??
+        (o.width !== undefined && dims.width > 0 ? Math.round((dims.height * o.width) / dims.width) : dims.height);
+      return mockImage(bytes, { width: w, height: h });
+    },
+    toJPEG: (quality) => Buffer.from(`\xff\xd8MOCKJPEG ${dims.width}x${dims.height} q${quality}\xff\xd9`, 'latin1'),
+    toPNG: () => Buffer.from(`MOCKPNG ${dims.width}x${dims.height}`, 'latin1'),
+    toDataURL: () => `data:image/png;base64,${Buffer.from(`MOCKPNG ${dims.width}x${dims.height}`).toString('base64')}`,
+  };
+  return img;
+}
 export const nativeImage = {
+  /** [V2] spy: every createFromBuffer call (media-isolation proves it never happens before imageDims accepted the header). */
+  createFromBufferCalls: 0,
   createFromPath: (p: string) => ({ path: p, isEmpty: () => false }),
-  createFromBuffer: (b: Buffer) => ({ size: b.length, isEmpty: () => b.length === 0 }),
+  createFromBuffer(b: Buffer): MockNativeImage {
+    this.createFromBufferCalls += 1;
+    return mockImage(b, mockDims(b));
+  },
   createEmpty: () => ({ isEmpty: () => true }),
 };
 export const screen = { getPrimaryDisplay: () => ({ workAreaSize: { width: 1920, height: 1080 } }) };
@@ -429,6 +527,11 @@ export function resetElectronMock(): void {
   shell.allowOpenExternal = false;
   dialog.nextOpen = null;
   dialog.nextSave = null;
+  dialog.messageBoxScript.length = 0; // [V2]
+  dialog.messageBoxScripted = false;
+  dialog.messageBoxes.length = 0;
+  nativeImage.createFromBufferCalls = 0;
+  app.appPath = null;
   clipboard.text = '';
   protocol.handlers.clear();
   protocol.privileged.length = 0;

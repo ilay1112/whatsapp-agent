@@ -1,8 +1,9 @@
 // src/main/db/repos/chats.ts - Repos['chats'] implementation over the Db wrapper (owner W1-04). Signatures: CONTRACTS 15.1.
-import { DM_PHONE_JID_RE } from '../../../shared/types';
+import { CHAT_AUTO_POLICIES, DM_PHONE_JID_RE, LIMITS } from '../../../shared/types';
 import type * as T from '../../../shared/types';
-import { RowNotFoundError } from '../errors';
+import { RepoContractError, RowNotFoundError } from '../errors';
 import type { Db, Repos } from '../index';
+import { createAuditRepo } from './audit';
 import { updateItemRow } from './items';
 import { CHAT_COLUMNS, type ChatRow, toChat, intOf } from './rows';
 
@@ -18,6 +19,7 @@ const selectByJid = (db: Db, jid: string): T.Chat | null => {
 };
 
 export function createChatsRepo(db: Db): ChatsRepo {
+  const auditRepo = createAuditRepo(db);
   return {
     upsertFromBridge(jid, name, isKnown, now) {
       return db.transaction(() => {
@@ -76,6 +78,16 @@ export function createChatsRepo(db: Db): ChatsRepo {
           )
           .get(lid.id);
         if ((inFlight?.n ?? 0) > 0) return lid;
+        // [V2-W1-01] I8: an automatic write of this chat that can still be undone keeps the merge deferred too. Deleting the @lid
+        // chat's action rows (below) cascades to event_revisions, auto_decisions and auto_writes (ON DELETE CASCADE), which would
+        // silently drop the Undo of that write. The deferral is bounded by undo_until (<= 72 h, DDL CHECK).
+        const undoable = db
+          .prepare<{ n: number }>(
+            `SELECT COUNT(*) AS n FROM auto_writes w JOIN actions a ON a.id = w.action_id
+               WHERE a.chat_id = ? AND w.undo_state = 'available' AND w.undo_until > ?`,
+          )
+          .get(lid.id, now)!;
+        if (undoable.n > 0) return lid;
         // Partial unique index ux_items_open allows exactly one open item per chat: keep the newer trigger, supersede the other.
         const lidOpen = db
           .prepare<{ id: number; trigger_ts: number }>(
@@ -120,9 +132,27 @@ export function createChatsRepo(db: Db): ChatsRepo {
           ).run(target.id, lid.id);
         }
         db.prepare(`DELETE FROM triage_queue WHERE chat_id = ?`).run(lid.id);
+        // [V2-W1-01] media_cache.chat_id is ON DELETE CASCADE: the cached pictures follow their items to the surviving chat (a row
+        // whose (chat_id, wa_msg_id) already exists there is the same picture and is dropped with the @lid chat).
+        db.prepare(`UPDATE OR IGNORE media_cache SET chat_id = ? WHERE chat_id = ?`).run(target.id, lid.id);
+        // [V2-W1-01] the automatic-mode opt-out and taint merge fail-closed: 'never' wins, the later taint wins (B28).
         db.prepare(
-          `UPDATE chats SET is_known = MAX(is_known, ?), force_known = MAX(force_known, ?), display_name = COALESCE(display_name, ?), updated_at = ? WHERE id = ?`,
-        ).run(intOf(lid.isKnown), intOf(lid.forceKnown), lid.displayName, now, target.id);
+          `UPDATE chats SET is_known = MAX(is_known, ?), force_known = MAX(force_known, ?), display_name = COALESCE(display_name, ?), updated_at = ?,
+                            auto_policy = CASE WHEN ? = 'never' THEN 'never' ELSE auto_policy END,
+                            auto_tainted_until = CASE WHEN ? IS NULL THEN auto_tainted_until
+                                                      ELSE MAX(COALESCE(auto_tainted_until, ?), ?) END
+             WHERE id = ?`,
+        ).run(
+          intOf(lid.isKnown),
+          intOf(lid.forceKnown),
+          lid.displayName,
+          now,
+          lid.autoPolicy,
+          lid.autoTaintedUntil,
+          lid.autoTaintedUntil,
+          lid.autoTaintedUntil,
+          target.id,
+        );
         db.prepare(`DELETE FROM chats WHERE id = ?`).run(lid.id);
         return selectById(db, target.id)!;
       });
@@ -178,11 +208,41 @@ export function createChatsRepo(db: Db): ChatsRepo {
       return selectById(db, id)!;
     },
 
+    /** chat:listPolicies (C2 8): policy != 'default' or forceKnown ; [V2] or auto_policy = 'never' (the automatic-mode opt-out). */
     withPolicies() {
       return db
-        .prepare<ChatRow>(`SELECT ${CHAT_COLUMNS} FROM chats WHERE policy <> 'default' OR force_known = 1 ORDER BY id`)
+        .prepare<ChatRow>(
+          `SELECT ${CHAT_COLUMNS} FROM chats WHERE policy <> 'default' OR force_known = 1 OR auto_policy = 'never' ORDER BY id`,
+        )
         .all()
         .map(toChat);
+    },
+    // ---- [V2 ADD] C2 16.1 (V2-W1-01-db) ----
+    /** chat:setPolicy {autoPolicy} (B28): 'never' opts the chat out of automatic mode; 'inherit' follows the global policy. */
+    setAutoPolicy(id, p) {
+      if (!(CHAT_AUTO_POLICIES as readonly string[]).includes(p))
+        throw new RepoContractError('unknown chat auto policy');
+      const changes = db.prepare(`UPDATE chats SET auto_policy = ? WHERE id = ?`).run(p, id).changes;
+      if (changes !== 1) throw new RowNotFoundError('chats', id);
+      return selectById(db, id)!;
+    },
+
+    /**
+     * S4 / automatic undo (B28, F10): auto_tainted_until = MAX(old, until) - a taint only ever extends, a shorter one never shortens
+     * a longer one - and one `auto_taint {chatRef, untilTs}` audit row (ids and numbers only), in ONE transaction.
+     * [V2-W1-01] The repo carries no clock; every caller passes `until = now + LIMITS.autoTaintMs` (C2 1.3, B10), so the audit row is
+     * stamped `until - LIMITS.autoTaintMs` - the caller's own `now`, which keeps a virtual-clock test deterministic.
+     */
+    taint(id, until) {
+      if (!Number.isFinite(until)) throw new RepoContractError('taint needs a finite until');
+      db.transaction(() => {
+        const changes = db
+          .prepare(`UPDATE chats SET auto_tainted_until = MAX(COALESCE(auto_tainted_until, ?), ?) WHERE id = ?`)
+          .run(until, until, id).changes;
+        if (changes !== 1) throw new RowNotFoundError('chats', id);
+        const effective = selectById(db, id)!.autoTaintedUntil;
+        auditRepo.append('auto_taint', String(id), { chatRef: id, untilTs: effective }, until - LIMITS.autoTaintMs);
+      });
     },
   };
 }

@@ -5,7 +5,9 @@
  *   1. the three-column grid and its independently scrolling columns (UX 6.1);
  *   2. the sheet / drawer panel: LEADING corners rounded, so the radius flips with the writing direction (UX 7);
  *   3. the 12 px queue spinner (UX 6.3), which must stop under prefers-reduced-motion (UX 2.4);
- *   4. the sticky column headers of the one-column layout (UX 6.2).
+ *   4. the sticky column headers of the one-column layout (UX 6.2);
+ *   5. [V2, owner V2-W1-11] the AutoStrip width and its narrow-window row wrap (UX2 3.1);
+ *   6. [V2] the 96 px card thumbnail and the contained sheet picture (UX2 3.6).
  * Logical properties only - no left/right/margin-left/... anywhere (TESTS section 9 "Physical-CSS ban").
  */
 
@@ -64,4 +66,34 @@
   .wca-panel {
     border-inline-start: 1px solid CanvasText;
   }
+}
+
+/* ---- 5. [V2] AutoStrip (UX2 3.1, owner V2-W1-11): full content width above the columns; collapsed = the 36 px header.
+   Below 900 px a row's actions drop under the verb phrase (the row is a flex-wrap line; the actions take a full line). ---- */
+.autostrip {
+  inline-size: 100%;
+  flex-shrink: 0;
+}
+
+@media (max-width: 56.1875rem) {
+  .autostrip-row > .autostrip-actions {
+    flex-basis: 100%;
+    padding-inline-start: 3rem;
+  }
+}
+
+/* ---- 6. [V2] pictures (UX2 3.6): the card thumbnail is 96 x 96 and cropped; the sheet picture is contained, <= 360 px.
+   A picture is never mirrored in RTL and never interactive (no pointer cursor, no selection handles). ---- */
+.image-thumb {
+  inline-size: 6rem;
+  block-size: 6rem;
+  object-fit: cover;
+  user-select: none;
+}
+
+.sheet-picture {
+  max-inline-size: min(22.5rem, 100%);
+  max-block-size: 22.5rem;
+  object-fit: contain;
+  user-select: none;
 }

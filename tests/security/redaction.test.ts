@@ -2,15 +2,37 @@
 //
 // Two halves: a golden table for every C-41 pattern of the REAL `redact()`, and a full pipeline run through the REAL
 // `compose()` whose temp `userData` tree, database and captured log are then grepped for every sentinel.
-import { readFileSync, readdirSync, statSync } from 'node:fs';
+import { mkdtempSync, readFileSync, readdirSync, rmSync, statSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { basename, join, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { createHarness, extraction, type Harness } from '../helpers/harness.ts';
 import { backupNow } from '../../src/main/db/backup.ts';
-import type { StubRule } from '../fakes/stub-llm.ts';
+import { V1_EXTRACTION_DEFAULTS, type StubRule } from '../fakes/stub-llm.ts';
+import { V2_SENTINELS } from '../helpers/ledger.ts';
+import { WA_WORLD_JIDS } from '../helpers/waWorld.ts';
+import { oggSilence } from '../fakes/ogg-fixtures.ts';
+import { png } from '../fakes/image-fixtures.ts';
+import { MODEL_TIERS } from '../../src/shared/types.ts';
+import { MMPROJ_FOR_TIER } from '../../src/main/llm/local/manifest.ts';
+
+// [V2] (V2-W2-02) a RECORDING wrapper around the real startToolServer: it collects each run's MCP token for the rule-12 sweep
+// (the token is never exposed otherwise - by design). Everything else of the module is the original.
+const { RUN_TOKENS } = vi.hoisted(() => ({ RUN_TOKENS: [] as string[] }));
+vi.mock('../../src/main/mcp/toolServer.ts', async (importOriginal) => {
+  const real = await importOriginal<typeof import('../../src/main/mcp/toolServer.ts')>();
+  return {
+    ...real,
+    startToolServer: async (...a: Parameters<typeof real.startToolServer>) => {
+      const handle = await real.startToolServer(...a);
+      RUN_TOKENS.push(handle.token);
+      return handle;
+    },
+  };
+});
 import {
   LOG_FILE_COUNT,
   LOG_FILE_MAX_BYTES,
@@ -402,4 +424,242 @@ describe('the userData tree holds no sentinel after a full run', () => {
       .concat(h.repos.db.prepare(`SELECT canonical_json, approved_final_json FROM actions`).all());
     expect(JSON.stringify(rest)).not.toContain(SENTINEL_MSG_TEXT);
   });
+});
+
+// ---------------------------------------------------------------------------------------------------------------------
+// [V2] (owner V2-W2-02) T2 8.1 rule 12 / 8.2 group 9: the v2 sentinel set. One run per provider family carries every v2 sentinel
+// through the REAL compose(): a voice note (fake whisper: SENTINEL_TRANSCRIPT in the transcript, SENTINEL_TRANSCRIPT_STDOUT on its
+// stdout, SENTINEL_WHISPER_STDERR on its stderr), a picture (SENTINEL_OCR as the V1 readText), the WhatsApp read world
+// (SENTINEL_WA_ROW_<n> rows served to the drafting model, SENTINEL_OTHER_CHAT in another chat under all_chats), and the Claude CLI
+// (SENTINEL_CLI_STDOUT on its stdout and stderr) whose S3 run goes through the per-run MCP tool server (its token captured by a
+// recording wrapper around the REAL startToolServer). None of them may reach a log line, a file name under userData, a non-database
+// file, an audit row, a runs row, a toast, the tray, a native dialog, shell.openExternal or the auto:export file.
+// ---------------------------------------------------------------------------------------------------------------------
+
+const V2_RUN_SENTINELS = [...V2_SENTINELS] as string[];
+
+/** The four media/WhatsApp rules of the stub run: V1 reads SENTINEL_OCR, S3 calls two WhatsApp tools then answers. */
+const V2_RULES: StubRule[] = [
+  {
+    when: { purpose: 'read_image' },
+    respond: {
+      structured: {
+        readable: true,
+        kind: 'flyer',
+        readText: 'SENTINEL_OCR open day tomorrow 17:00',
+        language: 'en',
+        title: 'Open day',
+        dateText: 'tomorrow',
+        day: 0,
+        month: 0,
+        year: 0,
+        weekday: 0,
+        timeText: '17:00',
+        hour: 17,
+        minute: 0,
+        timeAmbiguous: false,
+        endHour: 0,
+        endMinute: 0,
+        location: '',
+        confidence: 'medium',
+        suspicious: false,
+      },
+    },
+  },
+  {
+    when: { purpose: 'extract' },
+    respond: {
+      structured: extraction({
+        intent: 'schedule_request',
+        needsReply: true,
+        title: 'coffee',
+        dateKind: 'relative_days',
+        daysFromToday: 1,
+        time24h: '17:00',
+        durationMin: 60,
+      }),
+    },
+  },
+  {
+    when: { purpose: 'draft', turn: 0 },
+    respond: {
+      toolCalls: [
+        { name: 'wa_get_chat_messages', input: { chat: 'chat_1' } },
+        { name: 'wa_search_messages', input: { query: 'address' } },
+      ],
+      stopReason: 'tool_use',
+    },
+  },
+  { when: { purpose: 'draft' }, respond: { text: 'Sounds good.', stopReason: 'end' } },
+];
+
+function knownV2Contact(harness: Harness, jid: string): void {
+  harness.repos.chats.upsertFromBridge(jid, 'Contact', true, harness.clock.now() as never);
+}
+function v2ProjectorReady(harness: Harness): void {
+  for (const tier of MODEL_TIERS) {
+    for (const id of [tier, MMPROJ_FOR_TIER[tier]] as const) {
+      harness.repos.models.upsert({
+        id,
+        kind: id === tier ? 'llm' : 'mmproj',
+        path: join(harness.paths.modelsDir, `${id}.gguf`),
+        size: 1,
+        sha256: '0'.repeat(64) as never,
+        mtime: 0,
+        status: 'ready',
+        bytesDone: 1,
+        verifiedAt: harness.clock.now() as never,
+        bench: null,
+      });
+    }
+  }
+}
+
+/** Every surface rule 12 sweeps; `exportFile` = the auto:export output when one was written. */
+function v2Surfaces(harness: Harness, exportFile: string | null): Array<[string, string]> {
+  const fakes = join(harness.userData, 'wca-fakes');
+  const files = filesToGrep(harness.userData).filter((f) => !f.startsWith(`${fakes}${sep}`));
+  const names = files.map((f) => f.slice(harness.userData.length + 1)).join('\n');
+  // file TEXT: everything that is not a database copy (app.db and its backups legitimately hold transcripts / picture text)
+  const textFiles = files.filter((f) => !/\.(db|db-wal|db-shm|sqlite)$/i.test(f) && !/[\\/]backups?[\\/]/i.test(f));
+  const out: Array<[string, string]> = [
+    ['log line', harness.logs.join('\n')],
+    ['file name under userData', names],
+    ['non-database file under userData', textFiles.map((f) => readFileSync(f, 'latin1')).join('\n')],
+    ['audit row', JSON.stringify(harness.repos.db.prepare(`SELECT kind, ref, detail_json FROM audit_log`).all())],
+    ['runs row', JSON.stringify(harness.repos.db.prepare(`SELECT * FROM runs`).all())],
+    ['triage_queue error', JSON.stringify(harness.repos.db.prepare(`SELECT last_error FROM triage_queue`).all())],
+    ['toast', JSON.stringify(harness.notifications)],
+    ['tray', JSON.stringify(harness.app.trayState())],
+    ['native dialog', JSON.stringify(harness.dialogs)],
+    ['shell.openExternal', JSON.stringify(harness.opened)],
+    ['fake journal (argv / env names)', JSON.stringify([...harness.cliJournal(), ...harness.whisperJournal()])],
+  ];
+  if (exportFile !== null) out.push(['auto:export file', readFileSync(exportFile, 'utf8')]);
+  return out;
+}
+
+describe('[V2] rule 12 - the v2 sentinel set never leaves the data path', () => {
+  it('the sentinel set is the T2 8.1 rule 12 list', () => {
+    expect(V2_RUN_SENTINELS).toEqual([
+      'SENTINEL_TRANSCRIPT',
+      'SENTINEL_TRANSCRIPT_STDOUT',
+      'SENTINEL_WHISPER_STDERR',
+      'SENTINEL_OCR',
+      'SENTINEL_WA_ROW_',
+      'SENTINEL_OTHER_CHAT',
+      'SENTINEL_CLI_STDOUT',
+    ]);
+  });
+
+  it('voice + picture + WhatsApp rows (stub provider): no sentinel in any swept surface, and every sentinel WAS delivered', async () => {
+    const exportDir = mkdtempSync(join(tmpdir(), 'wca-autoexport-'));
+    const exportFile = join(exportDir, 'automatic-activity.json');
+    try {
+      const VOICE = '972550000041@s.whatsapp.net';
+      const PIC = '972550000042@s.whatsapp.net';
+      h = await createHarness({
+        rules: V2_RULES,
+        waWorld: true,
+        settings: (s) => {
+          s.voice.enabled = true;
+          s.images.enabled = true;
+          s.whatsapp.readTools = { ...s.whatsapp.readTools, enabled: true, scope: 'all_chats' };
+        },
+        whisper: {
+          mode: 'ok',
+          transcripts: { '3.0': { language: 'en', text: 'SENTINEL_TRANSCRIPT coffee tomorrow at 17:00' } },
+        },
+        media: [
+          { chatJid: VOICE, msgId: 'RDV2VOICE1', bytes: oggSilence(3) },
+          { chatJid: PIC, msgId: 'RDV2PIC1', bytes: png(64, 48) },
+        ],
+        saveDialog: exportFile,
+      });
+      const harness = h;
+      v2ProjectorReady(harness);
+      harness.llm.capabilities = { images: true };
+      for (const jid of [VOICE, PIC]) {
+        knownV2Contact(harness, jid);
+        await harness.bridge.outboundFromPhone({
+          chatJid: jid,
+          text: 'hi',
+          ts: new Date(harness.clock.now() - 3_600_000),
+        });
+      }
+      harness.bridgeDb.seedMediaRow({ chatJid: VOICE, id: 'RDV2VOICE1', mediaType: 'audio' });
+      harness.bridgeDb.seedMediaRow({ chatJid: PIC, id: 'RDV2PIC1', mediaType: 'image', caption: 'see the flyer' });
+      await harness.bridge.inbound({ chatJid: WA_WORLD_JIDS.trigger, text: 'coffee tomorrow at 17:00?' });
+      await harness.settle();
+      const exported = await harness.invoke('auto:export', undefined);
+      expect(exported).toMatchObject({ ok: true, value: { saved: true } });
+
+      // delivery proof: each data-path sentinel really reached the model (otherwise "nothing leaked" is vacuous)
+      const modelText = JSON.stringify(harness.llm.calls.map((c) => c.messages));
+      for (const s of ['SENTINEL_TRANSCRIPT', 'SENTINEL_OCR', 'SENTINEL_WA_ROW_', 'SENTINEL_OTHER_CHAT']) {
+        expect(modelText.includes(s), `${s} never reached the model - the vector is not wired`).toBe(true);
+      }
+      // the whisper stdout / stderr sentinels were emitted by the fake (its journal saw the run)
+      expect(harness.whisperJournal().length).toBeGreaterThan(0);
+
+      for (const [surface, text] of v2Surfaces(harness, exportFile)) {
+        for (const s of V2_RUN_SENTINELS) expect(text.includes(s), `${s} reached a ${surface}`).toBe(false);
+      }
+    } finally {
+      rmSync(exportDir, { recursive: true, force: true });
+    }
+  }, 60_000);
+
+  it('Claude CLI with the per-run MCP tool server: SENTINEL_CLI_STDOUT, the WhatsApp rows and the run token stay off every surface', async () => {
+    RUN_TOKENS.length = 0;
+    const script: StubRule[] = [
+      {
+        when: { purpose: 'extract' },
+        respond: {
+          structured: {
+            ...extraction({
+              intent: 'schedule_request',
+              needsReply: true,
+              title: 'coffee',
+              dateKind: 'relative_days',
+              daysFromToday: 1,
+              time24h: '17:00',
+              durationMin: 60,
+            }),
+            ...V1_EXTRACTION_DEFAULTS,
+          },
+        },
+      },
+      {
+        when: { purpose: 'draft', turn: 0 },
+        respond: { toolCalls: [{ name: 'wa_get_chat_messages', input: { chat: 'chat_1' } }], stopReason: 'tool_use' },
+      },
+      { when: { purpose: 'draft' }, respond: { text: 'SENTINEL_CLI_STDOUT sounds good', stopReason: 'end' } },
+    ];
+    h = await createHarness({
+      provider: 'claude_cli',
+      waWorld: true,
+      cli: { claude: { mode: 'stderr_flood', script } },
+    });
+    const harness = h;
+    await harness.bridge.inbound({ chatJid: WA_WORLD_JIDS.trigger, text: 'coffee tomorrow at 17:00?' });
+    await harness.settle();
+
+    const draftRuns = (harness.cliJournal() as Array<{ stage?: string; phase?: string; toolCalls?: unknown[] }>).filter(
+      (e) => e.stage === 'draft' && e.phase !== 'started',
+    );
+    expect(draftRuns.length, 'the S3 CLI run never happened').toBeGreaterThan(0);
+    expect(
+      RUN_TOKENS.length,
+      'no per-run MCP token was issued - the tool server path is not exercised',
+    ).toBeGreaterThan(0);
+    for (const t of RUN_TOKENS) expect(t.length).toBeGreaterThanOrEqual(32);
+
+    for (const [surface, text] of v2Surfaces(harness, null)) {
+      for (const s of [...V2_RUN_SENTINELS, ...RUN_TOKENS]) {
+        const label = RUN_TOKENS.includes(s) ? 'the per-run MCP token' : s;
+        expect(text.includes(s), `${label} reached a ${surface}`).toBe(false);
+      }
+    }
+  }, 60_000);
 });

@@ -4,6 +4,7 @@
 // silently stops failing is worse than no smoke test at all.
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { FuseState, FuseV1Options } from '@electron/fuses';
 import {
@@ -23,9 +24,35 @@ import {
   manifestNames,
   rootDeclaredPackage,
   toolListProblems,
+  // [V2-W2-04]
+  CRT_DLLS,
+  DECODER_PACKAGES,
+  EXECUTABLE_EXT_RE,
+  FORBIDDEN_V2_PACKAGES,
+  MMPROJ_PINS,
+  VOICE_PINS,
+  WHISPER_EXACT_FILES,
+  WHISPER_ZIP_PIN,
+  calendarPatchProblems,
+  calendarV2ToolProblems,
+  decoderProblems,
+  forbiddenV2PackageProblems,
+  ggmlMixProblems,
+  mainBundleEntries,
+  modelManifestProblems,
+  noticesProblems,
+  normalizeManifestSidecar,
+  packageNamesIn,
+  pe32PlusX64Problems,
+  vendorBinaryProblems,
+  whisperSetProblems,
 } from './smoke-packaged.mjs';
+import { NOTICE_ANCHORS_V2 } from './smoke-packaged.notices.mjs';
 
 const SOURCE = readFileSync(fileURLToPath(new URL('./smoke-packaged.mjs', import.meta.url)), 'utf8');
+const CAL_PIN = JSON.parse(
+  readFileSync(fileURLToPath(new URL('../vendor/calendar-mcp.pin.json', import.meta.url)), 'utf8'),
+);
 
 /** A minimal archive listing that passes check 5, so each negative case differs from it by exactly one entry. */
 const cleanEntries = [
@@ -50,15 +77,19 @@ const clean = (over = {}) =>
   });
 
 describe('smoke-packaged: frozen expectations', () => {
-  it('asserts exactly the six ARCH 5.1 tool names', () => {
+  it('[V2] asserts exactly the eight ARCH-v2 B3 tool names, the same set vendor/calendar-mcp.pin.json pins', () => {
     expect([...EXPECTED_MCP_TOOLS].sort()).toEqual([
       'create-event',
       'get-current-time',
+      'get-event',
       'get-freebusy',
       'list-calendars',
       'list-events',
       'manage-accounts',
+      'update-event',
     ]);
+    expect([...EXPECTED_MCP_TOOLS].sort()).toEqual(CAL_PIN.enabledTools);
+    expect(EXPECTED_MCP_TOOLS).not.toContain('delete-event');
   });
 
   it('uses the exact ARCH 15.4 [R2] credentials fixture, including redirect_uris[0]', () => {
@@ -85,7 +116,19 @@ describe('smoke-packaged: frozen expectations', () => {
   });
 
   it('keeps the seam list of TESTS 4.1 and ajv on the forbidden root-declared list', () => {
-    expect(SEAM_STRINGS).toEqual(['WCA_E2E', 'WCA_BRIDGE_CMD', 'WCA_LLM', '__wcaTest', 'stub-llm']);
+    expect(SEAM_STRINGS).toEqual([
+      'WCA_E2E',
+      'WCA_BRIDGE_CMD',
+      'WCA_LLM',
+      '__wcaTest',
+      'stub-llm',
+      'WCA_CLI_CMD',
+      'WCA_WHISPER_CMD',
+      'WCA_DIALOG_SCRIPT',
+      'fake-claude-cli',
+      'whisper-cli.mjs',
+      'fake-agy',
+    ]);
     expect(FORBIDDEN_PACKAGES).toContain('ajv');
     expect(FORBIDDEN_PACKAGES).toContain('node-llama-cpp');
     expect(FORBIDDEN_PACKAGES).toContain('better-sqlite3');
@@ -138,7 +181,7 @@ describe('fuseProblems', () => {
 });
 
 describe('toolListProblems', () => {
-  it('accepts the six names in any order', () => {
+  it('accepts the eight names in any order', () => {
     expect(toolListProblems([...EXPECTED_MCP_TOOLS].reverse())).toEqual([]);
   });
   it('rejects a missing tool', () => {
@@ -265,7 +308,7 @@ describe('calendarServerProblems (check 4a - the packaging blocker)', () => {
 describe('smoke-packaged: check 4a is wired in and cannot be skipped', () => {
   it('runs the calendar-server check before check 1 in main()', () => {
     const at4a = SOURCE.indexOf('check4aCalendarServer({ resourcesDir, log, problems })');
-    const at1 = SOURCE.indexOf('await check1Mcp({ exePath, resourcesDir, tmpDir, log, problems })');
+    const at1 = SOURCE.indexOf('await check1Mcp({ exePath, resourcesDir, tmpDir, state, log, problems })');
     expect(at4a).toBeGreaterThan(-1);
     expect(at1).toBeGreaterThan(at4a);
   });
@@ -356,5 +399,406 @@ describe('asarProblems', () => {
       /out\/main\/index\.js/,
     );
     expect(clean({ entries: cleanEntries.filter((e) => !e.endsWith('.css')) })[0]).toMatch(/stylesheet/);
+  });
+});
+
+// =====================================================================================================================
+// [V2-W2-04] checks 7-12 (T2 section 11) - the decision logic, one negative case per rule
+// =====================================================================================================================
+
+const sha = (s) => createHash('sha256').update(s).digest('hex');
+const WHISPER_FILES = [
+  'ggml-base.dll',
+  'ggml-cpu-haswell.dll',
+  'ggml-cpu-x64.dll',
+  'ggml.dll',
+  'whisper-cli.exe',
+  'whisper.dll',
+];
+const whisperPin = { whisper: { tag: 'b5130', size: 8_573_270, sha256: WHISPER_ZIP_PIN.sha256 } };
+const sumsOf = (names) => Object.fromEntries(names.map((n) => [n, sha(n)]));
+const whisperGood = (over = {}) =>
+  whisperSetProblems({
+    manifest: [...WHISPER_FILES],
+    sums: sumsOf(WHISPER_FILES),
+    pin: whisperPin,
+    packaged: [...WHISPER_FILES],
+    packagedHashes: sumsOf(WHISPER_FILES),
+    ...over,
+  });
+
+describe('[V2] check 7 - whisperSetProblems', () => {
+  it('passes the exact MANIFEST set with matching hashes and the B18 pin', () => {
+    expect(whisperGood()).toEqual([]);
+    expect(WHISPER_EXACT_FILES).toEqual(['whisper-cli.exe', 'whisper.dll', 'ggml.dll', 'ggml-base.dll']);
+    expect(WHISPER_ZIP_PIN).toEqual({
+      tag: 'b5130',
+      size: 8_573_270,
+      sha256: 'f9ec6c52a2e949b62ab51fa21d0d497958f9e41c3010c157c4e42932d5316f3c',
+    });
+  });
+  it('a missing vendor/whisper FAILS (never skips) and names the fix', () => {
+    const p = whisperGood({ manifest: null });
+    expect(p).toHaveLength(1);
+    expect(p[0]).toContain('npm run fetch:whisper');
+  });
+  it('fails on a drifted zip pin', () => {
+    expect(whisperGood({ pin: { whisper: { ...whisperPin.whisper, size: 1 } } })[0]).toMatch(
+      /drifted from ARCH-v2 B18/,
+    );
+  });
+  it('fails on a file outside the allow-list, in the manifest or only in the package', () => {
+    expect(whisperGood({ manifest: [...WHISPER_FILES, 'SDL2.dll'] }).join('\n')).toMatch(
+      /outside the B18 allow-list: SDL2\.dll/,
+    );
+    expect(whisperGood({ packaged: [...WHISPER_FILES, 'whisper-server.exe'] }).join('\n')).toMatch(
+      /files outside MANIFEST\.txt: whisper-server\.exe/,
+    );
+  });
+  it('fails when a required file or the whole CPU backend set is absent', () => {
+    const noDll = WHISPER_FILES.filter((n) => n !== 'whisper.dll');
+    expect(whisperGood({ manifest: noDll, packaged: noDll }).join('\n')).toMatch(
+      /lacks the required file\(s\) whisper\.dll/,
+    );
+    const noCpu = WHISPER_FILES.filter((n) => !n.startsWith('ggml-cpu-'));
+    expect(whisperGood({ manifest: noCpu, packaged: noCpu }).join('\n')).toMatch(/no ggml-cpu-\*\.dll/);
+  });
+  it('accepts the CRT trio, refuses a partial CRT', () => {
+    const withCrt = [...WHISPER_FILES, ...CRT_DLLS];
+    expect(
+      whisperGood({ manifest: withCrt, packaged: withCrt, sums: sumsOf(withCrt), packagedHashes: sumsOf(withCrt) }),
+    ).toEqual([]);
+    const partial = [...WHISPER_FILES, 'msvcp140.dll'];
+    expect(
+      whisperGood({
+        manifest: partial,
+        packaged: partial,
+        sums: sumsOf(partial),
+        packagedHashes: sumsOf(partial),
+      }).join('\n'),
+    ).toMatch(/staged partially/);
+  });
+  it('fails on a missing packaged file, a missing folder and a hash that differs from SHA256SUMS', () => {
+    expect(whisperGood({ packaged: WHISPER_FILES.slice(1) }).join('\n')).toMatch(/is missing ggml-base\.dll/);
+    expect(whisperGood({ packaged: null }).join('\n')).toMatch(/extraResources entry/);
+    expect(
+      whisperGood({ packagedHashes: { ...sumsOf(WHISPER_FILES), 'whisper.dll': sha('tampered') } }).join('\n'),
+    ).toMatch(/whisper\.dll does not stream to its SHA256SUMS line/);
+  });
+  it('fails without SHA256SUMS or with an unsummed file', () => {
+    expect(whisperGood({ sums: null }).join('\n')).toMatch(/SHA256SUMS is missing/);
+    const { 'ggml.dll': _drop, ...partialSums } = sumsOf(WHISPER_FILES);
+    expect(whisperGood({ sums: partialSums }).join('\n')).toMatch(/no line for ggml\.dll/);
+  });
+});
+
+/** A minimal PE header: MZ, e_lfanew = 0x80, PE\0\0, machine, optional-header magic. */
+function peHeader({ mz = true, sig = true, machine = 0x8664, magic = 0x20b } = {}) {
+  const b = Buffer.alloc(0x200);
+  if (mz) b.write('MZ', 0, 'latin1');
+  b.writeUInt32LE(0x80, 0x3c);
+  if (sig) b.write('PE\0\0', 0x80, 'latin1');
+  b.writeUInt16LE(machine, 0x84);
+  b.writeUInt16LE(magic, 0x80 + 24);
+  return b;
+}
+
+describe('[V2] check 7 - pe32PlusX64Problems (header bytes only, never executed)', () => {
+  it('accepts a PE32+ x64 image', () => {
+    expect(pe32PlusX64Problems(peHeader())).toEqual([]);
+  });
+  it('rejects no MZ, no PE signature, x86, PE32 and a truncated header', () => {
+    expect(pe32PlusX64Problems(peHeader({ mz: false }))[0]).toMatch(/no MZ/);
+    expect(pe32PlusX64Problems(peHeader({ sig: false }))[0]).toMatch(/no PE/);
+    expect(pe32PlusX64Problems(peHeader({ machine: 0x14c }))[0]).toMatch(/0x14c, expected 0x8664/);
+    expect(pe32PlusX64Problems(peHeader({ magic: 0x10b }))[0]).toMatch(/PE32\+/);
+    expect(pe32PlusX64Problems(peHeader().subarray(0, 0x60))[0]).toMatch(/outside the header bytes/);
+  });
+});
+
+describe('[V2] check 7 - ggmlMixProblems (B18: ggml b5130 never mixes with llama b10964)', () => {
+  it('passes when same-named ggml files differ', () => {
+    expect(
+      ggmlMixProblems({
+        whisperHashes: { 'ggml.dll': sha('w-ggml'), 'ggml-base.dll': sha('w-base'), 'msvcp140.dll': sha('crt') },
+        llamaHashes: { 'ggml.dll': sha('l-ggml'), 'ggml-base.dll': sha('l-base'), 'msvcp140.dll': sha('crt') },
+      }),
+    ).toEqual([]); // the identical CRT copy is by design and not a ggml file
+  });
+  it('fails when a whisper ggml DLL is byte-identical to a llama file (any name)', () => {
+    const p = ggmlMixProblems({
+      whisperHashes: { 'ggml-cpu-haswell.dll': sha('same') },
+      llamaHashes: { 'ggml-cpu-haswell.dll': sha('same') },
+    });
+    expect(p).toHaveLength(1);
+    expect(p[0]).toMatch(/never mix/);
+  });
+});
+
+const pinRows = () => ({
+  llm: [
+    {
+      id: 'tiny',
+      kind: 'llm',
+      magic: 'GGUF',
+      fileName: 'm.gguf',
+      url: `https://huggingface.co/o/r/resolve/${'a'.repeat(40)}/m.gguf`,
+      size: 1,
+      sha256: sha('m'),
+    },
+  ],
+  media: [
+    ...Object.entries(MMPROJ_PINS).map(([id, size]) => ({
+      id,
+      kind: 'mmproj',
+      magic: 'GGUF',
+      fileName: 'mmproj-F16.gguf',
+      url: `https://huggingface.co/o/${id}/resolve/${'b'.repeat(40)}/mmproj-F16.gguf`,
+      size,
+      sha256: sha(id),
+    })),
+    ...Object.entries(VOICE_PINS).map(([id, v]) => ({
+      id,
+      kind: v.kind,
+      magic: 'GGML',
+      fileName: `${id}.bin`,
+      url: `https://huggingface.co/o/${id}/resolve/${'c'.repeat(40)}/${id}.bin`,
+      size: v.size,
+      sha256: v.sha256 ?? sha(id),
+    })),
+  ],
+});
+const sidecarOf = (pin) => ({
+  MODEL_MANIFEST: Object.fromEntries(
+    pin.llm.map((e) => [e.id, { tier: e.id, label: 'x', ...e, kind: undefined, magic: undefined, id: undefined }]),
+  ),
+  MEDIA_MODEL_MANIFEST: Object.fromEntries(
+    pin.media.map((e) => [e.id, { tier: e.id, label: 'x', ...e, id: undefined }]),
+  ),
+});
+
+describe('[V2] check 8 - modelManifestProblems', () => {
+  it('passes when the packaged sidecar deep-equals the pin and obeys B18 / F19', () => {
+    const pin = pinRows();
+    expect(modelManifestProblems({ sidecar: sidecarOf(pin), pin })).toEqual([]);
+    expect(normalizeManifestSidecar(sidecarOf(pin)).media.map((e) => e.id)).toEqual(
+      [...Object.keys(MMPROJ_PINS), ...Object.keys(VOICE_PINS)].sort(),
+    );
+  });
+  it('fails a missing sidecar or a missing pin, naming the fix', () => {
+    expect(modelManifestProblems({ sidecar: null, pin: pinRows() })[0]).toMatch(/sidecar/);
+    expect(modelManifestProblems({ sidecar: sidecarOf(pinRows()), pin: null })[0]).toMatch(/pin-models\.mjs/);
+  });
+  it('fails a voice URL that is still resolve/main/ (the copy-into-manifest.ts step) - both as a diff and as a rule', () => {
+    const pin = pinRows();
+    const shipped = sidecarOf(pin);
+    shipped.MEDIA_MODEL_MANIFEST['voice-hebrew'].url =
+      'https://huggingface.co/o/voice-hebrew/resolve/main/voice-hebrew.bin';
+    const p = modelManifestProblems({ sidecar: shipped, pin }).join('\n');
+    expect(p).toMatch(/voice-hebrew\.url .* differs .*copy the commit-pinned URL into manifest\.ts/);
+    expect(p).toMatch(/voice-hebrew: URL is not an https:\/\/huggingface\.co/);
+  });
+  it('fails a non-https or foreign host, an extra mmproj, an executable, a wrong voice size and a wrong VAD sha', () => {
+    const pin = pinRows();
+    const s = sidecarOf(pin);
+    s.MODEL_MANIFEST.tiny.url = `http://example.com/o/r/resolve/${'a'.repeat(40)}/m.gguf`;
+    s.MEDIA_MODEL_MANIFEST['voice-lite'].size = 5;
+    s.MEDIA_MODEL_MANIFEST['voice-vad'].sha256 = sha('other');
+    s.MEDIA_MODEL_MANIFEST['mmproj-extra'] = {
+      tier: 'mmproj-extra',
+      fileName: 'mmproj-BF16.gguf',
+      url: `https://huggingface.co/o/x/resolve/${'d'.repeat(40)}/mmproj-BF16.gguf`,
+      size: 1,
+      sha256: sha('x'),
+      kind: 'mmproj',
+      magic: 'GGUF',
+    };
+    const p = modelManifestProblems({ sidecar: s, pin }).join('\n');
+    expect(p).toMatch(/tiny: URL is not/);
+    expect(p).toMatch(/voice-lite: expected kind asr/);
+    expect(p).toMatch(/voice-vad: sha256 differs from B18/);
+    expect(p).toMatch(/mmproj-extra: an mmproj- file outside the three pinned projectors/);
+    expect(p).toMatch(/mmproj-extra: unexpected MEDIA_MODEL_MANIFEST entry/);
+    expect(EXECUTABLE_EXT_RE.test('x.exe') && EXECUTABLE_EXT_RE.test('x.DLL') && !EXECUTABLE_EXT_RE.test('x.bin')).toBe(
+      true,
+    );
+  });
+  it('pins the B18 voice sizes, the VAD sha and the three projector sizes', () => {
+    expect(VOICE_PINS['voice-hebrew'].size).toBe(1_624_555_275);
+    expect(VOICE_PINS['voice-multilingual'].size).toBe(874_188_075);
+    expect(VOICE_PINS['voice-lite'].size).toBe(264_464_607);
+    expect(VOICE_PINS['voice-vad']).toEqual({
+      size: 885_098,
+      kind: 'vad',
+      sha256: '2aa269b785eeb53a82983a20501ddf7c1d9c48e33ab63a41391ac6c9f7fb6987',
+    });
+    expect(MMPROJ_PINS).toEqual({ 'mmproj-tiny': 985_654_080, 'mmproj-small': 990_372_672, 'mmproj-mid': 175_115_840 });
+  });
+});
+
+const updateTool = (over = {}) => ({
+  name: 'update-event',
+  inputSchema: {
+    properties: { status: { enum: ['confirmed', 'tentative', 'cancelled'] }, ifMatch: { type: 'string' } },
+  },
+  annotations: { destructiveHint: true },
+  ...over,
+});
+
+describe('[V2] check 9 - calendarV2ToolProblems / calendarPatchProblems', () => {
+  it('passes the patched surface', () => {
+    expect(calendarV2ToolProblems([updateTool(), { name: 'get-event' }])).toEqual([]);
+  });
+  it('fails each missing insertion surface separately', () => {
+    expect(calendarV2ToolProblems([{ name: 'update-event' }]).join('\n')).toMatch(/get-event is not listed/);
+    expect(
+      calendarV2ToolProblems([updateTool({ inputSchema: { properties: { ifMatch: {} } } }), { name: 'get-event' }])[0],
+    ).toMatch(/lacks "cancelled"/);
+    expect(
+      calendarV2ToolProblems([
+        updateTool({ inputSchema: { properties: { status: { enum: ['cancelled'] } } } }),
+        { name: 'get-event' },
+      ])[0],
+    ).toMatch(/no ifMatch/);
+    expect(calendarV2ToolProblems([updateTool({ annotations: {} }), { name: 'get-event' }])[0]).toMatch(
+      /destructiveHint/,
+    );
+    expect(calendarV2ToolProblems([{ name: 'get-event' }])[0]).toMatch(/update-event is not listed/);
+  });
+  const insertions = Array.from({ length: 7 }, (_, i) => ({
+    id: i + 1,
+    name: `n${String(i + 1)}`,
+    marker: `<M${String(i + 1)}>`,
+  }));
+  const text = insertions.map((i) => i.marker).join(' ');
+  const pin = { bundleSha256Unpatched: sha('u'), bundleSha256Patched: sha('p') };
+  it('passes the pinned patched bytes with each marker exactly once', () => {
+    expect(calendarPatchProblems({ bundleSha: sha('p'), bundleText: text, pin, insertions })).toEqual([]);
+  });
+  it('names the unpatched bundle, unknown bytes, a doubled or missing marker, and a short insertion list', () => {
+    expect(calendarPatchProblems({ bundleSha: sha('u'), bundleText: text, pin, insertions })[0]).toMatch(/UNPATCHED/);
+    expect(calendarPatchProblems({ bundleSha: sha('z'), bundleText: text, pin, insertions })[0]).toMatch(/neither pin/);
+    expect(calendarPatchProblems({ bundleSha: sha('p'), bundleText: `${text} <M3>`, pin, insertions })[0]).toMatch(
+      /insertion 3 .* occurs 2 times/,
+    );
+    expect(calendarPatchProblems({ bundleSha: sha('p'), bundleText: '', pin, insertions })).toHaveLength(7);
+    expect(
+      calendarPatchProblems({ bundleSha: sha('p'), bundleText: text, pin, insertions: insertions.slice(1) })[0],
+    ).toMatch(/seven B4 insertions/);
+    expect(calendarPatchProblems({ bundleSha: null, bundleText: null, pin, insertions })[0]).toMatch(/missing/);
+  });
+});
+
+describe('[V2] check 10 - vendor binaries and forbidden packages', () => {
+  it('finds every B32 vendor binary name, case-insensitively, at any depth', () => {
+    const files = [
+      'resources/whisper/whisper-cli.exe',
+      'resources/x/CLAUDE.EXE',
+      'claude.cmd',
+      'resources/a/b/agy.exe',
+      'resources/gemini-cli.exe',
+      'resources/whisper/whisper-server.exe',
+    ];
+    const p = vendorBinaryProblems(files);
+    expect(p).toHaveLength(5);
+    expect(p.join('\n')).not.toMatch(/whisper-cli\.exe/);
+  });
+  it('finds the ARCH-v2 12 forbidden packages nested anywhere in app.asar, but not look-alikes', () => {
+    expect(packageNamesIn('node_modules/a/node_modules/@napi-rs/canvas/index.js')).toEqual(['a', '@napi-rs/canvas']);
+    const p = forbiddenV2PackageProblems([
+      'node_modules/opus-decoder/index.js',
+      'node_modules/x/node_modules/codec-parser/index.js',
+      'node_modules/@anthropic-ai/claude-code/cli.js',
+      'node_modules/ffmpeg-static/index.js',
+      'node_modules/canvas-confetti/index.js',
+      'node_modules/@anthropic-ai/sdk/index.js',
+    ]);
+    expect(p).toEqual([
+      'app.asar contains the forbidden package @anthropic-ai/claude-code (ARCH-v2 12)',
+      'app.asar contains the forbidden package codec-parser (ARCH-v2 12)',
+      'app.asar contains the forbidden package ffmpeg-static (ARCH-v2 12)',
+    ]);
+    expect(FORBIDDEN_V2_PACKAGES).toEqual(
+      expect.arrayContaining(['ogg-opus-decoder', 'codec-parser', 'sharp', 'canvas', '@google/gemini-cli']),
+    );
+  });
+});
+
+describe('[V2] check 11 - decoderProblems', () => {
+  const good = {
+    'opus-decoder': { version: '0.7.12', license: 'MIT' },
+    '@wasm-audio-decoders/common': { version: '9.0.7', license: 'MIT' },
+    'simple-yenc': { version: '1.0.4', license: 'MIT' },
+    '@eshaz/web-worker': { version: '1.2.2', license: 'Apache-2.0' },
+  };
+  it('passes the D-070 chain, no wasm, nothing unpacked', () => {
+    expect(decoderProblems({ packages: good, wasmFiles: [], hasUnpackedDir: false })).toEqual([]);
+    expect(Object.keys(DECODER_PACKAGES)).toEqual(Object.keys(good));
+  });
+  it('fails a missing package, a version drift, a licence drift, a .wasm file and an unpacked dir', () => {
+    const p = decoderProblems({
+      packages: {
+        ...good,
+        'simple-yenc': null,
+        'opus-decoder': { version: '0.7.13', license: 'MIT' },
+        '@eshaz/web-worker': { version: '1.2.2', license: 'LGPL-3.0' },
+      },
+      wasmFiles: ['resources/app.asar.unpacked/opus.wasm'],
+      hasUnpackedDir: true,
+    }).join('\n');
+    expect(p).toMatch(/lacks node_modules\/simple-yenc/);
+    expect(p).toMatch(/0\.7\.13 .* approved 0\.7\.12/);
+    expect(p).toMatch(/licence LGPL-3\.0, expected Apache-2\.0/);
+    expect(p).toMatch(/\.wasm file ships/);
+    expect(p).toMatch(/app\.asar\.unpacked exists/);
+  });
+  it('the seam scan reads every main chunk, not only index.js', () => {
+    expect(
+      mainBundleEntries([
+        'out/main/index.js',
+        '/out/main/chunk-a.js',
+        'out/main/manifest.json',
+        'out/preload/index.cjs',
+      ]),
+    ).toEqual(['out/main/index.js', 'out/main/chunk-a.js']);
+  });
+});
+
+describe('[V2] check 12 - noticesProblems', () => {
+  const mit = 'MIT License\n\nCopyright (c) 2023-2026 The ggml authors\n';
+  const all = `${Object.values(NOTICE_ANCHORS_V2).join('\n')}\n${mit}`;
+  it('passes when every anchor and the whisper MIT text are present', () => {
+    expect(noticesProblems({ text: all, anchors: NOTICE_ANCHORS_V2, whisperMit: mit })).toEqual([]);
+  });
+  it('fails each missing anchor, a missing MIT text and a missing file', () => {
+    for (const [key, anchor] of Object.entries(NOTICE_ANCHORS_V2)) {
+      const p = noticesProblems({ text: all.replace(anchor, ''), anchors: NOTICE_ANCHORS_V2, whisperMit: mit });
+      expect(p.some((x) => x.includes(key))).toBe(true);
+    }
+    expect(noticesProblems({ text: all.replace('The ggml authors', ''), anchors: {}, whisperMit: mit })[0]).toMatch(
+      /verbatim/,
+    );
+    expect(noticesProblems({ text: all, anchors: {}, whisperMit: null })[0]).toMatch(/fetch:whisper/);
+    expect(noticesProblems({ text: null, anchors: {}, whisperMit: mit })[0]).toMatch(/missing/);
+  });
+});
+
+describe('[V2] smoke-packaged: checks 7-12 are wired in, read-only, and never execute a whisper file', () => {
+  it('main() runs checks 7-12 after check 5 and audits spawns (check 6) last', () => {
+    const order = [
+      '  await check7Whisper({ resourcesDir, log, problems });',
+      '  check8ModelManifest({ resourcesDir, log, problems });',
+      '  await check9CalendarV2({ resourcesDir, state, log, problems });',
+      '  check10NoVendorBinaries({ unpacked, resourcesDir, state, log, problems });',
+      '  check11Decoder({ unpacked, resourcesDir, state, log, problems });',
+      '  check12Notices({ resourcesDir, log, problems });',
+      'check6NoGui({ log, problems }); // last',
+    ].map((s) => SOURCE.indexOf(s));
+    expect(order.every((i) => i > SOURCE.indexOf('check5Asar({ resourcesDir, log, problems });'))).toBe(true);
+    expect([...order].sort((a, b) => a - b)).toEqual(order);
+  });
+  it('never spawns anything under whisper (the PE header is read with readSync only)', () => {
+    expect(SOURCE).not.toMatch(/spawn[^\n]*whisper/);
+    expect(SOURCE).not.toMatch(/execFile|spawnSync|execSync/);
   });
 });

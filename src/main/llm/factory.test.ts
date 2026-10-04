@@ -14,6 +14,8 @@ function fakeProvider(id: LlmProvider['id'], model: string): LlmProvider & { dis
   return {
     id,
     model,
+    loop: 'turn', // [V2] C2 9
+    capabilities: { images: false }, // [V2] C2 9
     disposed: 0,
     structured: vi.fn(async () => ({}) as never),
     chat: vi.fn(
@@ -127,7 +129,8 @@ describe('createProviderFactory - readiness', () => {
   it.each(['claude', 'gemini'] as const)('%s with consent but no key throws LlmError(not_ready)', async (id) => {
     const h = harness();
     h.setSettings((s) => (s.llm.provider = id));
-    h.accepted[id === 'claude' ? 'cloud_claude' : 'cloud_gemini'] = 1;
+    h.accepted[id === 'claude' ? 'cloud_claude' : 'cloud_gemini'] =
+      CONSENT_VERSIONS[id === 'claude' ? 'cloud_claude' : 'cloud_gemini']; // [V2] v2 consent text
     const err = await createProviderFactory(h.deps)
       .get()
       .catch((e: unknown) => e);
@@ -150,7 +153,7 @@ describe('createProviderFactory - readiness', () => {
   it('an empty key counts as missing', async () => {
     const h = harness();
     h.setSettings((s) => (s.llm.provider = 'claude'));
-    h.accepted.cloud_claude = 1;
+    h.accepted.cloud_claude = CONSENT_VERSIONS.cloud_claude; // [V2]
     h.keys.set('anthropic_api_key', '');
     await expect(createProviderFactory(h.deps).get()).rejects.toBeInstanceOf(LlmError);
   });
@@ -161,7 +164,7 @@ describe('createProviderFactory - readiness', () => {
       s.llm.provider = 'claude';
       s.llm.claudeModel = '';
     });
-    h.accepted.cloud_claude = 1;
+    h.accepted.cloud_claude = CONSENT_VERSIONS.cloud_claude; // [V2]
     h.keys.set('anthropic_api_key', CLAUDE_KEY);
     await expect(createProviderFactory(h.deps).get()).rejects.toBeInstanceOf(LlmError);
     expect(h.made.claude).toBe(0);

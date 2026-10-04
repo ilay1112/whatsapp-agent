@@ -500,7 +500,9 @@ describe('TESTS 4.1 - the build-time seam lock', () => {
         const rel = relative(REPO_ROOT, full).replaceAll(sep, '/');
         if (seamOwners.includes(rel)) continue;
         const code = stripComments(readFileSync(full, 'utf8'));
-        if (/WCA_[A-Z0-9_]+/.test(code)) offenders.push(rel);
+        // [V2] WCA_MCP_TOKEN is a PRODUCTION env name (C2 13 CLAUDE_S3_ENV_KEYS: the S3 tool-server token the CLI expands from
+        // --mcp-config), not a test seam; every other WCA_* name stays seam-only.
+        if (/WCA_(?!MCP_TOKEN\b)[A-Z0-9_]+/.test(code)) offenders.push(rel);
       }
     };
     walk(join(REPO_ROOT, 'src'));
@@ -668,9 +670,97 @@ describe('[R2] ARCH 16 - dependency rules', () => {
     expect(native, 'a production package declares binding.gyp / gypfile').toEqual([]);
   });
 
-  it('declares the six pure-JS runtime dependencies of ARCH 16 and nothing else', () => {
+  // [V2] + opus-decoder (D-070, the only new v2 runtime dependency; pure JS/WASM, MIT)
+  it('declares the seven pure-JS runtime dependencies of ARCH 16 + D-070 and nothing else', () => {
     expect(Object.keys(pkg.dependencies ?? {}).sort()).toEqual(
-      ['@anthropic-ai/sdk', '@google/genai', '@modelcontextprotocol/sdk', 'electron-log', 'i18next', 'zod'].sort(),
+      [
+        '@anthropic-ai/sdk',
+        '@google/genai',
+        '@modelcontextprotocol/sdk',
+        'electron-log',
+        'i18next',
+        'opus-decoder',
+        'zod',
+      ].sort(),
     );
+  });
+});
+
+// ---------------------------------------------------------------------------------------------------------------------
+// [V2] (owner V2-W2-02) T2 8.2 group 12a extensions: the forbidden packages of ARCH2 12 and the B18 SPDX licence allow-list over
+// EVERY production entry of the lockfile (direct and transitive).
+// ---------------------------------------------------------------------------------------------------------------------
+describe('[V2] ARCH2 12 / B18 - forbidden v2 packages and the SPDX licence allow-list', () => {
+  interface LockEntry {
+    version?: string;
+    dev?: boolean;
+    license?: unknown;
+    dependencies?: Record<string, string>;
+    optionalDependencies?: Record<string, string>;
+  }
+  const pkg = JSON.parse(read('package.json')) as {
+    dependencies?: Record<string, string>;
+    devDependencies?: Record<string, string>;
+  };
+  const lock = JSON.parse(read('package-lock.json')) as {
+    lockfileVersion?: number;
+    packages: Record<string, LockEntry>;
+  };
+  const nameOf = (lockPath: string): string =>
+    lockPath.slice(lockPath.lastIndexOf('node_modules/') + 'node_modules/'.length);
+  /** Every production entry (npm marks dev-only entries `dev: true`; everything else ships or may ship). */
+  const production = Object.entries(lock.packages).filter(([p, e]) => p !== '' && e.dev !== true);
+
+  /** ARCH2 12 forbidden list (exact names, scopes and prefixes). */
+  const V2_FORBIDDEN =
+    /^(ogg-opus-decoder|codec-parser|sharp|canvas|@napi-rs\/.+|ffmpeg.*|@ffmpeg[^/]*\/.+|@ffmpeg-installer\/.+|@discordjs\/opus|node-opus|@anthropic-ai\/claude-agent-sdk|@anthropic-ai\/claude-code|@google\/gemini-cli)$/;
+  const SPDX_ALLOWED = new Set(['MIT', 'Apache-2.0', 'BSD-2-Clause', 'BSD-3-Clause', 'ISC', '0BSD', 'Unlicense']); // Unlicense: D-075 (fast-sha256 via @anthropic-ai/sdk -> standardwebhooks)
+
+  it('the lockfile is v3 (every entry carries its licence field) and the production tree is not empty', () => {
+    expect(lock.lockfileVersion).toBeGreaterThanOrEqual(2);
+    expect(production.length).toBeGreaterThan(20);
+    expect(production.map(([p]) => nameOf(p))).toContain('opus-decoder');
+  });
+
+  it('no ARCH2 12 forbidden package is a direct dependency (runtime or dev)', () => {
+    const directs = Object.keys({ ...(pkg.dependencies ?? {}), ...(pkg.devDependencies ?? {}) });
+    expect(directs.filter((n) => V2_FORBIDDEN.test(n))).toEqual([]);
+  });
+
+  it('no ARCH2 12 forbidden package is anywhere in the production tree, nor referenced by a production entry', () => {
+    const present = production.map(([p]) => nameOf(p)).filter((n) => V2_FORBIDDEN.test(n));
+    expect(present).toEqual([]);
+    const referenced: string[] = [];
+    for (const [p, e] of production) {
+      for (const dep of Object.keys({ ...(e.dependencies ?? {}), ...(e.optionalDependencies ?? {}) })) {
+        if (V2_FORBIDDEN.test(dep)) referenced.push(`${nameOf(p)} -> ${dep}`);
+      }
+    }
+    expect(referenced).toEqual([]);
+  });
+
+  it('the LGPL Ogg demuxer pair (ogg-opus-decoder / codec-parser) appears nowhere in the lockfile, dev included', () => {
+    const anywhere = Object.keys(lock.packages)
+      .filter((p) => p !== '')
+      .map(nameOf)
+      .filter((n) => n === 'ogg-opus-decoder' || n === 'codec-parser');
+    expect(anywhere).toEqual([]);
+  });
+
+  it('the regex is not vacuous', () => {
+    for (const n of ['sharp', 'canvas', '@napi-rs/canvas', 'ffmpeg-static', '@ffmpeg-installer/ffmpeg', 'node-opus'])
+      expect(V2_FORBIDDEN.test(n), n).toBe(true);
+    for (const n of ['opus-decoder', 'sharpen', 'zod']) expect(V2_FORBIDDEN.test(n), n).toBe(false);
+  });
+
+  it('every production package (direct AND transitive) carries an SPDX licence from the allow-list', () => {
+    const offenders: string[] = [];
+    for (const [p, e] of production) {
+      const lic = e.license;
+      if (typeof lic !== 'string' || !SPDX_ALLOWED.has(lic)) {
+        offenders.push(`${nameOf(p)}@${e.version ?? '?'}: ${typeof lic === 'string' ? lic : 'missing'}`);
+      }
+    }
+    expect(offenders, 'production packages outside the SPDX allow-list (missing / UNLICENSED / other)').toEqual([]);
   });
 });

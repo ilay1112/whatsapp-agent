@@ -7,7 +7,12 @@ import { PassThrough } from 'node:stream';
 import path from 'node:path';
 import type { ChildProcess } from 'node:child_process';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { startFakeLlamaServer, checkLlamaArgv, type FakeLlamaServer } from '../../../../tests/fakes/fake-llama-server';
+import {
+  startFakeLlamaServer,
+  checkLlamaArgv,
+  checkVisionArgv,
+  type FakeLlamaServer,
+} from '../../../../tests/fakes/fake-llama-server';
 import type { Clock, ClockTimer, FetchFn, Logger, LogMeta, RandomSource, SpawnFn } from '../../deps';
 import {
   LLAMA_BACKOFF_MS,
@@ -22,6 +27,9 @@ import {
   buildLlamaEnv,
   createLlamaRuntime,
   matchLlamaMarkers,
+  buildVisionArgs,
+  LLAMA_IMAGE_MAX_TOKENS,
+  LLAMA_MID_VISION_BATCH,
   type LlamaRuntimeDeps,
 } from './llamaServer';
 import { VC_RUNTIME_DLLS, VCREDIST_EXIT_CODE } from './hardware';
@@ -589,6 +597,195 @@ describe('stop and childSpec', () => {
       expect(call.command).toBe(EXE);
     }
     expect(vi.isMockFunction(rec.spawn)).toBe(false);
+    await runtime.stop();
+  });
+});
+
+// ---------------------------------------------------------------------------------------------------------------------
+// [V2, V2-W1-08-vision] --mmproj respawn + GET /props vision readiness (B19, C2 9.1, T2 3.8)
+// ---------------------------------------------------------------------------------------------------------------------
+const MMPROJ = 'C:\\users\\t\\AppData\\Roaming\\wca\\models\\gemma-4-E4B-it-mmproj-F16.gguf';
+
+describe('buildVisionArgs / buildLlamaArgs vision', () => {
+  const base = { modelPath: MODEL, port: 51234, lowRam: false, forceCpu: false, deviceArg: null };
+
+  it('is the literal of C2 9.1 per tier (tiny 560, small 1120, mid 1120 + batch 2048)', () => {
+    expect(buildVisionArgs(MMPROJ, 'small')).toEqual([
+      '--mmproj',
+      MMPROJ,
+      '--mmproj-device',
+      'none',
+      '--image-max-tokens',
+      '1120',
+    ]);
+    expect(buildVisionArgs(MMPROJ, 'tiny')).toEqual([
+      '--mmproj',
+      MMPROJ,
+      '--mmproj-device',
+      'none',
+      '--image-max-tokens',
+      '560',
+    ]);
+    expect(buildVisionArgs(MMPROJ, 'mid')).toEqual([
+      '--mmproj',
+      MMPROJ,
+      '--mmproj-device',
+      'none',
+      '--image-max-tokens',
+      '1120',
+      '--batch-size',
+      String(LLAMA_MID_VISION_BATCH),
+      '--ubatch-size',
+      String(LLAMA_MID_VISION_BATCH),
+    ]);
+    expect(LLAMA_IMAGE_MAX_TOKENS).toEqual({ tiny: 560, small: 1120, mid: 1120 });
+  });
+
+  it('no vision (absent / null) keeps the exact v1 array; with vision the fake flag contract holds for every tier', () => {
+    expect(buildLlamaArgs({ ...base, vision: null })).toEqual(buildLlamaArgs(base));
+    for (const tier of ['tiny', 'small', 'mid'] as const) {
+      const args = buildLlamaArgs({ ...base, vision: { mmprojPath: MMPROJ, tier } });
+      expect(checkLlamaArgv(args)).toEqual([]);
+      expect(checkVisionArgv(args, tier)).toEqual([]);
+      expect(args.slice(0, buildLlamaArgs(base).length)).toEqual(buildLlamaArgs(base)); // v1 flags first, unchanged
+    }
+    expect(checkVisionArgv(buildLlamaArgs(base))).toEqual([]);
+  });
+});
+
+describe('vision runtime (respawn with --mmproj, /props readiness)', () => {
+  async function visionRuntime(opts: {
+    serverVision: boolean;
+    enabled: () => boolean;
+    mmproj: () => string | null;
+    tier?: 'tiny' | 'small' | 'mid';
+  }) {
+    const fake = await startFakeLlamaServer({ apiKey: 'unused-by-health', vision: opts.serverVision });
+    servers.push(fake);
+    const rec = spawnRecorder();
+    const logger = recordingLog();
+    const runtime = createLlamaRuntime(
+      deps({
+        port: fake.port,
+        spawn: rec.spawn,
+        log: logger.log,
+        tier: () => opts.tier ?? 'small',
+        imagesEnabled: opts.enabled,
+        mmprojPath: opts.mmproj,
+      }),
+    );
+    return { fake, rec, logger, runtime };
+  }
+
+  it('images enabled + projector present => spawned with --mmproj, /props vision => ready', async () => {
+    const { fake, rec, runtime, logger } = await visionRuntime({
+      serverVision: true,
+      enabled: () => true,
+      mmproj: () => MMPROJ,
+      tier: 'mid',
+    });
+    expect(runtime.vision!()).toEqual({ requested: false, ready: false, stale: false });
+    await runtime.ensureStarted();
+    const args = rec.calls[0]!.args;
+    expect(checkVisionArgv(args, 'mid')).toEqual([]);
+    expect(args).toContain('--mmproj');
+    expect(runtime.vision!()).toEqual({ requested: true, ready: true, stale: false });
+    expect(fake.requests.some((r) => r.path === '/props')).toBe(true);
+    expect(logger.events.find((e) => e.event === 'llama_vision')?.meta).toEqual({ ready: true });
+    expect(logger.events.find((e) => e.event === 'llama_spawned')?.meta).toMatchObject({ vision: true });
+    expect(JSON.stringify(logger.events)).not.toContain('mmproj-F16'); // no path in a log line
+    await runtime.stop();
+    expect(runtime.vision!()).toEqual({ requested: false, ready: false, stale: false });
+  });
+
+  it('a --mmproj child whose /props does not report vision is text-ready but NOT picture-ready', async () => {
+    const { rec, runtime } = await visionRuntime({ serverVision: false, enabled: () => true, mmproj: () => MMPROJ });
+    await runtime.ensureStarted();
+    expect(rec.calls[0]!.args).toContain('--mmproj');
+    expect(runtime.status().state).toBe('ready');
+    expect(runtime.vision!()).toEqual({ requested: true, ready: false, stale: false });
+    await runtime.stop();
+  });
+
+  it('/props failures (non-200, unreachable, non-JSON, null) all mean no vision and never fail the text start', async () => {
+    const answers: Array<() => Promise<Response>> = [
+      async () => new Response('nope', { status: 500 }),
+      async () => {
+        throw new Error('ECONNRESET');
+      },
+      async () => new Response('not json', { status: 200 }),
+      async () => new Response('null', { status: 200 }),
+    ];
+    for (const answer of answers) {
+      const fake = await health();
+      const rec = spawnRecorder();
+      const fetchVia: FetchFn = async (url, init) => (String(url).endsWith('/props') ? answer() : fetch(url, init));
+      const runtime = createLlamaRuntime(
+        deps({
+          port: fake.port,
+          spawn: rec.spawn,
+          fetch: fetchVia,
+          imagesEnabled: () => true,
+          mmprojPath: () => MMPROJ,
+        }),
+      );
+      await runtime.ensureStarted();
+      expect(runtime.status().state).toBe('ready');
+      expect(runtime.vision!().ready).toBe(false);
+      await runtime.stop();
+    }
+  });
+
+  it('images disabled or projector missing => the v1 text-only flag set and no /props probe', async () => {
+    const cfgs: Array<{ enabled: () => boolean; mmproj: () => string | null }> = [
+      { enabled: () => false, mmproj: () => MMPROJ },
+      { enabled: () => true, mmproj: () => null },
+      { enabled: () => true, mmproj: () => '' },
+    ];
+    for (const cfg of cfgs) {
+      const { fake, rec, runtime } = await visionRuntime({ serverVision: true, ...cfg });
+      await runtime.ensureStarted();
+      expect(rec.calls[0]!.args).not.toContain('--mmproj');
+      expect(fake.requests.some((r) => r.path === '/props')).toBe(false);
+      expect(runtime.vision!()).toEqual({ requested: false, ready: false, stale: false });
+      await runtime.stop();
+    }
+    const fake = await health();
+    const rec = spawnRecorder();
+    const runtime = createLlamaRuntime(
+      deps({
+        port: fake.port,
+        spawn: rec.spawn,
+        exists: (p) => p !== MMPROJ,
+        imagesEnabled: () => true,
+        mmprojPath: () => MMPROJ,
+      }),
+    );
+    await runtime.ensureStarted();
+    expect(rec.calls[0]!.args).not.toContain('--mmproj');
+    await runtime.stop();
+    const plain = await readyRuntime();
+    await plain.runtime.ensureStarted();
+    expect(plain.rec.calls[0]!.args).not.toContain('--mmproj');
+    expect(plain.runtime.vision!()).toEqual({ requested: false, ready: false, stale: false });
+    await plain.runtime.stop();
+  });
+
+  it('toggling images marks the running child stale; a fresh start picks up the new flag set', async () => {
+    let enabled = false;
+    const { rec, runtime } = await visionRuntime({ serverVision: true, enabled: () => enabled, mmproj: () => MMPROJ });
+    await runtime.ensureStarted();
+    expect(runtime.vision!().stale).toBe(false);
+    enabled = true;
+    expect(runtime.vision!()).toEqual({ requested: false, ready: false, stale: true });
+    await runtime.stop();
+    expect(runtime.vision!().stale).toBe(false); // not running => nothing is stale
+    await runtime.ensureStarted();
+    expect(rec.calls).toHaveLength(2);
+    expect(rec.calls[1]!.args).toContain('--mmproj');
+    expect(runtime.vision!()).toEqual({ requested: true, ready: true, stale: false });
+    enabled = false;
+    expect(runtime.vision!().stale).toBe(true);
     await runtime.stop();
   });
 });

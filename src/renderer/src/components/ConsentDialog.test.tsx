@@ -8,7 +8,14 @@ import { ConsentDialog } from './ConsentDialog';
 const setup = (over: Partial<Parameters<typeof ConsentDialog>[0]> = {}) => {
   const onAccept = vi.fn();
   const onCancel = vi.fn();
-  const props = { kind: 'cloud_claude' as const, version: 1, open: true, onAccept, onCancel, ...over };
+  const props = {
+    kind: 'cloud_claude' as const,
+    version: CONSENT_VERSIONS.cloud_claude,
+    open: true,
+    onAccept,
+    onCancel,
+    ...over,
+  };
   const view = render(<ConsentDialog {...props} />);
   return { onAccept, onCancel, view };
 };
@@ -88,7 +95,15 @@ describe('ConsentDialog', () => {
   it('a new kind gets its own unread panel', () => {
     const { view } = setup();
     expect(screen.getByTestId('consent-dialog')).toHaveAttribute('data-kind', 'cloud_claude');
-    view.rerender(<ConsentDialog kind="cloud_gemini" version={1} open onAccept={() => {}} onCancel={() => {}} />);
+    view.rerender(
+      <ConsentDialog
+        kind="cloud_gemini"
+        version={CONSENT_VERSIONS.cloud_gemini}
+        open
+        onAccept={() => {}}
+        onCancel={() => {}}
+      />,
+    );
     expect(screen.getByTestId('consent-dialog')).toHaveAttribute('data-kind', 'cloud_gemini');
     expect(document.activeElement).toBe(screen.getByTestId('consent-cancel'));
   });

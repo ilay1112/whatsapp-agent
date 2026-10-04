@@ -13,9 +13,16 @@ const INVOKE = new Set<string>([
   'google:getWizardState', 'google:pickCredentialsFile', 'google:importCredentials', 'google:startSignIn', 'google:status',
   'google:disconnect', 'google:listCalendars',
   'settings:get', 'settings:set', 'external:open', 'data:purgeNow', 'diagnostics:export',
+  // [V2 ADD] 24 channels (v2-contracts 8.2)
+  'item:undoChange', 'item:getImage', 'item:restoreOriginal', 'item:cancelEvent', 'wa:setReadScope',
+  'auto:getState', 'auto:requestEnable', 'auto:disable', 'auto:pause', 'auto:resume', 'auto:endShadow', 'auto:undo',
+  'auto:listWrites', 'auto:export',
+  'cli:getStatus', 'cli:signIn', 'cli:setOverage', 'cli:test', 'cli:pickExe', 'cli:previewWorkspaceChange', 'cli:allowWorkspace',
+  'voice:getState', 'voice:selfTest', 'voice:retry',
 ]);
 const EVENTS = new Set<string>([
   'dashboard:changed', 'health:changed', 'pairing:changed', 'model:progress', 'google:changed', 'ui:languageChanged', 'ui:navigate',
+  'auto:changed', 'cli:changed', 'queue:changed', 'voice:progress', // [V2 ADD]
 ]);
 
 function arg(name: string, allowed: readonly string[], fallback: string): string {

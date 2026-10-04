@@ -338,6 +338,10 @@ export function GoogleWizard({ onDone, onSkip, onBack, startAt = 0 }: GoogleWiza
             </option>
           ))}
         </select>
+        {/* [V2] UX2 6 step 3: one closing sentence; automatic mode itself is NEVER offered in onboarding. */}
+        <p className="m-0 text-sm text-text-muted" data-testid="google-auto-later">
+          {t('onboarding.google.autoLater')}
+        </p>
       </>
     ) : (
       <>

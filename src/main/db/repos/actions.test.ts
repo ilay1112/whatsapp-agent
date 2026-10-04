@@ -26,7 +26,9 @@ function force(db: Db, id: string, state: string): void {
     db.prepare(`UPDATE actions SET state=? WHERE id=?`).run(state, id);
     return;
   }
-  db.prepare(`UPDATE actions SET state='approved', approved_at=?, approved_final_json=? WHERE id=?`).run(T0, FINAL, id);
+  db.prepare(
+    `UPDATE actions SET state='approved', approved_at=?, approved_final_json=?, approved_by='user' WHERE id=?`,
+  ).run(T0, FINAL, id);
   if (state === 'approved') return;
   db.prepare(`UPDATE actions SET state='executing' WHERE id=?`).run(id);
   if (state === 'executing') return;
@@ -330,7 +332,7 @@ describe('actions repo - compare-and-set', () => {
   it('markApprovedExecuting is one hop from pending to executing', () => {
     const { repos } = memRepos();
     const { action } = seedPendingAction(repos);
-    expect(repos.actions.markApprovedExecuting(action.id, FINAL, T0 + 5)).toBe('ok');
+    expect(repos.actions.markApprovedExecuting(action.id, FINAL, T0 + 5, 'user')).toBe('ok');
     const row = repos.actions.byId(action.id)!;
     expect(row.state).toBe('executing');
     expect(row.approvedAt).toBe(T0 + 5);
@@ -340,9 +342,9 @@ describe('actions repo - compare-and-set', () => {
   it('returns stale - never throws - on a row that is no longer pending or does not exist', () => {
     const { repos } = memRepos();
     const { action } = seedPendingAction(repos);
-    expect(repos.actions.markApprovedExecuting(action.id, FINAL, T0)).toBe('ok');
-    expect(repos.actions.markApprovedExecuting(action.id, FINAL, T0)).toBe('stale');
-    expect(repos.actions.markApprovedExecuting('missing-id', FINAL, T0)).toBe('stale');
+    expect(repos.actions.markApprovedExecuting(action.id, FINAL, T0, 'user')).toBe('ok');
+    expect(repos.actions.markApprovedExecuting(action.id, FINAL, T0, 'user')).toBe('stale');
+    expect(repos.actions.markApprovedExecuting('missing-id', FINAL, T0, 'user')).toBe('stale');
     expect(repos.actions.byId(action.id)!.state).toBe('executing');
   });
 
@@ -352,7 +354,7 @@ describe('actions repo - compare-and-set', () => {
     db.exec(
       `CREATE TRIGGER t_block BEFORE UPDATE OF state ON actions WHEN NEW.state='approved' BEGIN SELECT RAISE(ABORT,'blocked'); END`,
     );
-    expect(repos.actions.markApprovedExecuting(action.id, FINAL, T0)).toBe('stale');
+    expect(repos.actions.markApprovedExecuting(action.id, FINAL, T0, 'user')).toBe('stale');
     expect(repos.actions.byId(action.id)!.state).toBe('pending');
     expect(repos.actions.byId(action.id)!.approvedFinalJson).toBeNull();
     db.exec(`DROP TRIGGER t_block`);
@@ -365,7 +367,7 @@ describe('actions repo - compare-and-set', () => {
     vi.spyOn(db, 'transaction').mockImplementation(() => {
       throw boom;
     });
-    expect(() => repos.actions.markApprovedExecuting(action.id, FINAL, T0)).toThrow(boom);
+    expect(() => repos.actions.markApprovedExecuting(action.id, FINAL, T0, 'user')).toThrow(boom);
     vi.restoreAllMocks();
   });
 
@@ -377,7 +379,7 @@ describe('actions repo - compare-and-set', () => {
     );
     expect(() => repos.actions.markFailed(action.id, 'SEND_FAILED', T0)).toThrow(ActionStateError);
     expect(() => repos.actions.markUnknownOutcome(action.id, T0)).toThrow(ActionStateError);
-    repos.actions.markApprovedExecuting(action.id, FINAL, T0);
+    repos.actions.markApprovedExecuting(action.id, FINAL, T0, 'user');
     repos.actions.markDone(action.id, { kind: 'send_reply', waMsgId: 'wa-1' }, T0 + 9);
     const row = repos.actions.byId(action.id)!;
     expect(row.state).toBe('done');
@@ -389,7 +391,7 @@ describe('actions repo - compare-and-set', () => {
   it('markDone is also allowed from unknown_outcome (reconcile found the message)', () => {
     const { repos } = memRepos();
     const { action } = seedPendingAction(repos);
-    repos.actions.markApprovedExecuting(action.id, FINAL, T0);
+    repos.actions.markApprovedExecuting(action.id, FINAL, T0, 'user');
     repos.actions.markUnknownOutcome(action.id, T0 + 1);
     expect(repos.actions.byId(action.id)!.state).toBe('unknown_outcome');
     repos.actions.markDone(action.id, { kind: 'send_reply', waMsgId: 'wa-2' }, T0 + 2);
@@ -399,7 +401,7 @@ describe('actions repo - compare-and-set', () => {
   it('markFailed records the ErrorCode; the row stays terminal', () => {
     const { repos } = memRepos();
     const { action } = seedPendingAction(repos);
-    repos.actions.markApprovedExecuting(action.id, FINAL, T0);
+    repos.actions.markApprovedExecuting(action.id, FINAL, T0, 'user');
     repos.actions.markFailed(action.id, 'SEND_FAILED', T0 + 3);
     expect(repos.actions.byId(action.id)!.errorCode).toBe('SEND_FAILED');
   });

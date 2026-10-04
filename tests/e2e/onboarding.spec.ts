@@ -319,6 +319,10 @@ test('choosing a cloud provider blocks on the consent dialog, and declining writ
 
   await expect(page.getByTestId('onboarding-choose-ai')).toBeVisible({ timeout: 20_000 });
   await e2e.screenshot(page, 'onboarding-choose-ai-en');
+  // [V2] UX2 4.1 / 6: the API-key cards (Claude / Gemini with a key) sit behind the "Advanced: use an API key" disclosure; the
+  // visible cards are Local and "Claude - your subscription". The disclosure starts closed, so the user opens it first.
+  await expect(page.getByTestId('ai-advanced')).toHaveAttribute('aria-expanded', 'false');
+  await page.getByTestId('ai-advanced').click();
   await page.getByTestId('choose-ai-claude').click();
   await expect(page.getByTestId('consent-dialog'), 'a cloud provider always asks first').toBeVisible({
     timeout: 20_000,

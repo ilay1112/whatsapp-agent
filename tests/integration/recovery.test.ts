@@ -74,7 +74,7 @@ async function crashMidSend(userData: string): Promise<{ actionId: ActionId; ite
       text: FINAL_TEXT,
     });
     const approvedAt = h.clock.now();
-    expect(h.repos.actions.markApprovedExecuting(send.actionId, payload, approvedAt)).toBe('ok');
+    expect(h.repos.actions.markApprovedExecuting(send.actionId, payload, approvedAt, 'user')).toBe('ok');
     return { actionId: send.actionId, itemId: card.itemId, approvedAt };
   } finally {
     await h.dispose();
@@ -175,7 +175,7 @@ describe('crash recovery', () => {
         proposalVersion: 1,
         ...eventContent,
       });
-      expect(h.repos.actions.markApprovedExecuting(create.actionId, payload, h.clock.now())).toBe('ok');
+      expect(h.repos.actions.markApprovedExecuting(create.actionId, payload, h.clock.now(), 'user')).toBe('ok');
       await h.dispose();
     }
 

@@ -49,8 +49,8 @@ describe('createHealthHub - boot state', () => {
   it('starts as "working": bridge not started, llm starting, Google not configured', () => {
     const h = hub.get();
     expect(h.whatsapp).toEqual({ state: 'not_started', since: 1_000_000 });
-    expect(h.llm).toEqual({ state: 'starting', since: 1_000_000, provider: 'local', model: '' });
-    expect(h.calendar).toEqual({ state: 'not_configured', since: 1_000_000 });
+    expect(h.llm).toEqual({ state: 'starting', since: 1_000_000, provider: 'local', model: '', quota: null }); // [V2] + quota
+    expect(h.calendar).toEqual({ state: 'not_configured', since: 1_000_000, updatesAvailable: false }); // [V2] fail closed
     expect(h.queue).toEqual({ pending: 0, running: 0 });
     expect(h.paused).toBe(false);
     expect(h.overall).toBe('working');
@@ -252,5 +252,98 @@ describe('pairing', () => {
     hub.onChange(cb);
     hub.setPairing({ status: 'connecting' });
     expect(cb).not.toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------------------------------------------------------
+// [V2] C2 3: voice / auto / llm.quota / calendar.updatesAvailable are sub-lines only - overallOf() is unchanged (ARCH-v2 11).
+// ---------------------------------------------------------------------------------------------------------------------
+describe('[V2] sub-line setters', () => {
+  const allOk = (): void => {
+    hub.setBridge({ state: 'online' });
+    hub.setLlm({ state: 'ready', provider: 'local', model: 'tiny' });
+    hub.setCalendar({ state: 'connected' });
+  };
+
+  it('boot values fail closed: voice off, auto off, no quota, updates unavailable', () => {
+    const h = hub.get();
+    expect(h.voice).toEqual({ state: 'off', since: 1_000_000 });
+    expect(h.auto).toEqual({ state: 'off', expiresAt: null, pausedReason: null });
+    expect(h.llm.quota).toBeNull();
+    expect(h.calendar.updatesAvailable).toBe(false);
+  });
+
+  it('setVoice moves `since` only on a state change, carries a code, and never changes overall', () => {
+    allOk();
+    expect(hub.get().overall).toBe('ok');
+    clockNow = 2_000_000;
+    hub.setVoice({ state: 'failed', code: 'VOICE_LOCAL_FAILED' });
+    expect(hub.get().voice).toEqual({ state: 'failed', code: 'VOICE_LOCAL_FAILED', since: 2_000_000 });
+    expect(hub.get().overall).toBe('ok');
+    clockNow = 3_000_000;
+    hub.setVoice({ state: 'failed' });
+    expect(hub.get().voice).toEqual({ state: 'failed', since: 2_000_000 });
+    for (const state of ['off', 'downloading', 'ready', 'transcribing', 'failed'] as const) {
+      hub.setVoice({ state });
+      expect(hub.get().overall).toBe('ok');
+    }
+  });
+
+  it('setAuto reports the policy line and never changes overall', () => {
+    allOk();
+    hub.setAuto({ state: 'paused', expiresAt: 9_000_000, pausedReason: 'circuit_breaker_rate' });
+    expect(hub.get().auto).toEqual({ state: 'paused', expiresAt: 9_000_000, pausedReason: 'circuit_breaker_rate' });
+    expect(hub.get().overall).toBe('ok');
+    hub.setAuto({ state: 'on', expiresAt: 9_000_000, pausedReason: null });
+    expect(hub.get().auto.state).toBe('on');
+  });
+
+  it('setLlmQuota sets and clears llm.quota; overall is unaffected', () => {
+    allOk();
+    hub.setLlmQuota({ resetsAt: 5_000_000, usingOverage: false });
+    expect(hub.get().llm.quota).toEqual({ resetsAt: 5_000_000, usingOverage: false });
+    expect(hub.get().overall).toBe('ok');
+    hub.setLlmQuota(null);
+    expect(hub.get().llm.quota).toBeNull();
+  });
+
+  it('setCalendarUpdates toggles calendar.updatesAvailable without a code on the calendar part', () => {
+    allOk();
+    hub.setCalendarUpdates(true);
+    expect(hub.get().calendar).toEqual({ state: 'connected', since: 1_000_000, updatesAvailable: true });
+    hub.setCalendarUpdates(false);
+    expect(hub.get().calendar.updatesAvailable).toBe(false);
+    expect(hub.get().calendar.code).toBeUndefined();
+    expect(hub.get().overall).toBe('ok');
+  });
+
+  it('each setter emits once on a real change and stays silent on a repeat', () => {
+    const cb = vi.fn();
+    hub.onChange(cb);
+    hub.setVoice({ state: 'ready' });
+    hub.setVoice({ state: 'ready' });
+    hub.setAuto({ state: 'shadow', expiresAt: 1, pausedReason: null });
+    hub.setAuto({ state: 'shadow', expiresAt: 1, pausedReason: null });
+    hub.setLlmQuota({ resetsAt: null, usingOverage: true });
+    hub.setLlmQuota({ resetsAt: null, usingOverage: true });
+    hub.setCalendarUpdates(true);
+    hub.setCalendarUpdates(true);
+    expect(cb).toHaveBeenCalledTimes(4);
+  });
+
+  it('inputs are copied: mutating the caller object or the returned snapshot changes nothing', () => {
+    const quota = { resetsAt: 1, usingOverage: false as boolean | null };
+    const auto = { state: 'on' as const, expiresAt: 1 as number | null, pausedReason: null };
+    hub.setLlmQuota(quota);
+    hub.setAuto(auto);
+    quota.usingOverage = true;
+    auto.expiresAt = 99;
+    const h = hub.get();
+    expect(h.llm.quota?.usingOverage).toBe(false);
+    expect(h.auto.expiresAt).toBe(1);
+    h.llm.quota!.resetsAt = 42;
+    h.auto.state = 'off';
+    expect(hub.get().llm.quota?.resetsAt).toBe(1);
+    expect(hub.get().auto.state).toBe('on');
   });
 });

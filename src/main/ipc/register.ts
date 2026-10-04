@@ -1,14 +1,16 @@
-// src/main/ipc/register.ts - registers every IPC channel with sender check + zod parse + audit (build-plan section 3; owner W1-13).
+// src/main/ipc/register.ts - registers every IPC channel with sender check + zod parse + focus gate + audit (build-plan section 3;
+// owner W1-13; v2 deltas V2-W1-10-main-platform: FOCUS_GATED_CHANNELS, the v2 handler-deps types).
 // One of the five files allowed to import `electron` (types only here; the value comes in by injection so vitest uses the mock).
 import type { IpcMain } from 'electron';
 import {
+  FOCUS_GATED_CHANNELS,
   IPC_CHANNELS,
   IPC_REQUEST_SCHEMAS,
   type IpcChannel,
   type IpcHandlers,
   type IpcContext,
 } from '../../shared/ipc';
-import type { AppError, AuditEntry, AuditKind, EpochMs, Result } from '../../shared/types';
+import { LIMITS, type AppError, type AuditEntry, type AuditKind, type EpochMs, type Result } from '../../shared/types';
 import type { ErrorCode } from '../../shared/errors';
 import type { Settings, SettingsPatch } from '../../shared/settings';
 import type { Clock, ElectronFacade, Logger } from '../deps';
@@ -78,6 +80,44 @@ export interface HandlerDeps {
   showWindow: () => void;
   exportDiagnostics: () => Promise<boolean>; // save dialog in main; redacted bundle
 }
+// ======================= [V2 ADD] v2-build-plan section 3 seam (V2-W0-scaffold; owner V2-W1-10-main-platform, wired by V2-W2-01) =======================
+/** The collaborators the v2 handler files (auto / cli / voice and the item + settings deltas) need on top of HandlerDeps. */
+export type HandlerDepsV2 = HandlerDeps & {
+  autoPolicy: import('../exec/autoPolicy').AutoPolicyService;
+  undo: import('../exec/undo').Undo;
+  cliStatus: import('../llm/cli/locator').CliStatusService;
+  cliConsole: import('../deps').OpenVisibleConsoleFn /* S-CONSOLE */;
+  agyWorkspace: import('../llm/cli/antigravityCli').AgyWorkspace;
+  voice: import('../voice/service').VoiceServiceV2;
+  mediaCache: import('../media/mediaCache').MediaCache;
+  jobs: import('../proc/jobRunner').JobRunner;
+};
+
+// ======================= [V2 ADD] V2-W1-10-main-platform: v2 collaborators of the v1 handler files =======================
+// Passed as an OPTIONAL second argument of createItemsHandlers / createSettingsHandlers / createLlmHandlers / createDataHandlers so
+// the Wave-0 compose.ts keeps compiling unchanged; `createIpcHandlers()` (register.handlers.ts) passes them all. An absent member
+// fails CLOSED in its handler (INTERNAL for a missing collaborator, never a silent success, never a skipped precondition).
+/** item:undoChange / item:restoreOriginal / item:cancelEvent (V2-W1-04's exec/undo.ts). */
+export interface ItemsHandlersV2 {
+  undo: Pick<import('../exec/undo').Undo, 'undoChange' | 'restoreOriginal' | 'cancelEvent'>;
+}
+/** wa:setReadScope's native confirmation (V2-W1-04's app/autoDialog.ts) + settings:set's voice precondition (V2-W1-07). */
+export interface SettingsHandlersV2 {
+  voice: Pick<import('../voice/service').VoiceServiceV2, 'state'>;
+  autoDialog: Pick<import('../app/autoDialog').AutoDialog, 'confirmSetting'>;
+  /** The focused BrowserWindow the native dialog is parented to (main-side; the renderer never names a window). */
+  dialogParent: () => unknown;
+}
+/** llm:setProvider / llm:listModels for the CLI ids (V2-W1-06's CliStatusService, V2-W1-09's `agy models`). */
+export interface LlmHandlersV2 {
+  cliStatus: Pick<import('../llm/cli/locator').CliStatusService, 'get'>;
+  listAgyModels: () => Promise<string[]>;
+}
+/** data:purgeNow additionally disables a live automatic policy (`disabled_reason 'purge'`, C2 16.1) and wipes the v2 dirs. */
+export interface DataHandlersV2 {
+  autoPolicy: Pick<import('../exec/autoPolicy').AutoPolicyService, 'disable'>;
+}
+
 export interface RegisterIpcOptions {
   isTrusted: (event: IpcEventLike) => boolean; // sender.ts isTrustedSender bound to the window ref
   windowState: () => IpcContext; // windowFocused / windowVisible / shownByNotificationAt sampled at call time
@@ -98,11 +138,28 @@ export function fail<T = never>(code: ErrorCode, params?: AppError['params']): R
   return { ok: false, error: params === undefined ? { code } : { code, params } };
 }
 /** Why a call was refused before the handler ran. Enum-only: an audit detail never carries renderer-supplied text. */
-export type RejectReason = 'untrusted_sender' | 'bad_payload' | 'window_state';
+export type RejectReason = 'untrusted_sender' | 'bad_payload' | 'window_state' | 'window_not_focused';
 
 /** The one response a refused call ever gets: the renderer learns nothing about which check failed. */
 const BAD_REQUEST: Result<never> = { ok: false, error: { code: 'BAD_REQUEST' } };
 const INTERNAL: Result<never> = { ok: false, error: { code: 'INTERNAL' } };
+/** [V2] The focus gate's answer - the only refusal the renderer may tell apart, because its fix is the user's ("click the window"). */
+const WINDOW_NOT_FOCUSED: Result<never> = { ok: false, error: { code: 'WINDOW_NOT_FOCUSED' } };
+
+/**
+ * [V2] C2 8 / C2 19 item 24: EXACTLY these channels need a focused + visible window and the focus-steal guard (a click that lands
+ * within LIMITS.focusGuardMainMs after a toast click showed the window is not counted). `auto:disable` / `auto:pause` are
+ * deliberately absent: the fail-safe direction works from anywhere. No other channel is gated - the set is the list, verbatim.
+ */
+export const FOCUS_GATED: ReadonlySet<IpcChannel> = new Set<IpcChannel>(FOCUS_GATED_CHANNELS);
+
+/** Pure: true when the sampled window state lets a focus-gated call through at `now`. */
+export function passesFocusGate(ctx: IpcContext, now: EpochMs): boolean {
+  if (!ctx.windowFocused || !ctx.windowVisible) return false;
+  // Focus-steal guard: main itself just raised the window from a notification; the click may be aimed at what was there before.
+  if (ctx.shownByNotificationAt !== null && ctx.shownByNotificationAt + LIMITS.focusGuardMainMs > now) return false;
+  return true;
+}
 
 /**
  * For every channel: untrusted sender => audit 'ipc_rejected' + {ok:false, BAD_REQUEST}; zod parse of IPC_REQUEST_SCHEMAS[channel];
@@ -137,6 +194,12 @@ export function registerIpc(
         ctx = opts.windowState();
       } catch {
         return reject(channel, 'window_state');
+      }
+
+      if (FOCUS_GATED.has(channel) && !passesFocusGate(ctx, opts.now())) {
+        opts.audit('ipc_rejected', channel, { reason: 'window_not_focused' }, opts.now());
+        opts.log.warn('ipc_rejected', { channel, reason: 'window_not_focused' });
+        return WINDOW_NOT_FOCUSED;
       }
 
       try {

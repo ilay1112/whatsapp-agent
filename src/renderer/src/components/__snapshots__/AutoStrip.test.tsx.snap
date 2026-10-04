@@ -1,0 +1,512 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`AutoStrip - RTL snapshots > en 1`] = `
+<section
+  aria-labelledby="autostrip-title"
+  class="autostrip rounded-md border border-line bg-surface"
+  data-open="true"
+  data-state="on"
+  data-testid="autostrip"
+>
+  <div
+    class="flex min-h-9 flex-wrap items-center gap-2 px-3 py-1"
+  >
+    <span
+      aria-hidden="true"
+      class="icon icon-auto text-accent"
+    />
+    <h2
+      class="m-0 grow text-sm font-semibold"
+      id="autostrip-title"
+    >
+      Done automatically - last 7 days (3)
+    </h2>
+    <button
+      class="btn btn-quiet"
+      data-testid="autostrip-pause"
+      type="button"
+    >
+      Pause
+    </button>
+    <button
+      aria-controls="autostrip-rows"
+      aria-expanded="true"
+      class="btn btn-quiet"
+      data-testid="autostrip-toggle"
+      type="button"
+    >
+      Hide
+    </button>
+  </div>
+  <div
+    class="border-t border-line px-3 py-2"
+    id="autostrip-rows"
+  >
+    <div
+      class="flex flex-col gap-2"
+      role="list"
+    >
+      <div
+        class="autostrip-row flex flex-wrap items-center gap-2"
+        data-testid="autostrip-row-00000000-0000-4000-8000-000000000000"
+        role="listitem"
+      >
+        <span
+          aria-hidden="true"
+          class="flex w-10 shrink-0 flex-col items-center overflow-hidden rounded-xs border border-line-strong"
+        >
+          <span
+            class="w-full text-center text-xs font-semibold bg-ok text-surface"
+          >
+            Thu
+          </span>
+          <span
+            class="tnum text-sm font-semibold"
+          >
+            1
+          </span>
+        </span>
+        <span
+          class="flex min-w-0 grow flex-col"
+        >
+          <span
+            class="msg-text truncate font-semibold"
+            data-testid="autostrip-title-00000000-0000-4000-8000-000000000000"
+            dir="auto"
+          >
+            Dentist
+          </span>
+          <bdi
+            class="tnum text-xs text-text-muted"
+          >
+            ⁨16:00-17:00⁩
+          </bdi>
+        </span>
+        <span
+          class="text-sm text-text-muted"
+          data-testid="autostrip-verb-00000000-0000-4000-8000-000000000000"
+        >
+          moved from 
+          <bdi>
+            Wed 15:00
+          </bdi>
+           · 
+          12 min. ago
+        </span>
+        <span
+          class="autostrip-actions flex flex-wrap items-center gap-2"
+          data-state="available"
+          data-testid="autostrip-state-00000000-0000-4000-8000-000000000000"
+        >
+          <button
+            class="btn btn-outline min-h-8 min-w-8"
+            data-testid="autostrip-undo-00000000-0000-4000-8000-000000000000"
+            type="button"
+          >
+            <span
+              aria-hidden="true"
+              class="icon icon-undo"
+            />
+            Undo
+          </button>
+          <button
+            class="btn btn-quiet"
+            data-testid="autostrip-show-00000000-0000-4000-8000-000000000000"
+            type="button"
+          >
+            Show
+          </button>
+        </span>
+      </div>
+      <div
+        class="autostrip-row flex flex-wrap items-center gap-2"
+        data-testid="autostrip-row-00000000-0000-4000-8000-000000000001"
+        role="listitem"
+      >
+        <span
+          aria-hidden="true"
+          class="flex w-10 shrink-0 flex-col items-center overflow-hidden rounded-xs border border-line-strong"
+        >
+          <span
+            class="w-full text-center text-xs font-semibold bg-ok text-surface"
+          >
+            Mon
+          </span>
+          <span
+            class="tnum text-sm font-semibold"
+          >
+            5
+          </span>
+        </span>
+        <span
+          class="flex min-w-0 grow flex-col"
+        >
+          <span
+            class="msg-text truncate font-semibold"
+            data-testid="autostrip-title-00000000-0000-4000-8000-000000000001"
+            dir="auto"
+          >
+            Coffee
+          </span>
+          <bdi
+            class="tnum text-xs text-text-muted"
+          >
+            ⁨09:00-09:30⁩
+          </bdi>
+        </span>
+        <span
+          class="text-sm text-text-muted"
+          data-testid="autostrip-verb-00000000-0000-4000-8000-000000000001"
+        >
+          added
+           · 
+          1 hr. ago
+        </span>
+        <span
+          class="autostrip-actions flex flex-wrap items-center gap-2"
+          data-state="available"
+          data-testid="autostrip-state-00000000-0000-4000-8000-000000000001"
+        >
+          <button
+            class="btn btn-outline min-h-8 min-w-8"
+            data-testid="autostrip-undo-00000000-0000-4000-8000-000000000001"
+            type="button"
+          >
+            <span
+              aria-hidden="true"
+              class="icon icon-undo"
+            />
+            Undo
+          </button>
+          <button
+            class="btn btn-quiet"
+            data-testid="autostrip-show-00000000-0000-4000-8000-000000000001"
+            type="button"
+          >
+            Show
+          </button>
+        </span>
+      </div>
+      <div
+        class="autostrip-row flex flex-wrap items-center gap-2"
+        data-testid="autostrip-row-00000000-0000-4000-8000-000000000002"
+        role="listitem"
+      >
+        <span
+          aria-hidden="true"
+          class="flex w-10 shrink-0 flex-col items-center overflow-hidden rounded-xs border border-line-strong"
+        >
+          <span
+            class="w-full text-center text-xs font-semibold bg-line-strong text-surface"
+          >
+            Thu
+          </span>
+          <span
+            class="tnum text-sm font-semibold"
+          >
+            1
+          </span>
+        </span>
+        <span
+          class="flex min-w-0 grow flex-col"
+        >
+          <span
+            class="msg-text truncate font-semibold event-cancelled"
+            data-testid="autostrip-title-00000000-0000-4000-8000-000000000002"
+            dir="auto"
+          >
+            Book club
+          </span>
+          <bdi
+            class="tnum text-xs text-text-muted"
+          >
+            ⁨16:00-17:00⁩
+          </bdi>
+        </span>
+        <span
+          class="text-sm text-text-muted"
+          data-testid="autostrip-verb-00000000-0000-4000-8000-000000000002"
+        >
+          cancelled
+           · 
+          20 hr. ago
+        </span>
+        <span
+          class="autostrip-actions flex flex-wrap items-center gap-2"
+          data-state="undone"
+          data-testid="autostrip-state-00000000-0000-4000-8000-000000000002"
+        >
+          <span
+            class="chip chip-ok"
+          >
+            Undone
+          </span>
+          <button
+            class="btn btn-quiet"
+            data-testid="autostrip-show-00000000-0000-4000-8000-000000000002"
+            type="button"
+          >
+            Show
+          </button>
+        </span>
+      </div>
+    </div>
+  </div>
+</section>
+`;
+
+exports[`AutoStrip - RTL snapshots > he 1`] = `
+<section
+  aria-labelledby="autostrip-title"
+  class="autostrip rounded-md border border-line bg-surface"
+  data-open="true"
+  data-state="on"
+  data-testid="autostrip"
+>
+  <div
+    class="flex min-h-9 flex-wrap items-center gap-2 px-3 py-1"
+  >
+    <span
+      aria-hidden="true"
+      class="icon icon-auto text-accent"
+    />
+    <h2
+      class="m-0 grow text-sm font-semibold"
+      id="autostrip-title"
+    >
+      בוצע אוטומטית - 7 הימים האחרונים (3)
+    </h2>
+    <button
+      class="btn btn-quiet"
+      data-testid="autostrip-pause"
+      type="button"
+    >
+      השהיה
+    </button>
+    <button
+      aria-controls="autostrip-rows"
+      aria-expanded="true"
+      class="btn btn-quiet"
+      data-testid="autostrip-toggle"
+      type="button"
+    >
+      הסתרה
+    </button>
+  </div>
+  <div
+    class="border-t border-line px-3 py-2"
+    id="autostrip-rows"
+  >
+    <div
+      class="flex flex-col gap-2"
+      role="list"
+    >
+      <div
+        class="autostrip-row flex flex-wrap items-center gap-2"
+        data-testid="autostrip-row-00000000-0000-4000-8000-000000000000"
+        role="listitem"
+      >
+        <span
+          aria-hidden="true"
+          class="flex w-10 shrink-0 flex-col items-center overflow-hidden rounded-xs border border-line-strong"
+        >
+          <span
+            class="w-full text-center text-xs font-semibold bg-ok text-surface"
+          >
+            יום ה׳
+          </span>
+          <span
+            class="tnum text-sm font-semibold"
+          >
+            1
+          </span>
+        </span>
+        <span
+          class="flex min-w-0 grow flex-col"
+        >
+          <span
+            class="msg-text truncate font-semibold"
+            data-testid="autostrip-title-00000000-0000-4000-8000-000000000000"
+            dir="auto"
+          >
+            Dentist
+          </span>
+          <bdi
+            class="tnum text-xs text-text-muted"
+          >
+            ⁨16:00-17:00⁩
+          </bdi>
+        </span>
+        <span
+          class="text-sm text-text-muted"
+          data-testid="autostrip-verb-00000000-0000-4000-8000-000000000000"
+        >
+          הוזז (היה 
+          <bdi>
+            יום רביעי 15:00
+          </bdi>
+          )
+           · 
+          לפני 12 דקות
+        </span>
+        <span
+          class="autostrip-actions flex flex-wrap items-center gap-2"
+          data-state="available"
+          data-testid="autostrip-state-00000000-0000-4000-8000-000000000000"
+        >
+          <button
+            class="btn btn-outline min-h-8 min-w-8"
+            data-testid="autostrip-undo-00000000-0000-4000-8000-000000000000"
+            type="button"
+          >
+            <span
+              aria-hidden="true"
+              class="icon icon-undo"
+            />
+            ביטול השינוי
+          </button>
+          <button
+            class="btn btn-quiet"
+            data-testid="autostrip-show-00000000-0000-4000-8000-000000000000"
+            type="button"
+          >
+            הצגה
+          </button>
+        </span>
+      </div>
+      <div
+        class="autostrip-row flex flex-wrap items-center gap-2"
+        data-testid="autostrip-row-00000000-0000-4000-8000-000000000001"
+        role="listitem"
+      >
+        <span
+          aria-hidden="true"
+          class="flex w-10 shrink-0 flex-col items-center overflow-hidden rounded-xs border border-line-strong"
+        >
+          <span
+            class="w-full text-center text-xs font-semibold bg-ok text-surface"
+          >
+            יום ב׳
+          </span>
+          <span
+            class="tnum text-sm font-semibold"
+          >
+            5
+          </span>
+        </span>
+        <span
+          class="flex min-w-0 grow flex-col"
+        >
+          <span
+            class="msg-text truncate font-semibold"
+            data-testid="autostrip-title-00000000-0000-4000-8000-000000000001"
+            dir="auto"
+          >
+            Coffee
+          </span>
+          <bdi
+            class="tnum text-xs text-text-muted"
+          >
+            ⁨09:00-09:30⁩
+          </bdi>
+        </span>
+        <span
+          class="text-sm text-text-muted"
+          data-testid="autostrip-verb-00000000-0000-4000-8000-000000000001"
+        >
+          נוסף
+           · 
+          לפני שעה
+        </span>
+        <span
+          class="autostrip-actions flex flex-wrap items-center gap-2"
+          data-state="available"
+          data-testid="autostrip-state-00000000-0000-4000-8000-000000000001"
+        >
+          <button
+            class="btn btn-outline min-h-8 min-w-8"
+            data-testid="autostrip-undo-00000000-0000-4000-8000-000000000001"
+            type="button"
+          >
+            <span
+              aria-hidden="true"
+              class="icon icon-undo"
+            />
+            ביטול השינוי
+          </button>
+          <button
+            class="btn btn-quiet"
+            data-testid="autostrip-show-00000000-0000-4000-8000-000000000001"
+            type="button"
+          >
+            הצגה
+          </button>
+        </span>
+      </div>
+      <div
+        class="autostrip-row flex flex-wrap items-center gap-2"
+        data-testid="autostrip-row-00000000-0000-4000-8000-000000000002"
+        role="listitem"
+      >
+        <span
+          aria-hidden="true"
+          class="flex w-10 shrink-0 flex-col items-center overflow-hidden rounded-xs border border-line-strong"
+        >
+          <span
+            class="w-full text-center text-xs font-semibold bg-line-strong text-surface"
+          >
+            יום ה׳
+          </span>
+          <span
+            class="tnum text-sm font-semibold"
+          >
+            1
+          </span>
+        </span>
+        <span
+          class="flex min-w-0 grow flex-col"
+        >
+          <span
+            class="msg-text truncate font-semibold event-cancelled"
+            data-testid="autostrip-title-00000000-0000-4000-8000-000000000002"
+            dir="auto"
+          >
+            Book club
+          </span>
+          <bdi
+            class="tnum text-xs text-text-muted"
+          >
+            ⁨16:00-17:00⁩
+          </bdi>
+        </span>
+        <span
+          class="text-sm text-text-muted"
+          data-testid="autostrip-verb-00000000-0000-4000-8000-000000000002"
+        >
+          בוטל
+           · 
+          לפני 20 שעות
+        </span>
+        <span
+          class="autostrip-actions flex flex-wrap items-center gap-2"
+          data-state="undone"
+          data-testid="autostrip-state-00000000-0000-4000-8000-000000000002"
+        >
+          <span
+            class="chip chip-ok"
+          >
+            השינוי בוטל
+          </span>
+          <button
+            class="btn btn-quiet"
+            data-testid="autostrip-show-00000000-0000-4000-8000-000000000002"
+            type="button"
+          >
+            הצגה
+          </button>
+        </span>
+      </div>
+    </div>
+  </div>
+</section>
+`;

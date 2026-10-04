@@ -1,0 +1,5 @@
+
+> whatsapp-calendar-agent@0.1.0 audit:prod
+> npm audit --omit=dev
+
+found 0 vulnerabilities

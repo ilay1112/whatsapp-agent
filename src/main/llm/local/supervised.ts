@@ -9,7 +9,9 @@ import type { ChildState, Supervisor } from '../../proc/supervisor';
 const STARTABLE: readonly ChildState[] = ['running', 'starting'];
 
 export interface SupervisedLlamaInput {
-  supervisor: Pick<Supervisor, 'start' | 'state'>;
+  /** [V2] `restart` is optional: with it, a child whose picture flags went stale (images toggled, projector downloaded) is
+   *  restarted through the Supervisor (pid file + backoff table stay authoritative, B19 / C2 9.1). */
+  supervisor: Pick<Supervisor, 'start' | 'state'> & Partial<Pick<Supervisor, 'restart'>>;
   runtime: LlamaRuntime;
 }
 
@@ -24,7 +26,8 @@ export function createSupervisedLlama(input: SupervisedLlamaInput): LlamaRuntime
   return {
     ...runtime,
     async ensureStarted() {
-      await supervisor.start('llama');
+      if (supervisor.restart !== undefined && runtime.vision?.().stale === true) await supervisor.restart('llama');
+      else await supervisor.start('llama');
       if (!STARTABLE.includes(supervisor.state('llama'))) {
         throw new LlamaRuntimeError(runtime.status().code ?? 'LLM_LOCAL_FAILED');
       }

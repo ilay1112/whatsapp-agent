@@ -4,7 +4,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import type { LlmConfig } from '@shared/types';
+import { CONSENT_VERSIONS, type LlmConfig } from '@shared/types';
 import { i18next, invokeMocks, mockInvoke } from '../../../../../tests/setup-renderer';
 import {
   ChooseAi,
@@ -22,8 +22,22 @@ const baseConfig: LlmConfig = {
   geminiModel: 'gemini-3.8-flash',
   local: { tier: 'auto', acceleration: 'auto', forceCpu: false },
   keys: { anthropic_api_key: { present: false, last4: '' }, gemini_api_key: { present: false, last4: '' } },
-  consents: { whatsapp_tos: true, cloud_claude: false, cloud_gemini: false },
+  consents: {
+    whatsapp_tos: true,
+    cloud_claude: false,
+    cloud_gemini: false,
+    cloud_claude_cli: false,
+    cloud_antigravity_cli: false,
+  },
   usageToday: { inputTokens: 0, outputTokens: 0, budget: 200_000 },
+  cli: {
+    claudeModel: 'sonnet',
+    agyModel: 'gemini-3.8-flash-high',
+    maxRunsPerHour: 20,
+    allowOverage: false,
+    claudeExePathSet: false,
+  }, // [V2]
+  quota: null, // [V2]
 };
 /**
  * `llm:setProvider` answers with the WHOLE config in production, so a test whose config differs from the default has to
@@ -46,6 +60,12 @@ const paint = async (props: Partial<Parameters<typeof ChooseAi>[0]> = {}) => {
   await waitFor(() => expect(screen.getByTestId('onboarding-choose-ai')).toBeInTheDocument());
   await waitFor(() => expect(invokeMocks['model:getPlan']).toHaveBeenCalled());
   return onDone;
+};
+
+/** [V2] the API-key cards live under 'Advanced: use an API key' (UX2 4.1): open it first when it is still collapsed. */
+const pick = async (provider: 'claude' | 'gemini') => {
+  if (!screen.queryByTestId(`choose-ai-${provider}`)) await userEvent.click(screen.getByTestId('ai-advanced'));
+  await userEvent.click(screen.getByTestId(`choose-ai-${provider}`));
 };
 
 describe('pure helpers', () => {
@@ -90,13 +110,27 @@ describe('pure helpers', () => {
 });
 
 describe('ChooseAi - local', () => {
-  it('is step 1, offers three cards and recommends the local one', async () => {
+  it('is step 1, offers the cards in the B12 order and recommends the local one', async () => {
     await paint();
     expect(screen.getByTestId('onboarding-step-1')).toBeInTheDocument();
     expect(screen.getByRole('radiogroup', { name: 'AI engine' })).toBeInTheDocument();
-    for (const id of ['choose-ai-local', 'choose-ai-claude', 'choose-ai-gemini']) {
-      expect(screen.getByTestId(id)).toBeInTheDocument();
-    }
+    // [V2] UX2 4.1 / 6: local + Claude subscription visible; the experimental and API-key cards sit behind disclosures
+    expect(screen.queryByTestId('choose-ai-antigravity_cli')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('choose-ai-claude')).not.toBeInTheDocument();
+    expect(screen.getByTestId('ai-show-experimental')).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.getByTestId('ai-advanced')).toHaveAttribute('aria-expanded', 'false');
+    await userEvent.click(screen.getByTestId('ai-show-experimental'));
+    await userEvent.click(screen.getByTestId('ai-advanced'));
+    const order = [...document.querySelectorAll('[data-testid^="choose-ai-"]')].map((el) =>
+      el.getAttribute('data-testid'),
+    );
+    expect(order).toEqual([
+      'choose-ai-local',
+      'choose-ai-claude_cli',
+      'choose-ai-antigravity_cli',
+      'choose-ai-claude',
+      'choose-ai-gemini',
+    ]);
     expect(screen.getByTestId('choose-ai-local')).toBeChecked();
   });
 
@@ -143,12 +177,18 @@ describe('ChooseAi - local', () => {
           },
         ],
         suggestSmaller: false,
+        mmproj: null, // [V2]
       },
     }));
     const onDone = await paint();
     await userEvent.click(await screen.findByTestId('ai-download'));
-    await waitFor(() => expect(invokeMocks['model:startDownload']).toHaveBeenCalledExactlyOnceWith({ tier: 'small' }));
-    expect(onDone).toHaveBeenCalledOnce();
+    await waitFor(() => expect(invokeMocks['model:startDownload']).toHaveBeenCalledWith({ tier: 'small' }));
+    // [V2] UX2 6: the voice opt-in (checked by default on this 16 GB / 100 GB machine) queues BEHIND the AI model
+    await waitFor(() => expect(onDone).toHaveBeenCalledOnce());
+    expect(invokeMocks['model:startDownload'].mock.calls.map((c) => c[0])).toEqual([
+      { tier: 'small' },
+      { tier: 'voice-hebrew' },
+    ]);
     expect(screen.getByTestId('ai-local-downloading')).toBeInTheDocument();
   });
 
@@ -170,6 +210,7 @@ describe('ChooseAi - local', () => {
           },
         ],
         suggestSmaller: true,
+        mmproj: null, // [V2]
       },
     }));
     await paint();
@@ -201,7 +242,7 @@ describe('ChooseAi - local', () => {
 describe('ChooseAi - the cloud consent gate', () => {
   it('choosing a cloud provider opens the blocking consent first and sets nothing', async () => {
     await paint();
-    await userEvent.click(screen.getByTestId('choose-ai-claude'));
+    await pick('claude');
     expect(screen.getByTestId('consent-dialog')).toHaveAttribute('data-kind', 'cloud_claude');
     expect(invokeMocks['consent:accept']).not.toHaveBeenCalled();
     expect(invokeMocks['llm:setProvider']).not.toHaveBeenCalledWith({ provider: 'claude' });
@@ -209,7 +250,7 @@ describe('ChooseAi - the cloud consent gate', () => {
 
   it('declining leaves Local selected and changes nothing in main', async () => {
     await paint();
-    await userEvent.click(screen.getByTestId('choose-ai-claude'));
+    await pick('claude');
     await userEvent.click(screen.getByTestId('consent-cancel'));
 
     expect(screen.queryByTestId('consent-dialog')).not.toBeInTheDocument();
@@ -220,11 +261,14 @@ describe('ChooseAi - the cloud consent gate', () => {
 
   it('accepting records the versioned consent before the provider is switched', async () => {
     await paint();
-    await userEvent.click(screen.getByTestId('choose-ai-gemini'));
+    await pick('gemini');
     await userEvent.click(screen.getByTestId('consent-accept'));
 
     await waitFor(() =>
-      expect(invokeMocks['consent:accept']).toHaveBeenCalledExactlyOnceWith({ kind: 'cloud_gemini', version: 1 }),
+      expect(invokeMocks['consent:accept']).toHaveBeenCalledExactlyOnceWith({
+        kind: 'cloud_gemini',
+        version: CONSENT_VERSIONS.cloud_gemini,
+      }),
     );
     await waitFor(() => expect(invokeMocks['llm:setProvider']).toHaveBeenCalledWith({ provider: 'gemini' }));
     const order = invokeMocks['consent:accept'].mock.invocationCallOrder[0]!;
@@ -234,7 +278,7 @@ describe('ChooseAi - the cloud consent gate', () => {
   it('a refused consent falls back to Local and shows the reason', async () => {
     mockInvoke('consent:accept', () => ({ ok: false, error: { code: 'CONSENT_REQUIRED' } }));
     await paint();
-    await userEvent.click(screen.getByTestId('choose-ai-claude'));
+    await pick('claude');
     await userEvent.click(screen.getByTestId('consent-accept'));
 
     await waitFor(() => expect(screen.getByTestId('ai-provider-error')).toBeInTheDocument());
@@ -242,10 +286,18 @@ describe('ChooseAi - the cloud consent gate', () => {
   });
 
   it('a refused llm:setProvider never silently falls back', async () => {
-    withConfig({ consents: { whatsapp_tos: true, cloud_claude: true, cloud_gemini: false } });
+    withConfig({
+      consents: {
+        whatsapp_tos: true,
+        cloud_claude: true,
+        cloud_gemini: false,
+        cloud_claude_cli: false,
+        cloud_antigravity_cli: false,
+      },
+    });
     mockInvoke('llm:setProvider', () => ({ ok: false, error: { code: 'CONSENT_REQUIRED' } }));
     await paint();
-    await userEvent.click(screen.getByTestId('choose-ai-claude'));
+    await pick('claude');
     await waitFor(() => expect(screen.getByTestId('ai-provider-error')).toBeInTheDocument());
     expect(screen.getByTestId('ai-provider-error')).toHaveAttribute('role', 'alert');
   });
@@ -253,9 +305,17 @@ describe('ChooseAi - the cloud consent gate', () => {
 
 describe('ChooseAi - the key never comes back', () => {
   it('rejects a paste that cannot be a key without calling main', async () => {
-    withConfig({ consents: { whatsapp_tos: true, cloud_claude: true, cloud_gemini: false } });
+    withConfig({
+      consents: {
+        whatsapp_tos: true,
+        cloud_claude: true,
+        cloud_gemini: false,
+        cloud_claude_cli: false,
+        cloud_antigravity_cli: false,
+      },
+    });
     await paint();
-    await userEvent.click(screen.getByTestId('choose-ai-claude'));
+    await pick('claude');
     await userEvent.type(await screen.findByTestId('ai-key-input'), 'nope');
     await userEvent.click(screen.getByTestId('ai-key-check'));
 
@@ -268,10 +328,24 @@ describe('ChooseAi - the key never comes back', () => {
     const store = { anthropic_api_key: { present: false, last4: '' }, gemini_api_key: { present: false, last4: '' } };
     const config = () => ({
       ...baseConfig,
-      consents: { whatsapp_tos: true, cloud_claude: true, cloud_gemini: false },
+      consents: {
+        whatsapp_tos: true,
+        cloud_claude: true,
+        cloud_gemini: false,
+        cloud_claude_cli: false,
+        cloud_antigravity_cli: false,
+      },
       keys: { ...store },
     });
-    withConfig({ consents: { whatsapp_tos: true, cloud_claude: true, cloud_gemini: false } });
+    withConfig({
+      consents: {
+        whatsapp_tos: true,
+        cloud_claude: true,
+        cloud_gemini: false,
+        cloud_claude_cli: false,
+        cloud_antigravity_cli: false,
+      },
+    });
     mockInvoke('llm:getConfig', () => ({ ok: true, value: config() }));
     mockInvoke('llm:setProvider', () => ({ ok: true, value: { ...config(), provider: 'claude' } }));
     mockInvoke('secrets:set', () => {
@@ -279,7 +353,7 @@ describe('ChooseAi - the key never comes back', () => {
       return { ok: true, value: store.anthropic_api_key };
     });
     await paint();
-    await userEvent.click(screen.getByTestId('choose-ai-claude'));
+    await pick('claude');
     const field = await screen.findByTestId('ai-key-input');
     expect(field).toHaveAttribute('type', 'password');
     expect(field).toHaveAttribute('dir', 'ltr');
@@ -300,10 +374,18 @@ describe('ChooseAi - the key never comes back', () => {
   });
 
   it('a rejected key names the provider in the failure row', async () => {
-    withConfig({ consents: { whatsapp_tos: true, cloud_claude: true, cloud_gemini: false } });
+    withConfig({
+      consents: {
+        whatsapp_tos: true,
+        cloud_claude: true,
+        cloud_gemini: false,
+        cloud_claude_cli: false,
+        cloud_antigravity_cli: false,
+      },
+    });
     mockInvoke('llm:validateKey', () => ({ ok: false, error: { code: 'KEY_INVALID' } }));
     await paint();
-    await userEvent.click(screen.getByTestId('choose-ai-claude'));
+    await pick('claude');
     await userEvent.type(await screen.findByTestId('ai-key-input'), KEY);
     await userEvent.click(screen.getByTestId('ai-key-check'));
     await waitFor(() =>
@@ -313,11 +395,17 @@ describe('ChooseAi - the key never comes back', () => {
 
   it('a saved key can be replaced or removed, and removing it clears the secret in main', async () => {
     withConfig({
-      consents: { whatsapp_tos: true, cloud_claude: true, cloud_gemini: false },
+      consents: {
+        whatsapp_tos: true,
+        cloud_claude: true,
+        cloud_gemini: false,
+        cloud_claude_cli: false,
+        cloud_antigravity_cli: false,
+      },
       keys: { anthropic_api_key: { present: true, last4: '1234' }, gemini_api_key: { present: false, last4: '' } },
     });
     await paint();
-    await userEvent.click(screen.getByTestId('choose-ai-claude'));
+    await pick('claude');
     await waitFor(() => expect(screen.getByTestId('ai-key-saved')).toHaveTextContent('1234'));
 
     await userEvent.click(screen.getByTestId('ai-key-remove'));
@@ -328,9 +416,17 @@ describe('ChooseAi - the key never comes back', () => {
   });
 
   it('the help button opens an enum target, never a URL', async () => {
-    withConfig({ consents: { whatsapp_tos: true, cloud_claude: true, cloud_gemini: false } });
+    withConfig({
+      consents: {
+        whatsapp_tos: true,
+        cloud_claude: true,
+        cloud_gemini: false,
+        cloud_claude_cli: false,
+        cloud_antigravity_cli: false,
+      },
+    });
     await paint();
-    await userEvent.click(screen.getByTestId('choose-ai-claude'));
+    await pick('claude');
     await userEvent.click(await screen.findByTestId('ai-key-help'));
     expect(invokeMocks['external:open']).toHaveBeenCalledExactlyOnceWith({ target: 'anthropic_api_keys' });
   });

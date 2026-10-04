@@ -1,0 +1,20 @@
+{
+  "package": "@cocal/google-calendar-mcp",
+  "version": "2.6.3",
+  "file": "build/index.js",
+  "bundleSha256Unpatched": "3fc4202c6ac4886b47d89a773889ea285e6402135536f036317913223e141b16",
+  "bundleSha256Patched": "c80c89803acad1d3ff1779f998e9936f99ca19b5121625c05fd69f44091a3dfd",
+  "patch": "status+requestBody.status+ifMatch",
+  "insertions": 7,
+  "enabledTools": [
+    "create-event",
+    "get-current-time",
+    "get-event",
+    "get-freebusy",
+    "list-calendars",
+    "list-events",
+    "manage-accounts",
+    "update-event"
+  ],
+  "enabledToolsSha256": "424f60c523c471df757136df0e6853ec1c3ad64cc9c3c66f3f33835113bd4d2d"
+}

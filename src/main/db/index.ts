@@ -19,6 +19,12 @@ import { createRetentionRepo } from './repos/retention';
 import { createRunsRepo } from './repos/runs';
 import { createSecretsRepo } from './repos/secrets';
 import { createSettingsRepo } from './repos/settings';
+import { createEventRevisionsRepo } from './repos/eventRevisions'; // [V2 ADD] (C2 16.1)
+import { createAutoPoliciesRepo } from './repos/autoPolicies';
+import { createAutoDecisionsRepo } from './repos/autoDecisions';
+import { createAutoWritesRepo } from './repos/autoWrites';
+import { createTranscriptsRepo } from './repos/transcripts';
+import { createMediaCacheRepo } from './repos/mediaCache';
 import type * as T from '../../shared/types';
 import type { Settings, SettingsPatch } from '../../shared/settings';
 import type { ErrorCode } from '../../shared/errors';
@@ -195,6 +201,10 @@ function wrapDb(dbPath: string, db: DatabaseSync): Db {
   };
 }
 
+/** [V2] B25 provenance columns of proposals (migration v4). */
+export type ProposalProvenanceKey =
+  'delta' | 'imageRead' | 'blockedCalls' | 'providerClass' | 'contextFromMeRecent' | 'crossChatRows' | 'triggerAuthor';
+
 export interface Repos {
   db: Db;
   meta: { get(k: T.MetaKey): string | null; set(k: T.MetaKey, v: string): void };
@@ -205,7 +215,8 @@ export interface Repos {
     delete(name: T.SecretName): void;
   };
   consents: {
-    accept(kind: T.ConsentKind, version: number, now: T.EpochMs): void;
+    /** [V2 CHANGE] accept(kind, version, now, termsReadOn?) - termsReadOn only for cloud_antigravity_cli (= ANTIGRAVITY_TERMS_READ_ON). */
+    accept(kind: T.ConsentKind, version: number, now: T.EpochMs, termsReadOn?: T.IsoDate): void;
     latest(kind: T.ConsentKind): T.ConsentRecord | null;
     /** [R2] EXISTS(SELECT 1 FROM consents WHERE kind=? AND version = CONSENT_VERSIONS[kind]) - the EXACT current version, never max()>=. */
     isCurrent(kind: T.ConsentKind): boolean;
@@ -224,6 +235,8 @@ export interface Repos {
     setPolicy(id: T.ChatRef, policy: T.ChatPolicy): T.Chat;
     setForceKnown(id: T.ChatRef): T.Chat;
     withPolicies(): T.Chat[];
+    setAutoPolicy(id: T.ChatRef, p: T.ChatAutoPolicy): T.Chat; // [V2 ADD] chat:setPolicy {autoPolicy}
+    taint(id: T.ChatRef, until: T.EpochMs): void; // [V2 ADD] S4: max(auto_tainted_until, until) ; audit auto_taint
   };
   items: {
     openForChat(chatId: T.ChatRef): T.Item | null;
@@ -249,6 +262,13 @@ export interface Repos {
     expireOld(now: T.EpochMs): number; // open > 7 d => expired ; in_calendar start + 1 d => past
     snapshotMessages(itemId: T.ItemId, rows: T.ItemMessage[]): void;
     messages(itemId: T.ItemId): T.ItemMessage[];
+    /** [V2 ADD] findExistingEvent's query: newest in_calendar item of the chat with calendar_event_id, event_state IN ('created','updated'),
+     *  event_start_ts >= sinceTs. */
+    newestEditableEvent(chatId: T.ChatRef, sinceTs: T.EpochMs): T.Item | null;
+    /** [V2 ADD, F31] COUNT of the same filter (distinct calendar_event_id). */
+    countEditableEvents(chatId: T.ChatRef, sinceTs: T.EpochMs): number;
+    /** [V2 ADD] every item holding this event (source + acting) - for the eventKey / changePending view fields and the "never twice" rule. */
+    byCalendarEventId(eventId: string): T.Item[];
   };
   retention: {
     // [R2] used by the daily job and by data:purgeNow
@@ -259,10 +279,24 @@ export interface Repos {
       textRows: number;
       actionRows: number;
       itemsDeleted: number;
+      // [V2, V2-W1-01] C2 16.1 "returned counts may add keys" - optional so a v1-shaped fake stays assignable.
+      transcriptRows?: number;
+      /** Bare file names under <userData>\media-cache\ of the media_cache rows this purge deleted; the CALLER unlinks them. */
+      mediaFiles?: string[];
+      revisionRows?: number;
+      autoWritesDeleted?: number;
+      autoDecisionsDeleted?: number;
     };
   };
   proposals: {
-    insertNext(p: Omit<T.Proposal, 'id' | 'version' | 'supersededAt'>): T.Proposal; // version = max+1 ; supersedes older
+    /** [V2] insertNext takes the new provenance fields (Proposal minus id/version/supersededAt already includes them). extraction_json of v1 rows
+     *  is read with parseStoredExtraction() (fail-closed defaults). */
+    // [V2 W0 refinement] the seven provenance fields are OPTIONAL at the type level so v1 callers keep compiling; an omitted field is
+    // written with its FAIL-CLOSED default (PROPOSAL_PROVENANCE_DEFAULTS in repos/proposals.ts). V2-W1-03 (validate.ts) passes all seven.
+    insertNext(
+      p: Omit<T.Proposal, 'id' | 'version' | 'supersededAt' | ProposalProvenanceKey> &
+        Partial<Pick<T.Proposal, ProposalProvenanceKey>>,
+    ): T.Proposal; // version = max+1 ; supersedes older
     current(itemId: T.ItemId): T.Proposal | null;
   };
   actions: {
@@ -287,8 +321,22 @@ export interface Repos {
     supersedePendingRepliesOfChat(chatId: T.ChatRef, exceptItemId: T.ItemId, now: T.EpochMs): number;
     /** [R2] Compare-and-set, ONE transaction: UPDATE ... SET state='approved', approved_at=?, approved_final_json=? WHERE id=? AND state='pending'
      *  then UPDATE ... SET state='executing' WHERE id=? AND state='approved'. Returns 'stale' (no throw, no side effect) when either UPDATE
-     *  reports changes !== 1 or a trigger aborts; the caller maps 'stale' to ACTION_STALE and NEVER to failed/clone. */
-    markApprovedExecuting(id: T.ActionId, approvedFinalJson: string, now: T.EpochMs): 'ok' | 'stale';
+     *  reports changes !== 1 or a trigger aborts; the caller maps 'stale' to ACTION_STALE and NEVER to failed/clone.
+     *  [V2 CHANGE] + approvedBy, set in the FIRST CAS statement (UPDATE ... SET state='approved', approved_at=?, approved_final_json=?, approved_by=?
+     *  WHERE id=? AND state='pending'); trg_actions_state verifies it (I1'). 'stale' on changes !== 1 or a trigger ABORT (unchanged). */
+    markApprovedExecuting(
+      id: T.ActionId,
+      approvedFinalJson: string,
+      now: T.EpochMs,
+      approvedBy: T.ApprovedBy,
+    ): 'ok' | 'stale';
+    /** [V2 ADD] AutoGate precondition: COUNT(*) WHERE kind='create_event' AND state='done' AND approved_by='user'. */
+    countUserApprovedCreates(): number;
+    /** [V2 ADD, F32] `to` payloads of REJECTED update_event actions for this event and baseRevision (S4 suppression rule). */
+    rejectedDeltaTo(
+      targetEventId: string,
+      baseRevision: number,
+    ): Array<import('../../shared/schemas').EventContentWithStatus>;
     /** [R2] All three: UPDATE ... WHERE id=? AND state='executing'; changes !== 1 => throw ActionStateError (a programming error, audited 'db_recovery'
      *  never silently ignored). markDone is additionally allowed from 'unknown_outcome' (reconcile found). */
     markDone(id: T.ActionId, result: T.ActionResult, now: T.EpochMs): void;
@@ -312,6 +360,8 @@ export interface Repos {
     start(p: Pick<T.RunRecord, 'itemId' | 'stage' | 'provider' | 'model' | 'startedAt'>): T.RunId;
     finish(id: T.RunId, p: Partial<T.RunRecord>): void;
     cloudTokensSince(ts: T.EpochMs): { inputTokens: number; outputTokens: number };
+    finishCli(id: T.RunId, p: { sandboxOk: boolean; sandboxProof: T.CliSandboxProof }): void; // [V2 ADD]
+    sandboxOfVersion(itemId: T.ItemId, proposalCreatedAfter: T.EpochMs): Array<boolean | null>; // [V2 ADD] S1 + S3 sandbox_ok of this version
   };
   audit: { append(kind: T.AuditKind, ref: string | null, detail: T.AuditEntry['detail'], now: T.EpochMs): void };
   rate: {
@@ -320,11 +370,82 @@ export interface Repos {
     lastTs(bucket: T.RateBucket, key: string): T.EpochMs | null;
   };
   models: {
-    get(tier: T.ModelTier): T.ModelFileRecord | null;
+    // [V2 CHANGE] keyed by ModelFileId (widening)
+    get(id: T.ModelFileId): T.ModelFileRecord | null;
     upsert(r: T.ModelFileRecord): void;
-    delete(tier: T.ModelTier): void;
+    delete(id: T.ModelFileId): void;
+  };
+  // ---- [V2 ADD] new repos (one file each under db/repos/) - C2 16.1 ----
+  eventRevisions: {
+    insert(r: Omit<T.EventRevisionRecord, 'id' | 'revertedBy'>): T.EventRevisionRecord; // revision = items.event_revision after the write
+    newestFor(calendarEventId: string): T.EventRevisionRecord | null;
+    byId(id: number): T.EventRevisionRecord | null;
+    /** [V2 ADD, F1] The undo candidate: newest row with kind <> 'undo' AND reverted_by IS NULL such that every newer row of the event is reverted
+     *  or an 'undo' row; null when none. */
+    undoCandidate(calendarEventId: string): T.EventRevisionRecord | null;
+    /** [V2 ADD, F1] Rows of automatic writes (joined to auto_writes) not yet reverted, newer than the newest revision approved by 'user'/'user_toast';
+     *  oldest first ("Restore original" restores the first one's prev). */
+    unrevertedAutoSpan(calendarEventId: string): T.EventRevisionRecord[];
+    markReverted(id: number, byRevisionId: number): void; // UPDATE ... SET reverted_by WHERE reverted_by IS NULL
+  };
+  autoPolicies: {
+    /** The live row (shadow|on|paused), scope re-validated with AutoScopeSchema.parse (a bad row => treated as none + audit db_recovery). */
+    live(): T.AutoPolicyRecord | null;
+    newest(): T.AutoPolicyRecord | null;
+    insert(r: Omit<T.AutoPolicyRecord, 'pausedReason' | 'disabledAt' | 'disabledReason'>): T.AutoPolicyRecord; // born shadow|on (trigger)
+    setState(
+      id: string,
+      s:
+        | { state: 'on' }
+        | { state: 'paused'; reason: T.AutoPausedReason }
+        | { state: 'disabled'; reason: T.AutoDisabledReason; at: T.EpochMs }
+        | { state: 'expired' },
+    ): T.AutoPolicyRecord;
+  };
+  autoDecisions: {
+    insert(r: T.AutoDecisionRecord): void; // immutable afterwards (trigger)
+    forAction(actionId: T.ActionId): T.AutoDecisionRecord | null;
+    /** Shadow tally for auto:getState / auto:endShadow: decisions with verdict 'shadow' of the policy joined to their action's end state
+     *  (approved unchanged = approved_final_json == canonical_json ; edited ; dismissed = rejected/expired/superseded). */
+    shadowTally(policyId: string): {
+      decisions: number;
+      wouldAuto: number;
+      approvedUnchanged: number;
+      edited: number;
+      dismissed: number;
+    };
+  };
+  autoWrites: {
+    insert(
+      r: Omit<
+        T.AutoWriteRecord,
+        'revisionId' | 'postEtag' | 'postUpdated' | 'postSequence' | 'undoState' | 'undoActionId'
+      >,
+    ): T.AutoWriteRecord;
+    recordReadback(
+      id: string,
+      p: { revisionId: number; postEtag: string | null; postUpdated: string | null; postSequence: number | null },
+    ): void;
+    setUndo(id: string, p: { undoState: T.AutoUndoState; undoActionId?: T.ActionId }): void;
+    byId(id: string): T.AutoWriteRecord | null;
+    since(ts: T.EpochMs): T.AutoWriteRecord[];
+    countEditsOfEvent(eventId: string): number;
+    undosSince(ts: T.EpochMs): number;
+  };
+  transcripts: {
+    get(chatJid: string, waMsgId: string): T.TranscriptRecord | null;
+    upsert(r: T.TranscriptRecord): void;
+  };
+  mediaCache: {
+    get(chatId: T.ChatRef, waMsgId: string): T.MediaCacheRecord | null;
+    upsert(r: T.MediaCacheRecord): void;
+    forItem(itemId: T.ItemId): T.MediaCacheRecord[];
+    deleteForItem(itemId: T.ItemId): T.MediaCacheRecord[]; // caller unlinks the files
   };
 }
+/** [V2] C2 16.1 names the delta interface `ReposV2`; per the C2 convention ("XxxV2 extends Xxx" = add these members to Xxx) the members
+ *  live on `Repos` itself. The alias keeps the C2 name importable. */
+export type ReposV2 = Repos;
 /** Assembles the repos over one open database. Pure wiring: every repo is stateless and prepares its statements lazily. */
 export function createRepos(db: Db): Repos {
   return {
@@ -343,5 +464,11 @@ export function createRepos(db: Db): Repos {
     audit: createAuditRepo(db),
     rate: createRateRepo(db),
     models: createModelsRepo(db),
+    eventRevisions: createEventRevisionsRepo(db),
+    autoPolicies: createAutoPoliciesRepo(db),
+    autoDecisions: createAutoDecisionsRepo(db),
+    autoWrites: createAutoWritesRepo(db),
+    transcripts: createTranscriptsRepo(db),
+    mediaCache: createMediaCacheRepo(db),
   };
 }

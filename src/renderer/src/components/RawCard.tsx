@@ -8,9 +8,16 @@
 //
 // Approval rules are not re-implemented here: every send goes through `useCardController` / `ApproveButton`, which own
 // the focus guard, the single-flight lock and the `shownHash` echo (ARCH 6.6, UX 6.8).
+//
+// [V2] (owner V2-W1-11; UX2 3.5, 3.6, 9, 10): the "Voice message" and "Photo" raw cards. The trigger renders as the
+// VoiceBubble / picture header (inert text); the card carries exactly ONE media action chosen by the ErrorCode / cause
+// (`MediaActions` in RawCard.media.tsx, shared with ItemCard for a picture whose text analysis still ran). A voice raw card is never offered
+// "Analyse this chat": an untranscribed voice note has nothing to analyse (an empty transcript is never a trigger).
+// None of these actions writes anywhere: they download a model, re-queue a transcript / an analysis, or open Settings.
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { ItemCard as ItemVM } from '@shared/types';
+import { MediaActions } from './RawCard.media';
 import { Badges } from './Badges';
 import { DraftBox } from './DraftBox';
 import { QuotedBubble } from './QuotedBubble';
@@ -91,7 +98,12 @@ export function RawCard(props: RawCardProps) {
         from="contact"
         clampLines={3}
         isTrigger
-        mediaKind={item.trigger.text === '' ? 'other' : undefined}
+        mediaKind={item.trigger.text === '' && item.triggerKind === 'text' ? 'other' : undefined}
+        triggerKind={item.triggerKind}
+        voice={item.voice}
+        image={item.image}
+        contactName={item.chat.displayName !== '' ? item.chat.displayName : item.chat.phoneDisplay}
+        itemId={item.itemId}
       />
 
       {/* The reason chip: hold reason ("New contact - not analysed") or the failure title. Enum -> locale key only. */}
@@ -130,14 +142,18 @@ export function RawCard(props: RawCardProps) {
           />
         ) : null}
 
-        <button
-          type="button"
-          className="btn btn-quiet"
-          data-testid={`analyse-${item.itemId}`}
-          onClick={() => (explained.has(providerKind) ? runAnalyse() : setConfirmAnalyse(true))}
-        >
-          {item.analysis === 'failed' ? t('action.analyseAgain') : t('action.analyseChat')}
-        </button>
+        <MediaActions item={item} />
+
+        {item.triggerKind !== 'voice' ? (
+          <button
+            type="button"
+            className="btn btn-quiet"
+            data-testid={`analyse-${item.itemId}`}
+            onClick={() => (explained.has(providerKind) ? runAnalyse() : setConfirmAnalyse(true))}
+          >
+            {item.analysis === 'failed' ? t('action.analyseAgain') : t('action.analyseChat')}
+          </button>
+        ) : null}
 
         <button
           type="button"

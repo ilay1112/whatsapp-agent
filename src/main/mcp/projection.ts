@@ -7,7 +7,15 @@
 import { epochMsToLocal } from '../../shared/when';
 import { stripInvisible } from '../../shared/schemas';
 import type { BusyBlock } from '../../shared/types';
-import type { AppEventRef, CurrentTimeProjection, EventProjection, McpResult } from './readClient';
+import type {
+  AppEventRef,
+  CurrentTimeProjection,
+  EventProjection,
+  McpErrorKind,
+  McpResult,
+  OwnedEventProjection,
+} from './readClient';
+import type { UpdateEventResult } from './writeClient';
 
 // ---------------------------------------------------------------------------------------------------------------------
 // limits and shared helpers
@@ -225,4 +233,180 @@ export function projectCreateEvent(text: string): McpResult<{ eventId: string; h
   const eventId = str(event, 'id') ?? str(event, 'eventId');
   if (eventId === null || eventId.length === 0 || eventId.length > 1024) return BAD;
   return { ok: true, value: { eventId, htmlLink: safeHtmlLink(event.htmlLink) } };
+}
+
+// =====================================================================================================================
+// [V2] get-event / update-event (V2-W1-02; C2 11). Same rules: typed values out, raw text never leaves this module.
+// =====================================================================================================================
+
+/** OwnedEventProjection caps (C2 11). */
+export const SUMMARY_MAX = 80;
+export const LOCATION_MAX = 120;
+/** A private-map tag value the app wrote is a short ASCII token (uuid / number / '1'); anything else is projected as null. */
+const TAG_RE = /^[\x21-\x7e]{1,128}$/;
+const ETAG_RE = /^[\x20-\x7e]{1,256}$/;
+/** The fields every get-event call passes (C2 11: the server's defaults omit most of them; 'etag' exists only in the PATCHED bundle). */
+export const GET_EVENT_FIELDS = [
+  'etag',
+  'updated',
+  'sequence',
+  'status',
+  'creator',
+  'organizer',
+  'attendees',
+  'recurrence',
+  'recurringEventId',
+  'extendedProperties',
+] as const;
+
+/** C2 11 "Vendored patch contract": the 412 text of B4 insertion (5) on OUR OWN update-event request. */
+export const PRECONDITION_RE = /precondition failed|\b412\b/i;
+/** 404 / 410 / "deleted" on OUR OWN get-event / update-event request (GetEventHandler "Event with ID ... not found", 404 "Resource not
+ *  found", 410 "Resource has been deleted"). */
+export const NOT_FOUND_RE = /not found|\b404\b|\b410\b|\bdeleted\b/i;
+/** The SDK's input validation / Google's 400 on our own arguments. */
+const INVALID_ARGS_RE = /input validation error|invalid arguments|bad request|\b400\b/i;
+
+/** Error TEXT of our own get-event / update-event request -> the McpErrorKind of C2 11 (order: 412, not found, invalid, other). */
+export function classifyEventErrorText(text: string): McpErrorKind {
+  if (typeof text !== 'string' || text.length > RESULT_TEXT_MAX) return 'bad_response';
+  if (PRECONDITION_RE.test(text)) return 'precondition';
+  if (NOT_FOUND_RE.test(text)) return 'not_found';
+  if (INVALID_ARGS_RE.test(text)) return 'invalid_args';
+  return 'bad_response';
+}
+
+/**
+ * F12: the UNPATCHED 2.6.3 bundle rejects `fields: [..., 'etag']` in its zod enum. That error text on OUR OWN get-event is the signal that
+ * B4 insertion (6) is missing - the host then disables the update surface (never an If-Match-less PATCH).
+ */
+export function isEtagFieldRejection(text: string): boolean {
+  if (typeof text !== 'string' || text.length > RESULT_TEXT_MAX) return false;
+  // zod 4 lists the ALLOWED options, not the refused value ("Invalid option: expected one of "id"|... at fields[0]"): every other field
+  // the app requests exists in 2.6.3, so a validation error about `fields` whose allowed list lacks "etag" is exactly insertion 6 missing.
+  if (!/invalid|validation|allowed/i.test(text)) return false;
+  if (!/\bfields\b|\betag\b/.test(text)) return false;
+  return !/"etag"/.test(text);
+}
+
+/** get-event success text -> does the projected event carry an etag? null = not a parsable event (no decision). */
+export function eventTextHasEtag(text: string): boolean | null {
+  const root = parseJson(text);
+  if (root === null || Array.isArray(root)) return null;
+  const event = isObject(root.event) ? root.event : root;
+  if (str(event, 'id') === null) return null;
+  const etag = str(event, 'etag');
+  return etag !== null && ETAG_RE.test(etag);
+}
+
+/** UNTRUSTED text -> one safe line of at most `max` characters (invisible/bidi controls removed). */
+function cleanLine(raw: unknown, max: number): string {
+  if (typeof raw !== 'string') return '';
+  return stripInvisible(raw).replace(/\s+/g, ' ').trim().slice(0, max);
+}
+
+/** wireToLocal that never throws on a zone the regex admits but Intl does not know. */
+function safeLocal(value: string, timeZone: string): string | null {
+  try {
+    return wireToLocal(value, timeZone);
+  } catch {
+    return null;
+  }
+}
+
+/** Google event time `{dateTime|date, timeZone?}` or a bare string -> LocalDateTime in `timeZone`. */
+function eventTimeIn(value: unknown, timeZone: string): string | null {
+  if (typeof value === 'string') return safeLocal(value, timeZone);
+  if (!isObject(value)) return null;
+  const raw = str(value, 'dateTime') ?? str(value, 'date');
+  return raw === null ? null : safeLocal(raw, timeZone);
+}
+
+function tagOf(priv: Json | null, key: string): string | null {
+  if (priv === null) return null;
+  const v = priv[key];
+  return typeof v === 'string' && TAG_RE.test(v) ? v : null;
+}
+
+const STATUSES = ['confirmed', 'tentative', 'cancelled'] as const;
+type EventStatus = (typeof STATUSES)[number];
+const statusOf = (raw: unknown): EventStatus | null =>
+  typeof raw === 'string' && (STATUSES as readonly string[]).includes(raw) ? (raw as EventStatus) : null;
+
+/** Present and not an empty array (fail closed: a foreign event must never look attendee- or recurrence-free). */
+const presentNonEmpty = (v: unknown): boolean => v !== undefined && v !== null && !(Array.isArray(v) && v.length === 0);
+
+/**
+ * get-event text -> OwnedEventProjection of exactly `expectedEventId` (another id = bad_response). The zone is the event's own
+ * `start.timeZone` (the app always creates with one); an event without a known zone is not projected (fail closed).
+ * summary/location are cleaned + capped and stay UNTRUSTED; tags are short ASCII tokens or null; description, attendee e-mails,
+ * links, conference data and every other field are dropped here.
+ */
+export function projectOwnedEvent(text: string, expectedEventId: string): McpResult<OwnedEventProjection> {
+  const root = parseJson(text);
+  if (root === null || Array.isArray(root)) return BAD;
+  const event = isObject(root.event) ? root.event : root;
+  const id = str(event, 'id');
+  if (id === null || id !== expectedEventId) return BAD;
+  const status = statusOf(event.status);
+  if (status === null) return BAD;
+  const zone =
+    (isObject(event.start) ? str(event.start, 'timeZone') : null) ??
+    (isObject(event.end) ? str(event.end, 'timeZone') : null);
+  if (zone === null || !TIME_ZONE_RE.test(zone)) return BAD;
+  const startLocal = eventTimeIn(event.start, zone);
+  const endLocal = eventTimeIn(event.end, zone);
+  if (startLocal === null || endLocal === null || endLocal < startLocal) return BAD;
+  const etag = str(event, 'etag');
+  const updated = str(event, 'updated');
+  const seq = event.sequence;
+  const recurringEventId = str(event, 'recurringEventId');
+  const ext = isObject(event.extendedProperties) ? event.extendedProperties : null;
+  const priv = ext !== null && isObject(ext.private) ? ext.private : null;
+  return {
+    ok: true,
+    value: {
+      id,
+      status,
+      startLocal,
+      endLocal,
+      timeZone: zone,
+      summary: cleanLine(event.summary, SUMMARY_MAX),
+      location: cleanLine(event.location, LOCATION_MAX),
+      etag: etag !== null && ETAG_RE.test(etag) ? etag : null,
+      updated: updated !== null && INSTANT_RE.test(updated) ? updated : null,
+      sequence: typeof seq === 'number' && Number.isSafeInteger(seq) && seq >= 0 ? seq : null,
+      creatorSelf: isObject(event.creator) && event.creator.self === true,
+      organizerSelf: isObject(event.organizer) && event.organizer.self === true,
+      hasAttendees: presentNonEmpty(event.attendees),
+      hasRecurrence: presentNonEmpty(event.recurrence) || (recurringEventId !== null && recurringEventId.length > 0),
+      priv: {
+        waAgent: tagOf(priv, 'waAgent'),
+        waItem: tagOf(priv, 'waItem'),
+        waAction: tagOf(priv, 'waAction'),
+        waUpdate: tagOf(priv, 'waUpdate'),
+        waRev: tagOf(priv, 'waRev'),
+      },
+    },
+  };
+}
+
+/** update-event success text -> UpdateEventResult of exactly `expectedEventId`, times in the zone the app wrote. */
+export function projectUpdatedEvent(
+  text: string,
+  expectedEventId: string,
+  timeZone: string,
+): McpResult<UpdateEventResult> {
+  const root = parseJson(text);
+  if (root === null || Array.isArray(root) || !TIME_ZONE_RE.test(timeZone)) return BAD;
+  const event = isObject(root.event) ? root.event : root;
+  const eventId = str(event, 'id');
+  if (eventId === null || eventId !== expectedEventId) return BAD;
+  const status = statusOf(event.status);
+  if (status === null) return BAD;
+  const startLocal = eventTimeIn(event.start, timeZone);
+  const endLocal = eventTimeIn(event.end, timeZone);
+  if (startLocal === null || endLocal === null || endLocal < startLocal) return BAD;
+  // conflicts / warnings (free text about OTHER events) are dropped: the executor ran its own free/busy.
+  return { ok: true, value: { eventId, status, startLocal, endLocal } };
 }

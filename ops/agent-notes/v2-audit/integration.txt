@@ -1,0 +1,712 @@
+
+ RUN  v4.1.11 C:/dev/whatsapp agent
+
+ ✓ |integration| tests/integration/scaffold-smoke.test.ts (5 tests) 75ms
+ ✓ |integration| tests/integration/fakes-v2.test.ts (14 tests) 295ms
+ ✓ |integration| tests/integration/fake-bridge-control.test.ts (5 tests) 802ms
+     ✓ inbound / outboundFromPhone with ts as ISO string or epoch number store the right instant  355ms
+     ✓ a malformed ts fails the CALLING request with 500 and leaves the child alive  443ms
+ ✓ |integration| tests/integration/media-fetch.test.ts (9 tests) 905ms
+     ✓ slow (a trickle): the caller signal (Pause / quit) ends it as aborted, without a retry  323ms
+ ❯ |integration| tests/integration/pipeline-wa-tools.test.ts (4 tests | 4 failed) 10ms
+     × the delta scenario: 2 executed tool calls, 0 blocked, every tool result nonce-wrapped, wa_rows_served persisted 7ms
+     × cross_chat_rows > 0 only under all_chats (the S4 guard input is populated, the draft does not quote the other chat) 1ms
+     × a search pinned by trigger_chat never reaches another chat, whatever the model asks 0ms
+     × refused on a v1 consent record; accepted (after the native confirmation) once the current version is recorded 0ms
+ ✓ |integration| tests/integration/quit-during-startup.test.ts (2 tests) 468ms
+ ❯ |integration| tests/integration/recovery-v2.test.ts (1 test | 1 failed) 577ms
+     × crash_after_patch: the PATCH landed, the answer never came => after restart the update reconciles to done, one applied version 575ms
+ ✓ |integration| tests/integration/calendar-health.test.ts (3 tests) 832ms
+     ✓ attaches CAL_RECONNECT and raises the toast when the Google token expires  392ms
+ ✓ |integration| tests/integration/consent-starts-bridge.test.ts (4 tests) 962ms
+     ✓ starts the bridge without a restart (the app could never pair before this)  345ms
+ ✓ |integration| tests/integration/pipeline-burst-retriage.test.ts (3 tests) 1370ms
+     ✓ five messages within the debounce window produce exactly one run  652ms
+     ✓ a new inbound message after a proposal bumps the version, supersedes the old actions and makes the old actionId stale  410ms
+     ✓ the edit lock defers re-triage and keeps the card the user is editing intact  305ms
+ ✓ |integration| tests/integration/pipeline-happy.test.ts (4 tests) 1434ms
+     ✓ turns one inbound message into a card with a draft, a proposed event and two pending actions  558ms
+     ✓ approving the reply sends exactly one /api/send with the edited text, to the chat JID  315ms
+ ❯ |integration| tests/integration/auto-mode.flow.test.ts (2 tests | 2 failed) 1475ms
+     × track record -> trial -> shadow decisions -> endShadow -> an automatic write -> the toast Undo 838ms
+     × each pause trigger of B7 pauses with its reason, and a click still works while paused 635ms
+ ✓ |integration| tests/integration/pipeline-failures.test.ts (4 tests) 1537ms
+     ✓ schema-invalid output (twice) produces an LLM_BAD_OUTPUT raw card, and "Analyse again" re-runs it  563ms
+     ✓ a `rate_limited` provider defers the chat instead of hammering it  449ms
+ ❯ |integration| tests/integration/editing-executor.test.ts (4 tests | 4 failed) 1590ms
+     × a Change card applies with one PATCH (If-Match) and the source card closes superseded 602ms
+     × drift => needs_confirm_drift (pending); the second click with confirmDrift applies 349ms
+     × event_missing => CAL_EVENT_GONE + a pending create_event "Add as new event" 328ms
+     × foreign tags => CAL_EVENT_FOREIGN, zero update calls; precondition_412 => needs_confirm_drift; readback_mismatch => unknown 309ms
+ ✓ |integration| tests/integration/app-boot.test.ts (8 tests) 1755ms
+     ✓ composes the production runtime over the fakes and answers app:getBootstrap  366ms
+     ✓ registers every IPC channel through the real register.ts  334ms
+ ✓ |integration| tests/integration/bridge-lifecycle.test.ts (6 tests) 2124ms
+     ✓ reports online while the fake answers /api/health, and writes meta.last_online_ts when it stops answering  537ms
+     ✓ catches up through the 30 s scan when the doorbell never rings  310ms
+     ✓ a message whose TEXT is a bridge stdout marker changes no bridge state  626ms
+ ✓ |integration| tests/integration/recovery.test.ts (6 tests) 2163ms
+     ✓ seeds a profile once and re-opens the same database on restart  441ms
+     ✓ an action left `executing` becomes `unknown_outcome` and is NEVER re-executed  377ms
+     ✓ reconcile promotes the action to `done` when the outbound row is already in the bridge store  409ms
+     ✓ a still-unknown send offers "Send again" as a NEW pending action that needs its own approval  368ms
+     ✓ [R2] "Add again" after an unknown create_event re-uses the chain root eventId, so only ONE event ever exists  337ms
+ ✓ |integration| tests/integration/mcp-real-toolslist.test.ts (10 tests) 4019ms
+ ❯ |integration| tests/integration/pipeline-image.test.ts (17 tests | 5 failed) 3270ms
+     ✓ Local: the spawned fake llama-server gets --mmproj (+ /props vision); image_url first, no tools; S2 image_absolute date  793ms
+     ✓ Claude API: the native image block first, no tools; S2 date + badges 170ms
+     ✓ Gemini API: the inline picture first, no function declarations (a JPEG golden picture) 111ms
+     ✓ claude_cli (spawned fake): read_image stage, --tools "" --max-turns 1, no --mcp-config, the image block first on stdin  558ms
+     ✓ antigravity_cli active => the picture goes to Local, never to agy  627ms
+     ✓ images.enabled = false: a captionless picture is context only; pickImage never fetches 67ms
+     ✓ no projector and no cloud route => image_unread, no model call, and S1 runs text-only (the v1 slot) 78ms
+     ✓ the child without a projector never reads pictures: /props reports no vision => image_unread (no silent text-only guess)  418ms
+     ✓ V1 failure (garbage twice) => text-only run + image_unread; the runs row says LLM_BAD_OUTPUT 231ms
+     ✓ media missing twice => image_unread with MEDIA_UNAVAILABLE ("Try again"), exactly two requests, nothing cached 78ms
+     ✓ Dismiss deletes the cached picture and thumbnail at once (mediaCache.deleteForItem) 114ms
+     × image row => V1 (scripted provider) => proposal with the picture date, from_image + image_unclear, trigger_kind image 7ms
+     × images.enabled = false => the picture is context only (no V1 run, no media request) 1ms
+     × media missing => image_unread card (MEDIA_UNAVAILABLE, Try again) and S1 still runs text-only 1ms
+     × no projector (local active) => image_unread raw card; the "Download picture reading ({size})" size comes from MEDIA_MODEL_MANIFEST (F24) 1ms
+     × Dismiss deletes the thumbnail file at once 1ms
+     ✓ 24 picture cases split 8/6/4/2/4, every file present 12ms
+ ✓ |integration| tests/integration/pipeline-gates.test.ts (5 tests) 3386ms
+     ✓ a history sync of 300 rows from before live_from_ts produces no item and no LLM call  2289ms
+     ✓ while paused, an inbound message is held and no LLM call is made; resuming releases it  456ms
+ ❯ |integration| tests/integration/pipeline-voice.test.ts (13 tests | 2 failed) 3896ms
+     ✓ a 3.0 s voice note: S0 queues it (trigger_kind voice), V0 writes a done transcript, contextFor carries source voice; a re-run reuses it  523ms
+     ✓ fake whisper mode exit3 => transcripts row failed with VOICE_MODEL_MISSING  1221ms
+     ✓ fake whisper mode vcredist => transcripts row failed with LLM_VCREDIST_MISSING  432ms
+     ✓ fake whisper mode nojson => transcripts row failed with VOICE_DECODE_FAILED 194ms
+     ✓ fake whisper mode badjson => transcripts row failed with VOICE_DECODE_FAILED 245ms
+     ✓ fake whisper mode crash => transcripts row failed with VOICE_LOCAL_FAILED  323ms
+     ✓ empty transcript => status empty (never a trigger); wrong_lang is stored as the code whisper reported  558ms
+     ✓ media missing twice => VOICE_AUDIO_MISSING after exactly two /api/media requests; nothing spawned 132ms
+     ✓ a 15-min+ note never spawns a job (VOICE_TOO_LONG decided from the last granule) 92ms
+     ✓ voice off, or its model not ready => S0 holds the note as a raw card (held/waiting_llm), no fetch, no job 160ms
+     × audio row + setMedia Ogg (3.0 s) + fake whisper => transcripts row, trigger_kind voice, one job per note 6ms
+     × media missing twice => VOICE_AUDIO_MISSING raw card after exactly two requests 1ms
+     ✓ 12 rows (4 he / 4 en / 4 mixed), unique ids and durations, synthetic JIDs, key phrases present in the scripted transcript 6ms
+ ❯ |integration| tests/integration/pipeline-edit.test.ts (9 tests | 6 failed) 4895ms
+     × reschedule: a Change card with update_event + send_reply linked to the source; nothing is written 872ms
+     × move and cancel produce their deltas; new_event leaves the existing event untouched 583ms
+     ✓ no_change false positive: no event proposal at all  520ms
+     ✓ change_unclear on a low-confidence change: the draft asks, no update_event  382ms
+     ✓ two live events (F31): change_target_unclear on the delta  363ms
+     × duration-only (F40): the start is kept, the end moves 593ms
+     × self trigger (F28): the user's own "let's make it 5 instead" => one pending update_event, no send_reply, no S3 run 412ms
+     × reject (F32): "Keep 15:00" => declined; the same message again proposes nothing; a new slot proposes again 501ms
+     × approve => exactly one PATCH with ifMatch; applyUpdateSuccess moves the event forward and closes the source superseded 668ms
+ ❯ |integration| tests/integration/agy-provider.test.ts (28 tests | 14 failed) 9148ms
+     ✓ the default provider is not antigravity_cli and its consent kind is cloud_antigravity_cli (version 1) 5ms
+     ✓ without the consent: ConsentRequiredError before anything is located or spawned; no other provider is built 33ms
+     ✓ the consent row needs the Terms read date (repo refuses it without) and stores ANTIGRAVITY_TERMS_READ_ON 33ms
+     × with the consent: located -> floor -> provider-start smoke (constant prompt, no user data) -> the prefetch provider 205ms
+     ✓ below the floor (1.2.10): LlmError version, nothing spawned, no fallback provider 18ms
+     × S3: gate.prefetchWaContext inlined as its own block of the SAME nonce, stage draft, {reply} schema, one spawn 123ms
+     × a failing WhatsApp prefetch never fails the draft (optional context); still ONE job and no tool 161ms
+     ✓ the table covers every frozen mode 0ms
+     × mode ok 107ms
+     × mode waiting 141ms
+     × mode denied 160ms
+     × mode no_structured 269ms
+     × mode exit3 378ms
+     × mode exit3_auth 331ms
+     ✓ mode exit3_other  434ms
+     ✓ mode extra_tools  918ms
+     ✓ mode agent_mismatch  604ms
+     ✓ mode perm_mode  850ms
+     × mode not_signed_in 258ms
+     ✓ mode hang  3533ms
+     × mode garbage_lines 133ms
+     × mode global_mcp_present 118ms
+     ✓ routeImage => local when the projector is ready, none otherwise - even with cloud images on and consent current 6ms
+     ✓ a V1 call on the agy provider itself is refused before any job (defence in depth) 5ms
+     ✓ the list is whatever the CLI reports, under the isolated profile env 293ms
+     ✓ isolated mode (default): cli:allowWorkspace answers BAD_REQUEST, no dialog, the user's file is never touched 7ms
+     × global_checked: the dialog shows the one-line diff; allow => backup first, ONLY trustedWorkspaces changes, key order kept 10ms
+     × refused while an agy process runs (S-PROC): the file is unchanged, no backup 11ms
+ ❯ |integration| tests/integration/cli-provider.test.ts (25 tests | 1 failed) 11566ms
+     ✓ consent cloud_claude_cli v1 is required: without it nothing is spawned 19ms
+     ✓ the provider-start smoke passes BEFORE any user data is sent (journal order), then S1 is tool-less  432ms
+     ✓ S3 agentic through a REAL per-run listener; the listener is closed and the run dir removed afterwards  1674ms
+     ✓ V1: the picture block reaches the CLI first on stdin; read_image stage 142ms
+     ✓ mode rate_limit => CLOUD_UNAVAILABLE 133ms
+     ✓ mode auth_failed => CLOUD_AUTH 165ms
+     ✓ mode account_on_hold => CLOUD_AUTH 157ms
+     ✓ mode model_not_found => MODEL_NOT_FOUND 188ms
+     ✓ mode is_error_success => CLOUD_UNAVAILABLE 178ms
+     ✓ mode refusal => LLM_BAD_OUTPUT 242ms
+     ✓ mode no_structured => LLM_BAD_OUTPUT  364ms
+     ✓ mode max_turns => LLM_BAD_OUTPUT  328ms
+     ✓ mode max_structured_retries => LLM_BAD_OUTPUT  306ms
+     ✓ mode crash_mid_stream => CLOUD_UNAVAILABLE  335ms
+     ✓ mode extra_tool => CLI_TOOLSET_MISMATCH  1054ms
+     ✓ mode usage_limit => CLOUD_QUOTA 227ms
+     ✓ mode overage => CLOUD_OVERAGE  637ms
+     ✓ garbage_lines and stderr_flood are tolerated; nothing of stdout/stderr reaches an audit row  349ms
+     ✓ usage_limit holds until resetsAt: no further spawn before it 142ms
+     ✓ overage pauses the provider (no further run starts); allowOverage:true does not pause  1767ms
+     ✓ three crashes in 10 minutes => CLI_UNSTABLE (no spawn until "Test again")  536ms
+     ✓ Pause (abort) mid-run kills the job: listener closed, run dir removed, pid files removed  1939ms
+     ✓ EADDRINUSE on the listener => the CLI provider is not_ready, nothing spawned, no crash (Local unaffected) 7ms
+     ✓ NEVER a silent fallback: a failing claude_cli smoke constructs no other provider (constructor spies) 237ms
+     × claude_cli pipeline: inbound message -> smoke -> S1 -> S3 (agentic) -> a card; journal order proves smoke-before-data 5ms
+ ✓ |integration| tests/integration/pipeline-states.test.ts (7 tests) 15387ms
+     ✓ a missing time lands in info_missing, and "Add to calendar" completes it WITHOUT another LLM call  491ms
+     ✓ a confirmation with a busy calendar gets the conflict badge and never runs S3  323ms
+     ✓ answering from the phone closes a reply-only item as answered_elsewhere  304ms
+     ✓ an open item older than seven days expires  13512ms
+ ✓ |integration| tests/golden/golden.test.ts (89 tests) 15465ms
+     ✓ produces the expected item, proposal, badges and PENDING actions  470ms
+     ✓ appears in the dashboard list its state belongs to  418ms
+     ✓ produces the expected item, proposal, badges and PENDING actions  309ms
+     ✓ produces the expected item, proposal, badges and PENDING actions  306ms
+     ✓ appears in the dashboard list its state belongs to  458ms
+     ✓ produces the expected item, proposal, badges and PENDING actions  407ms
+     ✓ produces the expected item, proposal, badges and PENDING actions  307ms
+     ✓ appears in the dashboard list its state belongs to  388ms
+
+⎯⎯⎯⎯⎯⎯ Failed Tests 39 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |integration| tests/integration/agy-provider.test.ts > opt-in only: consent cloud_antigravity_cli v1 with the Terms read date, never a default, never a silent fallback > with the consent: located -> floor -> provider-start smoke (constant prompt, no user data) -> the prefetch provider
+LlmError: network
+ ❯ buildCli src/main/llm/factory.ts:126:13
+    124|       await fresh.dispose().catch(() => undefined);
+    125|       log.info('provider.cli_smoke_failed', { provider: id, code });
+    126|       throw new LlmError(v.reason);
+       |             ^
+    127|     }
+    128|     await disposeCached();
+ ❯ tests/integration/agy-provider.test.ts:160:15
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/39]⎯
+
+ FAIL  |integration| tests/integration/agy-provider.test.ts > prefetch loop (B14, P2 13.2): the app prefetches, the model gets ONE no-tool structured call > S3: gate.prefetchWaContext inlined as its own block of the SAME nonce, stage draft, {reply} schema, one spawn
+AssertionError: expected { ok: false, reason: 'network', …(1) } to deeply equal { ok: true, …(4) }
+
+- Expected
++ Received
+
+  {
+    "blockedToolCalls": 0,
+-   "manipulation": false,
+-   "ok": true,
+-   "text": "Tomorrow 17:00 works.",
+-   "toolCalls": 0,
++   "ok": false,
++   "reason": "network",
+  }
+
+ ❯ tests/integration/agy-provider.test.ts:213:17
+    211|       wallClockMs: 120_000,
+    212|     });
+    213|     expect(out).toEqual({
+       |                 ^
+    214|       ok: true,
+    215|       text: 'Tomorrow 17:00 works.',
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/39]⎯
+
+ FAIL  |integration| tests/integration/agy-provider.test.ts > prefetch loop (B14, P2 13.2): the app prefetches, the model gets ONE no-tool structured call > a failing WhatsApp prefetch never fails the draft (optional context); still ONE job and no tool
+AssertionError: expected false to be true // Object.is equality
+
+- Expected
++ Received
+
+- true
++ false
+
+ ❯ tests/integration/agy-provider.test.ts:250:20
+    248|       wallClockMs: 120_000,
+    249|     });
+    250|     expect(out.ok).toBe(true);
+       |                    ^
+    251|     expect(w.spawnedArgs).toHaveLength(1);
+    252|   });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/39]⎯
+
+ FAIL  |integration| tests/integration/agy-provider.test.ts > every mode of T2 3.2 through the production runner > mode ok
+ FAIL  |integration| tests/integration/agy-provider.test.ts > every mode of T2 3.2 through the production runner > mode garbage_lines
+ FAIL  |integration| tests/integration/agy-provider.test.ts > every mode of T2 3.2 through the production runner > mode global_mcp_present
+AssertionError: expected false to be true // Object.is equality
+
+- Expected
++ Received
+
+- true
++ false
+
+ ❯ tests/integration/agy-provider.test.ts:313:24
+    311|       const want = EXPECT[mode];
+    312|       if ('ok' in want) {
+    313|         expect(got.ok).toBe(true);
+       |                        ^
+    314|         if (got.ok) expect(got.v).toEqual({ intent: 'meeting', confide…
+    315|       } else {
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/39]⎯
+
+ FAIL  |integration| tests/integration/agy-provider.test.ts > every mode of T2 3.2 through the production runner > mode waiting
+ FAIL  |integration| tests/integration/agy-provider.test.ts > every mode of T2 3.2 through the production runner > mode denied
+ FAIL  |integration| tests/integration/agy-provider.test.ts > every mode of T2 3.2 through the production runner > mode no_structured
+AssertionError: expected 'network' to be 'bad_output' // Object.is equality
+
+Expected: "bad_output"
+Received: "network"
+
+ ❯ tests/integration/agy-provider.test.ts:319:44
+    317|         if (!got.ok) {
+    318|           expect(got.e).toBeInstanceOf(LlmError);
+    319|           expect((got.e as LlmError).code).toBe(want.code);
+       |                                            ^
+    320|         }
+    321|         const j = runsOf(w)[0];
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/39]⎯
+
+ FAIL  |integration| tests/integration/agy-provider.test.ts > every mode of T2 3.2 through the production runner > mode exit3
+AssertionError: expected 'network' to be 'usage_limit' // Object.is equality
+
+Expected: "usage_limit"
+Received: "network"
+
+ ❯ tests/integration/agy-provider.test.ts:319:44
+    317|         if (!got.ok) {
+    318|           expect(got.e).toBeInstanceOf(LlmError);
+    319|           expect((got.e as LlmError).code).toBe(want.code);
+       |                                            ^
+    320|         }
+    321|         const j = runsOf(w)[0];
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[6/39]⎯
+
+ FAIL  |integration| tests/integration/agy-provider.test.ts > every mode of T2 3.2 through the production runner > mode exit3_auth
+AssertionError: expected 'network' to be 'not_logged_in' // Object.is equality
+
+Expected: "not_logged_in"
+Received: "network"
+
+ ❯ tests/integration/agy-provider.test.ts:319:44
+    317|         if (!got.ok) {
+    318|           expect(got.e).toBeInstanceOf(LlmError);
+    319|           expect((got.e as LlmError).code).toBe(want.code);
+       |                                            ^
+    320|         }
+    321|         const j = runsOf(w)[0];
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[7/39]⎯
+
+ FAIL  |integration| tests/integration/agy-provider.test.ts > every mode of T2 3.2 through the production runner > mode not_signed_in
+AssertionError: expected 'sandbox' to be 'not_logged_in' // Object.is equality
+
+Expected: "not_logged_in"
+Received: "sandbox"
+
+ ❯ tests/integration/agy-provider.test.ts:319:44
+    317|         if (!got.ok) {
+    318|           expect(got.e).toBeInstanceOf(LlmError);
+    319|           expect((got.e as LlmError).code).toBe(want.code);
+       |                                            ^
+    320|         }
+    321|         const j = runsOf(w)[0];
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[8/39]⎯
+
+ FAIL  |integration| tests/integration/agy-provider.test.ts > workspace trust (fallback profile mode only) through cli:allowWorkspace and the mock native dialog > global_checked: the dialog shows the one-line diff; allow => backup first, ONLY trustedWorkspaces changes, key order kept
+AssertionError: expected "vi.fn()" to be called 1 times, but got 0 times
+ ❯ tests/integration/agy-provider.test.ts:450:28
+    448|     const res = await h['cli:allowWorkspace']({ provider: 'antigravity…
+    449|     expect(res.ok).toBe(true);
+    450|     expect(showMessageBox).toHaveBeenCalledTimes(1);
+       |                            ^
+    451|     expect(JSON.stringify(showMessageBox.mock.calls[0])).toContain(
+    452|       JSON.stringify(`+ "trustedWorkspaces": [ ..., "${ws}" ]`).slice(…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[9/39]⎯
+
+ FAIL  |integration| tests/integration/agy-provider.test.ts > workspace trust (fallback profile mode only) through cli:allowWorkspace and the mock native dialog > refused while an agy process runs (S-PROC): the file is unchanged, no backup
+AssertionError: expected { ok: true, value: { …(7) } } to match object { ok: false, …(1) }
+(8 matching properties omitted from actual)
+
+- Expected
++ Received
+
+  {
+-   "error": {
+-     "code": "BAD_REQUEST",
+-   },
+-   "ok": false,
++   "ok": true,
+  }
+
+ ❯ tests/integration/agy-provider.test.ts:467:17
+    465|     const { h } = handlers(w, 'global_checked', true);
+    466|     const res = await h['cli:allowWorkspace']({ provider: 'antigravity…
+    467|     expect(res).toMatchObject({ ok: false, error: { code: 'BAD_REQUEST…
+       |                 ^
+    468|     expect(fs.readFileSync(file, 'utf8')).toBe('{"trustedWorkspaces":[…
+    469|     expect(fs.existsSync(`${file}.wca-backup`)).toBe(false);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[10/39]⎯
+
+ FAIL  |integration| tests/integration/auto-mode.flow.test.ts > auto-mode flow through compose() > track record -> trial -> shadow decisions -> endShadow -> an automatic write -> the toast Undo
+AssertionError: expected { ok: false, …(1) } to match object { ok: true, …(1) }
+(2 matching properties omitted from actual)
+
+- Expected
++ Received
+
+  {
+-   "ok": true,
+-   "value": {
+-     "policy": {
+-       "state": "shadow",
+-     },
+-   },
++   "ok": false,
+  }
+
+ ❯ tests/integration/auto-mode.flow.test.ts:78:21
+     76|     dialog.__script([{ response: 1, checkboxChecked: true }]);
+     77|     const enabled = await h.invoke('auto:requestEnable', { scope: DEFA…
+     78|     expect(enabled).toMatchObject({ ok: true, value: { policy: { state…
+       |                     ^
+     79|
+     80|     for (const n of [4, 5, 6]) {
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[11/39]⎯
+
+ FAIL  |integration| tests/integration/auto-mode.flow.test.ts > auto-mode flow through compose() > each pause trigger of B7 pauses with its reason, and a click still works while paused
+AssertionError: expected { ok: false, …(1) } to match object { ok: true, …(1) }
+(2 matching properties omitted from actual)
+
+- Expected
++ Received
+
+  {
+-   "ok": true,
+-   "value": {
+-     "policy": {
+-       "pausedReason": "circuit_breaker_rate",
+-       "state": "paused",
+-     },
+-   },
++   "ok": false,
+  }
+
+ ❯ tests/integration/auto-mode.flow.test.ts:131:19
+    129|     const second = await inboundCard(h, 10);
+    130|     const state = await h.invoke('auto:getState', undefined);
+    131|     expect(state).toMatchObject({
+       |                   ^
+    132|       ok: true,
+    133|       value: { policy: { state: 'paused', pausedReason: 'circuit_break…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[12/39]⎯
+
+ FAIL  |integration| tests/integration/cli-provider.test.ts > B. through compose() (harness) - BLOCKED-BY V2-W2-01 until the CLI wiring lands > claude_cli pipeline: inbound message -> smoke -> S1 -> S3 (agentic) -> a card; journal order proves smoke-before-data
+Error: NotImplemented: harness option "cli" (T2 6; lands with its V2 owner)
+ ❯ createHarness tests/helpers/harness.ts:250:13
+    248|   for (const key of ['cli', 'whisper', 'waWorld', 'media'] as const) {
+    249|     if (opts[key] !== undefined)
+    250|       throw new Error(`NotImplemented: harness option "${key}" (T2 6; …
+       |             ^
+    251|   }
+    252|   if (opts.provider === 'claude_cli' || opts.provider === 'antigravity…
+ ❯ tests/integration/cli-provider.test.ts:300:21
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[13/39]⎯
+
+ FAIL  |integration| tests/integration/editing-executor.test.ts > update_event through compose() > a Change card applies with one PATCH (If-Match) and the source card closes superseded
+TypeError: Cannot read properties of undefined (reading 'change')
+ ❯ tests/integration/editing-executor.test.ts:94:19
+     92|     h = await createHarness({ rules: RULES });
+     93|     const { change } = await eventThenChange(h);
+     94|     expect(change.change?.kind).toBe('reschedule');
+       |                   ^
+     95|     expect(await approveChange(h, change)).toMatchObject({ ok: true, v…
+     96|     expect(updates(h)).toHaveLength(1);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[14/39]⎯
+
+ FAIL  |integration| tests/integration/editing-executor.test.ts > update_event through compose() > drift => needs_confirm_drift (pending); the second click with confirmDrift applies
+TypeError: Cannot read properties of undefined (reading 'actions')
+ ❯ approveChange tests/integration/editing-executor.test.ts:80:18
+     78| }
+     79| const approveChange = (harness: Harness, card: ItemCard, extra: Record…
+     80|   const a = card.actions.find((x) => x.kind === 'update_event')!;
+       |                  ^
+     81|   return harness.invoke('action:approve', {
+     82|     actionId: a.actionId,
+ ❯ tests/integration/editing-executor.test.ts:103:18
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[15/39]⎯
+
+ FAIL  |integration| tests/integration/editing-executor.test.ts > update_event through compose() > event_missing => CAL_EVENT_GONE + a pending create_event "Add as new event"
+TypeError: Cannot read properties of undefined (reading 'actions')
+ ❯ approveChange tests/integration/editing-executor.test.ts:80:18
+     78| }
+     79| const approveChange = (harness: Harness, card: ItemCard, extra: Record…
+     80|   const a = card.actions.find((x) => x.kind === 'update_event')!;
+       |                  ^
+     81|   return harness.invoke('action:approve', {
+     82|     actionId: a.actionId,
+ ❯ tests/integration/editing-executor.test.ts:114:18
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[16/39]⎯
+
+ FAIL  |integration| tests/integration/editing-executor.test.ts > update_event through compose() > foreign tags => CAL_EVENT_FOREIGN, zero update calls; precondition_412 => needs_confirm_drift; readback_mismatch => unknown
+TypeError: Cannot read properties of undefined (reading 'actions')
+ ❯ approveChange tests/integration/editing-executor.test.ts:80:18
+     78| }
+     79| const approveChange = (harness: Harness, card: ItemCard, extra: Record…
+     80|   const a = card.actions.find((x) => x.kind === 'update_event')!;
+       |                  ^
+     81|   return harness.invoke('action:approve', {
+     82|     actionId: a.actionId,
+ ❯ tests/integration/editing-executor.test.ts:123:11
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[17/39]⎯
+
+ FAIL  |integration| tests/integration/pipeline-edit.test.ts > pipeline-edit (T2 6) > reschedule: a Change card with update_event + send_reply linked to the source; nothing is written
+AssertionError: expected 'none' to be 'change_proposed' // Object.is equality
+
+Expected: "change_proposed"
+Received: "none"
+
+ ❯ tests/integration/pipeline-edit.test.ts:124:29
+    122|     await contactSays(h, 'can we do 5 instead of 3?');
+    123|     const item = deltaItem(h, chatId);
+    124|     expect(item.eventState).toBe('change_proposed');
+       |                             ^
+    125|     expect(item.linkedItemId).toBe(sourceItemId);
+    126|     expect(pendingKinds(h, item.id)).toEqual(['send_reply', 'update_ev…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[18/39]⎯
+
+ FAIL  |integration| tests/integration/pipeline-edit.test.ts > pipeline-edit (T2 6) > move and cancel produce their deltas; new_event leaves the existing event untouched
+TypeError: Cannot read properties of undefined (reading 'canonicalJson')
+ ❯ tests/integration/pipeline-edit.test.ts:148:27
+    146|     const item = deltaItem(h, chatId);
+    147|     const upd = h.repos.actions.forItem(item.id).find((a) => a.kind ==…
+    148|     expect(JSON.parse(upd.canonicalJson)).toMatchObject({ change: 'mov…
+       |                           ^
+    149|   });
+    150|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[19/39]⎯
+
+ FAIL  |integration| tests/integration/pipeline-edit.test.ts > pipeline-edit (T2 6) > duration-only (F40): the start is kept, the end moves
+TypeError: Cannot read properties of undefined (reading 'canonicalJson')
+ ❯ tests/integration/pipeline-edit.test.ts:180:27
+    178|     await contactSays(h, "let's make it two hours instead");
+    179|     const upd = h.repos.actions.forItem(deltaItem(h, chatId).id).find(…
+    180|     expect(JSON.parse(upd.canonicalJson)).toMatchObject({
+       |                           ^
+    181|       to: { startLocal: '2026-09-23T15:00:00', endLocal: '2026-09-23T1…
+    182|     });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[20/39]⎯
+
+ FAIL  |integration| tests/integration/pipeline-edit.test.ts > pipeline-edit (T2 6) > self trigger (F28): the user's own "let's make it 5 instead" => one pending update_event, no send_reply, no S3 run
+AssertionError: no delta item: expected undefined to be defined
+ ❯ deltaItem tests/integration/pipeline-edit.test.ts:109:32
+    107|     )
+    108|     .get(chatId);
+    109|   expect(row, 'no delta item').toBeDefined();
+       |                                ^
+    110|   return h.repos.items.byId(row!.id)!;
+    111| }
+ ❯ tests/integration/pipeline-edit.test.ts:188:18
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[21/39]⎯
+
+ FAIL  |integration| tests/integration/pipeline-edit.test.ts > pipeline-edit (T2 6) > reject (F32): "Keep 15:00" => declined; the same message again proposes nothing; a new slot proposes again
+TypeError: Cannot read properties of undefined (reading 'id')
+ ❯ tests/integration/pipeline-edit.test.ts:204:70
+    202|     const upd = h.repos.actions.forItem(item.id).find((a) => a.kind ==…
+    203|     h.setWindowState({ focused: true, visible: true });
+    204|     const rejected = await h.invoke('action:reject', { actionId: upd.i…
+       |                                                                      ^
+    205|     expect(rejected.ok).toBe(true);
+    206|     expect(h.repos.items.byId(item.id)!.eventState).toBe('declined');
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[22/39]⎯
+
+ FAIL  |integration| tests/integration/pipeline-edit.test.ts > pipeline-edit (T2 6) > approve => exactly one PATCH with ifMatch; applyUpdateSuccess moves the event forward and closes the source superseded
+TypeError: Cannot read properties of undefined (reading 'id')
+ ❯ tests/integration/pipeline-edit.test.ts:219:66
+    217|     const upd = h.repos.actions.forItem(item.id).find((a) => a.kind ==…
+    218|     h.setWindowState({ focused: true, visible: true });
+    219|     const res = await h.invoke('action:approve', { actionId: upd.id, s…
+       |                                                                  ^
+    220|     expect(res.ok).toBe(true);
+    221|     await h.settle();
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[23/39]⎯
+
+ FAIL  |integration| tests/integration/pipeline-image.test.ts > Part B - through compose() via the harness (T2 6) - BLOCKED-BY V2-W2-01 until the harness media option + V1 wiring land > image row => V1 (scripted provider) => proposal with the picture date, from_image + image_unclear, trigger_kind image
+Error: NotImplemented: harness option "media" (T2 6; lands with its V2 owner)
+ ❯ createHarness tests/helpers/harness.ts:250:13
+    248|   for (const key of ['cli', 'whisper', 'waWorld', 'media'] as const) {
+    249|     if (opts[key] !== undefined)
+    250|       throw new Error(`NotImplemented: harness option "${key}" (T2 6; …
+       |             ^
+    251|   }
+    252|   if (opts.provider === 'claude_cli' || opts.provider === 'antigravity…
+ ❯ tests/integration/pipeline-image.test.ts:633:15
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[24/39]⎯
+
+ FAIL  |integration| tests/integration/pipeline-image.test.ts > Part B - through compose() via the harness (T2 6) - BLOCKED-BY V2-W2-01 until the harness media option + V1 wiring land > images.enabled = false => the picture is context only (no V1 run, no media request)
+Error: NotImplemented: harness option "media" (T2 6; lands with its V2 owner)
+ ❯ createHarness tests/helpers/harness.ts:250:13
+    248|   for (const key of ['cli', 'whisper', 'waWorld', 'media'] as const) {
+    249|     if (opts[key] !== undefined)
+    250|       throw new Error(`NotImplemented: harness option "${key}" (T2 6; …
+       |             ^
+    251|   }
+    252|   if (opts.provider === 'claude_cli' || opts.provider === 'antigravity…
+ ❯ tests/integration/pipeline-image.test.ts:653:15
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[25/39]⎯
+
+ FAIL  |integration| tests/integration/pipeline-image.test.ts > Part B - through compose() via the harness (T2 6) - BLOCKED-BY V2-W2-01 until the harness media option + V1 wiring land > media missing => image_unread card (MEDIA_UNAVAILABLE, Try again) and S1 still runs text-only
+Error: NotImplemented: harness option "media" (T2 6; lands with its V2 owner)
+ ❯ createHarness tests/helpers/harness.ts:250:13
+    248|   for (const key of ['cli', 'whisper', 'waWorld', 'media'] as const) {
+    249|     if (opts[key] !== undefined)
+    250|       throw new Error(`NotImplemented: harness option "${key}" (T2 6; …
+       |             ^
+    251|   }
+    252|   if (opts.provider === 'claude_cli' || opts.provider === 'antigravity…
+ ❯ tests/integration/pipeline-image.test.ts:669:15
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[26/39]⎯
+
+ FAIL  |integration| tests/integration/pipeline-image.test.ts > Part B - through compose() via the harness (T2 6) - BLOCKED-BY V2-W2-01 until the harness media option + V1 wiring land > no projector (local active) => image_unread raw card; the "Download picture reading ({size})" size comes from MEDIA_MODEL_MANIFEST (F24)
+Error: NotImplemented: harness option "media" (T2 6; lands with its V2 owner)
+ ❯ createHarness tests/helpers/harness.ts:250:13
+    248|   for (const key of ['cli', 'whisper', 'waWorld', 'media'] as const) {
+    249|     if (opts[key] !== undefined)
+    250|       throw new Error(`NotImplemented: harness option "${key}" (T2 6; …
+       |             ^
+    251|   }
+    252|   if (opts.provider === 'claude_cli' || opts.provider === 'antigravity…
+ ❯ tests/integration/pipeline-image.test.ts:686:15
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[27/39]⎯
+
+ FAIL  |integration| tests/integration/pipeline-image.test.ts > Part B - through compose() via the harness (T2 6) - BLOCKED-BY V2-W2-01 until the harness media option + V1 wiring land > Dismiss deletes the thumbnail file at once
+Error: NotImplemented: harness option "media" (T2 6; lands with its V2 owner)
+ ❯ createHarness tests/helpers/harness.ts:250:13
+    248|   for (const key of ['cli', 'whisper', 'waWorld', 'media'] as const) {
+    249|     if (opts[key] !== undefined)
+    250|       throw new Error(`NotImplemented: harness option "${key}" (T2 6; …
+       |             ^
+    251|   }
+    252|   if (opts.provider === 'claude_cli' || opts.provider === 'antigravity…
+ ❯ tests/integration/pipeline-image.test.ts:709:15
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[28/39]⎯
+
+ FAIL  |integration| tests/integration/pipeline-voice.test.ts > Part B - through compose() via the harness (T2 6) - BLOCKED-BY V2-W2-01 until the harness whisper/media options land > audio row + setMedia Ogg (3.0 s) + fake whisper => transcripts row, trigger_kind voice, one job per note
+Error: NotImplemented: harness option "whisper" (T2 6; lands with its V2 owner)
+ ❯ createHarness tests/helpers/harness.ts:250:13
+    248|   for (const key of ['cli', 'whisper', 'waWorld', 'media'] as const) {
+    249|     if (opts[key] !== undefined)
+    250|       throw new Error(`NotImplemented: harness option "${key}" (T2 6; …
+       |             ^
+    251|   }
+    252|   if (opts.provider === 'claude_cli' || opts.provider === 'antigravity…
+ ❯ tests/integration/pipeline-voice.test.ts:237:15
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[29/39]⎯
+
+ FAIL  |integration| tests/integration/pipeline-voice.test.ts > Part B - through compose() via the harness (T2 6) - BLOCKED-BY V2-W2-01 until the harness whisper/media options land > media missing twice => VOICE_AUDIO_MISSING raw card after exactly two requests
+Error: NotImplemented: harness option "whisper" (T2 6; lands with its V2 owner)
+ ❯ createHarness tests/helpers/harness.ts:250:13
+    248|   for (const key of ['cli', 'whisper', 'waWorld', 'media'] as const) {
+    249|     if (opts[key] !== undefined)
+    250|       throw new Error(`NotImplemented: harness option "${key}" (T2 6; …
+       |             ^
+    251|   }
+    252|   if (opts.provider === 'claude_cli' || opts.provider === 'antigravity…
+ ❯ tests/integration/pipeline-voice.test.ts:254:15
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[30/39]⎯
+
+ FAIL  |integration| tests/integration/pipeline-wa-tools.test.ts > pipeline - WhatsApp read tools in S3 (B17) > the delta scenario: 2 executed tool calls, 0 blocked, every tool result nonce-wrapped, wa_rows_served persisted
+Error: NotImplemented: harness option "waWorld" (T2 6; lands with its V2 owner)
+ ❯ createHarness tests/helpers/harness.ts:250:13
+    248|   for (const key of ['cli', 'whisper', 'waWorld', 'media'] as const) {
+    249|     if (opts[key] !== undefined)
+    250|       throw new Error(`NotImplemented: harness option "${key}" (T2 6; …
+       |             ^
+    251|   }
+    252|   if (opts.provider === 'claude_cli' || opts.provider === 'antigravity…
+ ❯ tests/integration/pipeline-wa-tools.test.ts:67:15
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[31/39]⎯
+
+ FAIL  |integration| tests/integration/pipeline-wa-tools.test.ts > pipeline - WhatsApp read tools in S3 (B17) > cross_chat_rows > 0 only under all_chats (the S4 guard input is populated, the draft does not quote the other chat)
+Error: NotImplemented: harness option "waWorld" (T2 6; lands with its V2 owner)
+ ❯ createHarness tests/helpers/harness.ts:250:13
+    248|   for (const key of ['cli', 'whisper', 'waWorld', 'media'] as const) {
+    249|     if (opts[key] !== undefined)
+    250|       throw new Error(`NotImplemented: harness option "${key}" (T2 6; …
+       |             ^
+    251|   }
+    252|   if (opts.provider === 'claude_cli' || opts.provider === 'antigravity…
+ ❯ tests/integration/pipeline-wa-tools.test.ts:102:15
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[32/39]⎯
+
+ FAIL  |integration| tests/integration/pipeline-wa-tools.test.ts > pipeline - WhatsApp read tools in S3 (B17) > a search pinned by trigger_chat never reaches another chat, whatever the model asks
+Error: NotImplemented: harness option "waWorld" (T2 6; lands with its V2 owner)
+ ❯ createHarness tests/helpers/harness.ts:250:13
+    248|   for (const key of ['cli', 'whisper', 'waWorld', 'media'] as const) {
+    249|     if (opts[key] !== undefined)
+    250|       throw new Error(`NotImplemented: harness option "${key}" (T2 6; …
+       |             ^
+    251|   }
+    252|   if (opts.provider === 'claude_cli' || opts.provider === 'antigravity…
+ ❯ tests/integration/pipeline-wa-tools.test.ts:124:15
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[33/39]⎯
+
+ FAIL  |integration| tests/integration/pipeline-wa-tools.test.ts > wa:setReadScope - all_chats with a cloud provider needs the consent v2 (B17, F11) > refused on a v1 consent record; accepted (after the native confirmation) once the current version is recorded
+Error: NotImplemented: harness option "waWorld" (T2 6; lands with its V2 owner)
+ ❯ createHarness tests/helpers/harness.ts:250:13
+    248|   for (const key of ['cli', 'whisper', 'waWorld', 'media'] as const) {
+    249|     if (opts[key] !== undefined)
+    250|       throw new Error(`NotImplemented: harness option "${key}" (T2 6; …
+       |             ^
+    251|   }
+    252|   if (opts.provider === 'claude_cli' || opts.provider === 'antigravity…
+ ❯ tests/integration/pipeline-wa-tools.test.ts:139:15
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[34/39]⎯
+
+ FAIL  |integration| tests/integration/recovery-v2.test.ts > recovery v2 through a restart of compose() > crash_after_patch: the PATCH landed, the answer never came => after restart the update reconciles to done, one applied version
+TypeError: Cannot read properties of undefined (reading 'actions')
+ ❯ tests/integration/recovery-v2.test.ts:75:24
+     73|     if (!d2.ok) throw new Error('dashboard');
+     74|     const change = d2.value.needsReply.find((c) => c.actions.some((a) …
+     75|     const upd = change.actions.find((a) => a.kind === 'update_event')!;
+       |                        ^
+     76|     first.calendar.scenario('crash_after_patch');
+     77|     await first.invoke('action:approve', { actionId: upd.actionId, kin…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[35/39]⎯
+
+
+ Test Files  9 failed | 17 passed (26)
+      Tests  39 failed | 248 passed (287)
+   Start at  08:56:40
+   Duration  18.00s (transform 19.79s, setup 15.98s, import 32.56s, tests 89.41s, environment 3ms)
+
+JSON report written to C:/dev/whatsapp agent/ops/agent-notes/v2-audit/integration.json
+EXIT=1

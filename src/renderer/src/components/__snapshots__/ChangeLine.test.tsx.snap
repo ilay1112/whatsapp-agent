@@ -1,0 +1,223 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`ChangeLine - RTL snapshots > en cancel 1`] = `
+<p
+  class="m-0 text-sm text-text"
+  data-kind="cancel"
+  data-testid="change-line"
+  lang="en"
+>
+  <span
+    aria-hidden="true"
+    data-testid="change-line-visible"
+  >
+    Cancel: 
+    <bdi>
+      Meeting
+    </bdi>
+    , 
+    <bdi>
+      Wed 15:00
+    </bdi>
+  </span>
+  <span
+    class="sr-only"
+    data-testid="change-line-sentence"
+  >
+    Cancel Meeting, Wed 15:00
+  </span>
+</p>
+`;
+
+exports[`ChangeLine - RTL snapshots > en move 1`] = `
+<p
+  class="m-0 text-sm text-text"
+  data-kind="move"
+  data-testid="change-line"
+  lang="en"
+>
+  <span
+    aria-hidden="true"
+    data-testid="change-line-visible"
+  >
+    <span>
+      Place: 
+      <bdi>
+        Cafe Noir
+      </bdi>
+       
+    </span>
+    <span
+      aria-hidden="true"
+      class="change-arrow"
+      data-testid="change-arrow"
+    >
+      →
+    </span>
+    <span>
+       
+      <bdi>
+        Office
+      </bdi>
+    </span>
+  </span>
+  <span
+    class="sr-only"
+    data-testid="change-line-sentence"
+  >
+    Place change from Cafe Noir to Office
+  </span>
+</p>
+`;
+
+exports[`ChangeLine - RTL snapshots > en reschedule 1`] = `
+<p
+  class="m-0 text-sm text-text"
+  data-kind="reschedule"
+  data-testid="change-line"
+  lang="en"
+>
+  <span
+    aria-hidden="true"
+    data-testid="change-line-visible"
+  >
+    <span>
+      Change: 
+      <bdi>
+        Wed 15:00
+      </bdi>
+       
+    </span>
+    <span
+      aria-hidden="true"
+      class="change-arrow"
+      data-testid="change-arrow"
+    >
+      →
+    </span>
+    <span>
+       
+      <bdi>
+        17:00
+      </bdi>
+    </span>
+  </span>
+  <span
+    class="sr-only"
+    data-testid="change-line-sentence"
+  >
+    Change from Wednesday 15:00 to 17:00
+  </span>
+</p>
+`;
+
+exports[`ChangeLine - RTL snapshots > he cancel 1`] = `
+<p
+  class="m-0 text-sm text-text"
+  data-kind="cancel"
+  data-testid="change-line"
+  lang="he"
+>
+  <span
+    aria-hidden="true"
+    data-testid="change-line-visible"
+  >
+    ביטול: 
+    <bdi>
+      Meeting
+    </bdi>
+    , 
+    <bdi>
+      יום רביעי 15:00
+    </bdi>
+  </span>
+  <span
+    class="sr-only"
+    data-testid="change-line-sentence"
+  >
+    ביטול Meeting, יום רביעי 15:00
+  </span>
+</p>
+`;
+
+exports[`ChangeLine - RTL snapshots > he move 1`] = `
+<p
+  class="m-0 text-sm text-text"
+  data-kind="move"
+  data-testid="change-line"
+  lang="he"
+>
+  <span
+    aria-hidden="true"
+    data-testid="change-line-visible"
+  >
+    <span>
+      מקום: 
+      <bdi>
+        Cafe Noir
+      </bdi>
+       
+    </span>
+    <span
+      aria-hidden="true"
+      class="change-arrow"
+      data-testid="change-arrow"
+    >
+      ←
+    </span>
+    <span>
+       
+      <bdi>
+        Office
+      </bdi>
+    </span>
+  </span>
+  <span
+    class="sr-only"
+    data-testid="change-line-sentence"
+  >
+    שינוי מקום: Office במקום Cafe Noir
+  </span>
+</p>
+`;
+
+exports[`ChangeLine - RTL snapshots > he reschedule 1`] = `
+<p
+  class="m-0 text-sm text-text"
+  data-kind="reschedule"
+  data-testid="change-line"
+  lang="he"
+>
+  <span
+    aria-hidden="true"
+    data-testid="change-line-visible"
+  >
+    <span>
+      שינוי: 
+      <bdi>
+        יום רביעי 15:00
+      </bdi>
+       
+    </span>
+    <span
+      aria-hidden="true"
+      class="change-arrow"
+      data-testid="change-arrow"
+    >
+      ←
+    </span>
+    <span>
+       
+      <bdi>
+        17:00
+      </bdi>
+    </span>
+  </span>
+  <span
+    class="sr-only"
+    data-testid="change-line-sentence"
+  >
+    שינוי: 17:00 במקום יום רביעי 15:00
+  </span>
+</p>
+`;

@@ -1,8 +1,9 @@
 // src/main/db/repos/actions.ts - Repos['actions'] implementation over the Db wrapper (owner W1-04). Signatures: CONTRACTS 15.1.
 // Every write is a compare-and-set on the OLD state; the frozen triggers of CONTRACTS 15.2 are the second line of defence.
+// [V2] v2 members (C2 16.1): V2-W1-01-db.
 import { createHash, randomUUID } from 'node:crypto';
-import { ActionPayloadSchema, canonicalJson } from '../../../shared/schemas';
-import type { ActionPayload } from '../../../shared/schemas';
+import { ActionPayloadSchema, canonicalJson, UpdateEventPayloadSchema } from '../../../shared/schemas';
+import type { ActionPayload, EventContentWithStatus } from '../../../shared/schemas';
 import { LIMITS } from '../../../shared/types';
 import type * as T from '../../../shared/types';
 import { ActionStateError, RepoContractError, RowNotFoundError } from '../errors';
@@ -124,14 +125,15 @@ export function createActionsRepo(db: Db): ActionsRepo {
     },
 
     /** [R2] ONE transaction, two compare-and-sets; every miss (and every trigger ABORT) is reported as 'stale' - never a throw. */
-    markApprovedExecuting(id, approvedFinalJson, now) {
+    // [V2 CHANGE] + approvedBy, set in the FIRST compare-and-set statement (trg_actions_state verifies it, I1'). No default: B6.
+    markApprovedExecuting(id, approvedFinalJson, now, approvedBy) {
       try {
         return db.transaction<'ok' | 'stale'>(() => {
           const approved = db
             .prepare(
-              `UPDATE actions SET state = 'approved', approved_at = ?, approved_final_json = ? WHERE id = ? AND state = 'pending'`,
+              `UPDATE actions SET state = 'approved', approved_at = ?, approved_final_json = ?, approved_by = ? WHERE id = ? AND state = 'pending'`,
             )
-            .run(now, approvedFinalJson, id);
+            .run(now, approvedFinalJson, approvedBy, id);
           if (approved.changes !== 1) throw new CasMiss();
           const executing = db
             .prepare(`UPDATE actions SET state = 'executing' WHERE id = ? AND state = 'approved'`)
@@ -202,6 +204,39 @@ export function createActionsRepo(db: Db): ActionsRepo {
         current = parent;
       }
       return current;
+    },
+    // ---- [V2 ADD] C2 16.1 (V2-W1-01-db) ----
+    /** AutoGate / auto:getState precondition (B7 track record): creates the user approved by a CLICK that reached Google. */
+    countUserApprovedCreates() {
+      return db
+        .prepare<{ n: number }>(
+          `SELECT COUNT(*) AS n FROM actions WHERE kind = 'create_event' AND state = 'done' AND approved_by = 'user'`,
+        )
+        .get()!.n;
+    },
+
+    /**
+     * [F32] R13 suppression: the `to` of every REJECTED update_event aimed at this event at this base revision, oldest first.
+     * Read back through UpdateEventPayloadSchema (the persisted payload is re-validated; a row whose payload was purged by retention,
+     * is not JSON - json_extract would raise on it, hence the json_valid guard - or does not parse contributes nothing).
+     */
+    rejectedDeltaTo(targetEventId, baseRevision) {
+      const rows = db
+        .prepare<{ canonical_json: string }>(
+          `SELECT canonical_json FROM actions
+             WHERE kind = 'update_event' AND state = 'rejected'
+               AND CASE WHEN json_valid(canonical_json)
+                        THEN json_extract(canonical_json, '$.targetEventId') = ? AND json_extract(canonical_json, '$.baseRevision') = ?
+                        ELSE 0 END
+             ORDER BY created_at ASC, id ASC`,
+        )
+        .all(targetEventId, baseRevision);
+      const out: EventContentWithStatus[] = [];
+      for (const r of rows) {
+        const parsed = UpdateEventPayloadSchema.safeParse(JSON.parse(r.canonical_json));
+        if (parsed.success) out.push(parsed.data.to);
+      }
+      return out;
     },
   };
 }

@@ -11,6 +11,11 @@
   "bridge_update_help": "https://github.com/lharries/whatsapp-mcp#readme",
   "bitlocker_help": "https://support.microsoft.com/windows/bitlocker-recovery-6c2b4fd5-4b3c-4a55-9a66-0ffb06f39cfb",
   "google_unverified_app_help": "https://support.google.com/cloud/answer/7454865",
-  "project_readme": "https://github.com/ilay1112/whatsapp-calendar-agent#readme",
-  "vcredist_download": "https://aka.ms/vs/17/release/vc_redist.x64.exe"
+  "project_readme": "https://github.com/ilay1112/whatsapp-agent#readme",
+  "vcredist_download": "https://aka.ms/vs/17/release/vc_redist.x64.exe",
+  "claude_install": "https://code.claude.com/docs/en/setup",
+  "claude_usage": "https://code.claude.com/docs/en/costs",
+  "antigravity_install": "https://antigravity.google/docs/cli/install/",
+  "antigravity_terms": "https://antigravity.google/terms",
+  "whisper_licence": "https://github.com/ggml-org/whisper.cpp/blob/b5130/LICENSE"
 }

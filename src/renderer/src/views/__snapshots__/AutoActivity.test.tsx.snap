@@ -1,0 +1,126 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`AutoActivity - page > RTL snapshot 1`] = `
+<main
+  class="flex min-h-full flex-col gap-3 overflow-auto p-4"
+  data-testid="auto-activity"
+>
+  <div
+    class="flex flex-wrap items-center gap-2"
+  >
+    <button
+      class="btn btn-quiet"
+      data-testid="auto-activity-back"
+      type="button"
+    >
+      <span
+        aria-hidden="true"
+        class="icon-dir inline-block"
+      >
+        ‹
+      </span>
+      מצב אוטומטי
+    </button>
+    <h1
+      class="m-0 grow text-xl"
+    >
+      פעילות אוטומטית
+    </h1>
+    <button
+      class="btn btn-outline"
+      data-testid="activity-export"
+      type="button"
+    >
+      ייצוא (JSON)
+    </button>
+  </div>
+  <p
+    class="m-0 text-sm text-text-muted"
+  >
+    רק זמנים, סוגים וסיבות - בלי כותרות, שמות או הודעות.
+  </p>
+  <section
+    aria-labelledby="activity-h-2026-09-01"
+    class="flex flex-col gap-2"
+    data-testid="activity-day-2026-09-01"
+  >
+    <h2
+      class="m-0 text-md font-semibold"
+      id="activity-h-2026-09-01"
+    >
+      1 בספט׳ 2026
+    </h2>
+    <ul
+      class="m-0 flex list-none flex-col gap-2 p-0"
+    >
+      <li
+        class="flex flex-wrap items-center gap-2 rounded-md border border-line bg-surface p-2"
+        data-kind="write"
+        data-testid="activity-row-33333333-3333-4333-8333-333333333333"
+        data-write-kind="create"
+      >
+        <span
+          class="flex min-w-0 grow basis-60 flex-col"
+        >
+          <bdi
+            class="msg-text font-semibold"
+            dir="auto"
+          >
+            Dentist
+          </bdi>
+          <span
+            class="text-sm text-text-muted"
+          >
+            <bdi
+              class="tnum"
+            >
+              יום ה׳, 8 באוק׳ ⁨16:00-17:00⁩
+            </bdi>
+             · 
+            נוסף
+             · 
+            <bdi
+              class="tnum"
+            >
+              12:00
+            </bdi>
+          </span>
+        </span>
+        <span
+          class="chip chip-info"
+        >
+          <span
+            aria-hidden="true"
+            class="icon icon-auto"
+          />
+          אוטומטי
+        </span>
+        <div
+          class="flex flex-wrap items-center gap-2"
+          data-door="activity"
+          data-state="expired"
+          data-testid="undo-state-activity-7"
+        >
+          <span
+            class="text-xs text-text-muted"
+          >
+            כבר אי אפשר לבטל
+          </span>
+        </div>
+      </li>
+    </ul>
+  </section>
+  <button
+    class="btn btn-quiet self-start"
+    data-testid="activity-older"
+    type="button"
+  >
+    הצגת ישנים יותר
+  </button>
+  <p
+    class="m-0 text-sm text-text-muted"
+  >
+    הרשומות נשמרות 180 יום (החלטות - 90 יום).
+  </p>
+</main>
+`;

@@ -28,6 +28,23 @@ extraResources:
           'LICENSE-LLVM-OpenMP',
         ],
     } # [R2] explicit allow-list (fetch-llama.mjs already keeps only these)
+  # [V2-W2-04] ARCH-v2 12 / B18: whisper.cpp b5130 CPU build in its OWN folder with its OWN CRT copy - ggml b5130 must never
+  # mix with llama's b10964 (smoke check 7 compares same-named DLLs of both folders). Explicit allow-list, never a *.dll glob.
+  - {
+      from: vendor/whisper/win-x64-cpu,
+      to: whisper,
+      filter:
+        [
+          'whisper-cli.exe',
+          'whisper.dll',
+          'ggml.dll',
+          'ggml-base.dll',
+          'ggml-cpu-*.dll',
+          'msvcp140.dll',
+          'vcruntime140.dll',
+          'vcruntime140_1.dll',
+        ],
+    }
   - { from: build-resources/calendar-mcp, to: calendar-mcp }
   # [W2-04] The entry above copies ONLY package.json + package-lock.json. electron-builder's copy filter
   # (app-builder-lib/out/util/filter.js: `if (relative === "node_modules") return false`) drops a matcher's ROOT

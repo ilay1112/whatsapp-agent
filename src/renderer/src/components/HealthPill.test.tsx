@@ -20,7 +20,11 @@ describe('HealthPill - pill', () => {
   it('paused overrides ok/working but not attention', () => {
     expect(pillLabelKey(health({ paused: true }))).toBe('health.paused');
     expect(pillLabelKey(health({ paused: true, overall: 'working' }))).toBe('health.paused');
-    const broken = health({ paused: true, overall: 'attention', calendar: { state: 'unavailable', since: 0 } });
+    const broken = health({
+      paused: true,
+      overall: 'attention',
+      calendar: { state: 'unavailable', since: 0, updatesAvailable: true },
+    });
     expect(pillLabelKey(broken)).toBe('health.attentionPart.calendar');
   });
 
@@ -35,7 +39,7 @@ describe('HealthPill - pill', () => {
     const two = health({
       overall: 'attention',
       whatsapp: { state: 'failed', since: 0 },
-      calendar: { state: 'unavailable', since: 0 },
+      calendar: { state: 'unavailable', since: 0, updatesAvailable: true },
     });
     expect(pillLabelKey(two)).toBe('health.attention');
   });
@@ -43,14 +47,21 @@ describe('HealthPill - pill', () => {
   it('partStatus reads one part through the frozen overall truth table', () => {
     expect(partStatus(health(), 'whatsapp')).toBe('ok');
     expect(partStatus(health({ whatsapp: { state: 'starting', since: 0 } }), 'whatsapp')).toBe('working');
-    expect(partStatus(health({ calendar: { state: 'not_configured', since: 0 } }), 'calendar')).toBe('ok');
-    expect(partStatus(health({ calendar: { state: 'port_busy', since: 0, code: 'CAL_PORT_BUSY' } }), 'calendar')).toBe(
-      'attention',
-    );
+    expect(
+      partStatus(health({ calendar: { state: 'not_configured', since: 0, updatesAvailable: true } }), 'calendar'),
+    ).toBe('ok');
+    expect(
+      partStatus(
+        health({ calendar: { state: 'port_busy', since: 0, code: 'CAL_PORT_BUSY', updatesAvailable: true } }),
+        'calendar',
+      ),
+    ).toBe('attention');
     // ERROR_SEVERITY marks CLOUD_UNAVAILABLE transient
     expect(
       partStatus(
-        health({ llm: { state: 'degraded', since: 0, provider: 'claude', model: 'x', code: 'CLOUD_UNAVAILABLE' } }),
+        health({
+          llm: { state: 'degraded', since: 0, provider: 'claude', model: 'x', code: 'CLOUD_UNAVAILABLE', quota: null },
+        }),
         'llm',
       ),
     ).toBe('working');
@@ -84,7 +95,7 @@ describe('HealthPill - status panel', () => {
     const onAction = vi.fn();
     const h = health({
       overall: 'attention',
-      calendar: { state: 'reconnect_required', since: 0, code: 'CAL_RECONNECT' },
+      calendar: { state: 'reconnect_required', since: 0, code: 'CAL_RECONNECT', updatesAvailable: true },
     });
     render(<HealthPill health={h} onAction={onAction} />);
     await userEvent.click(screen.getByTestId('health-pill'));
@@ -100,7 +111,14 @@ describe('HealthPill - status panel', () => {
 
   it('a transient code with ERROR_ACTION none offers no button', async () => {
     const h = health({
-      llm: { state: 'degraded', since: 0, provider: 'claude', model: 'claude-opus-5', code: 'CLOUD_UNAVAILABLE' },
+      llm: {
+        state: 'degraded',
+        since: 0,
+        provider: 'claude',
+        model: 'claude-opus-5',
+        code: 'CLOUD_UNAVAILABLE',
+        quota: null,
+      },
     });
     render(<HealthPill health={h} onAction={() => {}} />);
     await userEvent.click(screen.getByTestId('health-pill'));
@@ -112,7 +130,7 @@ describe('HealthPill - status panel', () => {
     const h = health({
       overall: 'working',
       whatsapp: { state: 'needs_pairing', since: 0 },
-      calendar: { state: 'not_configured', since: 0 },
+      calendar: { state: 'not_configured', since: 0, updatesAvailable: true },
     });
     render(<HealthPill health={h} onAction={onAction} />);
     await userEvent.click(screen.getByTestId('health-pill'));
@@ -134,7 +152,7 @@ describe('HealthPill - status panel', () => {
     });
     const h = health({
       overall: 'working',
-      llm: { state: 'downloading', since: 0, provider: 'local', model: 'gemma' },
+      llm: { state: 'downloading', since: 0, provider: 'local', model: 'gemma', quota: null },
     });
     render(<HealthPill health={h} onAction={() => {}} />);
     await userEvent.click(screen.getByTestId('health-pill'));

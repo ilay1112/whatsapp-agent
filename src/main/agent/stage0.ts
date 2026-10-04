@@ -25,6 +25,10 @@ export interface Stage0Input {
   isOlderLive: boolean; // live but older than LIMITS.ingestMaxAgeMs => raw card with badge 'older_message', no LLM run
   hasOpenItem: boolean;
   nowMs: EpochMs;
+  /** [V2-W1-07, F28 - optional, additive] ingest found the user's OWN text row (not an app send) in a chat whose findExistingEvent() is
+   *  non-null: step 1 waives ONLY its from_me rule for a self-trigger candidate (text row, DM, not deleted, not a reaction, non-empty);
+   *  every later gate (backlog, policy, pause, provider/consent, budgets, edit-lock) applies unchanged. Absent => v1 (from_me drops). */
+  selfTrigger?: boolean;
 }
 export type Stage0Verdict =
   | { kind: 'drop' } // own message / reaction / deleted / empty / media without text / policy 'never'
@@ -47,6 +51,9 @@ export interface Stage0Deps {
    */
   budgets: { llmRunsPerChatPerHour: number; llmRunsGlobalPerHour: number; cloudDailyTokenBudget: () => number };
   now: () => EpochMs;
+  /** [V2-W1-07 refinement - optional, additive; REQUESTS -> V2-W2-01] true when the resolved voice tier's model AND the VAD file are
+   *  ready (ModelManager). Absent => false: a voice note is a held raw card, never a whisper job (fail closed, P2 2 item 1). */
+  voiceReady?: () => boolean;
 }
 
 const HOUR_MS = 3_600_000;
@@ -54,10 +61,20 @@ const HOUR_MS = 3_600_000;
 /** Consent record a cloud provider needs before ANY of the user's message text may leave the machine (ARCHITECTURE 6.1 step 5). */
 const CLOUD_CONSENT = { claude: 'cloud_claude', gemini: 'cloud_gemini' } as const;
 
-/** Structural "never a trigger" facts of ARCHITECTURE 6.1 step 1 / PIPELINE 1.3. Pure; the text is only measured, never read. */
+/** Structural "never a trigger" facts of ARCHITECTURE 6.1 step 1 / PIPELINE 1.3. Pure; the text is only measured, never read.
+ *  [V2] P2 2: an inbound audio (voice note) or image row is NOT "empty" although its content is '' - S0 decides below by settings.
+ *  video / document / sticker keep the v1 rule (a caption may trigger; no caption = context only). */
 export function isNeverTriggerRow(m: Message): boolean {
   const isDm = DM_PHONE_JID_RE.test(m.chatJid) || DM_LID_JID_RE.test(m.chatJid);
-  return !isDm || m.fromMe || m.deleted || m.mediaType === 'reaction' || m.text.trim() === '';
+  const voiceOrImage = m.mediaType === 'audio' || m.mediaType === 'image';
+  return !isDm || m.fromMe || m.deleted || m.mediaType === 'reaction' || (m.text.trim() === '' && !voiceOrImage);
+}
+
+/** [V2-W1-07, F28 / P2 2 item 5] A row that may be a SELF trigger: the user's own non-empty TEXT row in a DM (no media, not deleted, not a
+ *  reaction). A from_me voice row is not a candidate at ingest time: its transcript can only exist after V0, which runs inside runChat. */
+export function isSelfTriggerCandidate(m: Message): boolean {
+  const isDm = DM_PHONE_JID_RE.test(m.chatJid) || DM_LID_JID_RE.test(m.chatJid);
+  return isDm && m.fromMe && !m.deleted && m.mediaType === '' && m.text.trim() !== '';
 }
 
 /** Gate order of PIPELINE section 3. Pure given its deps. */
@@ -68,7 +85,9 @@ export function createStage0(deps: Stage0Deps): Stage0Fn {
     const now = Number.isFinite(input.nowMs) ? input.nowMs : deps.now();
 
     // 1. Non-DM / reaction / empty / deleted / from_me - never a trigger (ingest already filters these; S0 re-checks).
-    if (isNeverTriggerRow(input.message)) return { kind: 'drop' };
+    // [V2, F28] ... except the self-trigger candidate ingest flagged (only the from_me rule is waived; the rest of the gates follow).
+    const selfCandidate = input.selfTrigger === true && isSelfTriggerCandidate(input.message);
+    if (isNeverTriggerRow(input.message) && !selfCandidate) return { kind: 'drop' };
 
     // 2. Backlog - stored as context for the window, never a trigger.
     if (!input.isLive) return { kind: 'context_only' };
@@ -76,6 +95,11 @@ export function createStage0(deps: Stage0Deps): Stage0Fn {
     // The policy / known flags are re-read from the DB: the caller's snapshot may predate a "never" or "Analyse this chat" click.
     const chat: Chat = repos.chats.byId(input.chat.id) ?? input.chat;
     const cfg = settings();
+
+    // [V2] 2b. A picture without a caption triggers only while pictures are on (P2 2 item 2; the sniff happens later in V1 - S0 never
+    // fetches bytes). Off => context only, exactly like v1.
+    if (input.message.mediaType === 'image' && input.message.text.trim() === '' && !cfg.images.enabled)
+      return { kind: 'context_only' };
 
     // 3. Chat policy 'never' - no item at all. ([R2] the 'local_only' policy is cut from v1.)
     if (chat.policy === 'never') return { kind: 'no_item' };
@@ -105,6 +129,13 @@ export function createStage0(deps: Stage0Deps): Stage0Fn {
     }
     // `cloudDailyTokenBudget()` is the allowance LEFT for today (see ops/agent-notes/W1-10-agent-pipeline.md, REQUESTS -> W2-01).
     if (consentKind !== undefined && budgets.cloudDailyTokenBudget() <= 0) return { kind: 'held', reason: 'budget' };
+
+    // [V2] 5d. A voice note is a live trigger only when voice is on AND its model + VAD are ready; otherwise a held raw card "Voice message"
+    // with the download / "Turn on in Settings" action (P2 2 item 1). The earlier gates (stranger, pause, provider, budgets) already ran,
+    // so a stranger's voice note never costs a whisper job.
+    if (input.message.mediaType === 'audio' && (!cfg.voice.enabled || !(deps.voiceReady?.() ?? false))) {
+      return { kind: 'held', reason: 'waiting_llm' };
+    }
 
     // 6. Edit-lock: the user is typing in the card, so its shownHash must stay valid - defer, never drop.
     if (input.hasOpenItem) {

@@ -13,6 +13,11 @@
 // the run order is free, and regeneration never needs the network: the llama.cpp MIT text is read from the committed
 // `resources/licenses/llama.cpp-MIT.txt`.
 //
+// [V2-W2-04] v2 adds sections 9-13 (ARCH-v2 12): whisper.cpp MIT, the opus-decoder chain, libopus BSD-3 with its patent
+// paragraph (committed as resources/licenses/libopus-BSD-3.txt), the speech models (ivrit-ai Apache-2.0, OpenAI Whisper
+// MIT, Silero VAD MIT - downloaded, not redistributed) and the calendar-mcp modification notice. `NOTICE_ANCHORS_V2`
+// is what the packaged smoke (check 12) looks for.
+//
 // Everything is pure except `main()`: `buildNotices()` takes plain data and returns the file text.
 // No binary is executed, no network call is made, nothing outside `resources/licenses/` is written.
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
@@ -29,6 +34,132 @@ export const BRIDGE_LICENSE_PATH = join(REPO_ROOT, 'resources', 'bridge', 'LICEN
 
 /** The three CRT files of ARCH section 9; listed in the notices ONLY when they were actually staged. */
 export const CRT_FILES = ['msvcp140.dll', 'vcruntime140.dll', 'vcruntime140_1.dll'];
+
+// ---- [V2-W2-04] v2 notices (ARCH-v2 12 THIRD_PARTY_NOTICES row, T2 11 check 12) -------------------------------------
+export const WHISPER_MIT_PATH = join(REPO_ROOT, 'resources', 'licenses', 'whisper.cpp-MIT.txt');
+/** Committed: libopus is compiled into opus-decoder's embedded WASM and the npm package ships no copy of its licence. */
+export const LIBOPUS_LICENSE_PATH = join(REPO_ROOT, 'resources', 'licenses', 'libopus-BSD-3.txt');
+/** The decoder chain of B18, in the order the notices list it. */
+export const DECODER_CHAIN = ['opus-decoder', '@wasm-audio-decoders/common', 'simple-yenc', '@eshaz/web-worker'];
+
+/**
+ * String anchors the packaged smoke (check 12) requires in THIRD_PARTY_NOTICES.txt - one per v2 notice of ARCH-v2 12.
+ * Changing a heading below without changing its anchor here fails both the unit test and the smoke.
+ */
+export const NOTICE_ANCHORS_V2 = {
+  whisperCpp: 'whisper.cpp b5130 - Windows x64 CPU build  (MIT)',
+  opusDecoderChain: 'Voice-note decoder chain - opus-decoder@0.7.12 and its dependencies',
+  libopus: 'libopus - the Opus reference decoder, compiled to WebAssembly inside opus-decoder  (BSD-3-Clause)',
+  libopusPatent: 'Opus is subject to the royalty-free patent licenses',
+  ivritAi: 'ivrit-ai/whisper-large-v3-turbo-ggml  (Apache-2.0)',
+  openaiWhisper: 'OpenAI Whisper model weights  (MIT)',
+  sileroVad: 'Silero VAD  (MIT)',
+  calendarPatch: 'MODIFICATION NOTICE - @cocal/google-calendar-mcp',
+};
+
+/** Lockfile rows of the decoder chain (root-level entries), in DECODER_CHAIN order; a missing one is reported, never skipped. */
+export function decoderChainFrom(lock) {
+  return DECODER_CHAIN.map((name) => {
+    const row = lock.packages?.[`node_modules/${name}`];
+    return { name, version: row?.version ?? 'MISSING', license: row?.license ?? 'MISSING' };
+  });
+}
+
+/**
+ * The v2 sections (9-13), pure.
+ * @param {object} v2
+ * @param {string} v2.whisperTag   e.g. `b5130`
+ * @param {string} v2.whisperUrl   the pinned release asset URL
+ * @param {string} v2.whisperMit   the MIT text of the pinned whisper.cpp tag (resources/licenses/whisper.cpp-MIT.txt)
+ * @param {string[]} v2.whisperCrt CRT file names staged next to whisper-cli.exe (may be empty)
+ * @param {{name,version,license}[]} v2.decoder  the four packages of DECODER_CHAIN
+ * @param {string} v2.libopusLicense the libopus BSD-3 text incl. the patent paragraph
+ * @param {{ version: string, unpatchedSha: string, patchedSha: string, insertions: {id:number,name:string}[] }} v2.calendarPatch
+ */
+export function buildV2Sections(v2) {
+  const out = [];
+  out.push(section(`9. ${NOTICE_ANCHORS_V2.whisperCpp.replace('b5130', v2.whisperTag)}`));
+  out.push(
+    [
+      'Shipped at: resources\\whisper\\ (whisper-cli.exe, whisper.dll, ggml.dll, ggml-base.dll and the CPU-dispatched',
+      'ggml-cpu-*.dll set of the pinned release; its own folder - it never shares a DLL with resources\\llama\\)',
+      `Source of the binaries: ${v2.whisperUrl}`,
+      'Project: https://github.com/ggml-org/whisper.cpp',
+      v2.whisperCrt.length > 0
+        ? `Its own copy of the Microsoft VC++ runtime (${v2.whisperCrt.join(', ')}) is shipped beside it under the terms of section 4.`
+        : 'The Microsoft VC++ runtime is NOT shipped beside it in this build (see section 4; the app reports LLM_VCREDIST_MISSING).',
+      '',
+      v2.whisperMit.trim(),
+      '',
+    ].join('\n'),
+  );
+
+  out.push(section(`10. ${NOTICE_ANCHORS_V2.opusDecoderChain}`));
+  out.push(
+    [
+      'Used to turn WhatsApp voice notes (Ogg Opus) into audio for the local transcriber. Plain JavaScript inside',
+      'app.asar; the WebAssembly is embedded in the JavaScript as a string (no .wasm file, no native addon).',
+      ...v2.decoder.map((d) => `  ${d.name}@${d.version}  -  ${d.license}`),
+      'Each of these packages carries its own licence text inside app.asar under node_modules/<name>/ where its',
+      'author ships one; the Apache-2.0 text is at https://www.apache.org/licenses/LICENSE-2.0',
+      '',
+    ].join('\n'),
+  );
+
+  out.push(section(`11. ${NOTICE_ANCHORS_V2.libopus}`));
+  out.push(
+    [
+      'Project: https://opus-codec.org/  (licence: https://opus-codec.org/license/)',
+      'The libopus licence, reproduced from the COPYING file of the libopus source distribution:',
+      '',
+      v2.libopusLicense.trim(),
+      '',
+    ].join('\n'),
+  );
+
+  out.push(section('12. Speech-recognition models  (downloaded by the user, not redistributed here)'));
+  out.push(
+    [
+      'No speech model is contained in this installer. When the user turns on voice notes, the application',
+      'downloads the chosen file from Hugging Face over HTTPS, pinned by commit, size and SHA-256:',
+      '',
+      `${NOTICE_ANCHORS_V2.ivritAi}`,
+      '  Hebrew tier: ggml-model.bin - https://huggingface.co/ivrit-ai/whisper-large-v3-turbo-ggml',
+      '  Apache License 2.0: https://www.apache.org/licenses/LICENSE-2.0',
+      '',
+      `${NOTICE_ANCHORS_V2.openaiWhisper}`,
+      '  Multilingual and Lite tiers: ggml conversions of OpenAI Whisper (large-v3-turbo q8_0, small q8_0)',
+      '  published at https://huggingface.co/ggerganov/whisper.cpp ; Whisper: https://github.com/openai/whisper',
+      '  (MIT License, Copyright (c) 2022 OpenAI).',
+      '',
+      `${NOTICE_ANCHORS_V2.sileroVad}`,
+      '  Voice-activity model ggml-silero-v6.2.0.bin - https://huggingface.co/ggml-org/whisper-vad ;',
+      '  Silero VAD: https://github.com/snakers4/silero-vad (MIT License).',
+      '',
+      'The picture projectors (mmproj-F16.gguf of the three Gemma tiers) are downloaded on demand under the',
+      'Gemma terms of section 6, like the language models themselves.',
+      'Model files live in the user profile and are never bundled or re-distributed by this application.',
+      '',
+    ].join('\n'),
+  );
+
+  out.push(section(`13. ${NOTICE_ANCHORS_V2.calendarPatch} ${v2.calendarPatch.version}`));
+  out.push(
+    [
+      `The file resources\\calendar-mcp\\node_modules\\@cocal\\google-calendar-mcp\\build\\index.js is a MODIFIED copy`,
+      `of the published @cocal/google-calendar-mcp ${v2.calendarPatch.version} bundle (MIT, see section 5; the licence`,
+      'text ships unchanged beside it as LICENSE). The build applies exactly these insertions and nothing else, only',
+      'to the byte-identical published bundle:',
+      ...v2.calendarPatch.insertions.map((i) => `  (${String(i.id)}) ${i.name}`),
+      `SHA-256 of the published bundle: ${v2.calendarPatch.unpatchedSha}`,
+      `SHA-256 of the shipped, modified bundle: ${v2.calendarPatch.patchedSha}`,
+      'Purpose: let the application change or cancel an event it created itself, with an If-Match guard, and never',
+      'delete one. The insertions are recorded in vendor/calendar-mcp.patch.json of the application source.',
+      '',
+    ].join('\n'),
+  );
+  return out;
+}
 
 /**
  * Production npm packages, from the root lockfile: every `node_modules/**` entry that is not `dev`.
@@ -196,6 +327,8 @@ export function buildNotices(input) {
     ].join('\n'),
   );
 
+  if (input.v2 !== undefined) out.push(...buildV2Sections(input.v2));
+
   out.push(section('END OF THIRD PARTY NOTICES'));
   return `${out.join('\n')}`;
 }
@@ -224,8 +357,45 @@ export function main(io = { out: process.stdout, err: process.stderr }) {
     );
     return 1;
   }
+  // [V2-W2-04] the v2 inputs: every one is required - a missing file fails the regeneration instead of silently
+  // dropping a notice (smoke check 12 would fail on the packaged file anyway).
+  for (const [path, fix] of [
+    [WHISPER_MIT_PATH, 'run `npm run fetch:whisper` (it writes the MIT text of the pinned tag)'],
+    [LIBOPUS_LICENSE_PATH, 'it is committed; restore it from git'],
+  ]) {
+    if (!existsSync(path)) {
+      io.err.write(`notices: FAIL - ${path} is missing - ${fix}.\n`);
+      return 1;
+    }
+  }
+  const whisperPin = JSON.parse(readFileSync(join(REPO_ROOT, 'vendor', 'whisper.pin.json'), 'utf8'));
+  const whisperManifest = join(REPO_ROOT, 'vendor', 'whisper', 'MANIFEST.txt');
+  const calPin = JSON.parse(readFileSync(join(REPO_ROOT, 'vendor', 'calendar-mcp.pin.json'), 'utf8'));
+  const calPatch = JSON.parse(readFileSync(join(REPO_ROOT, 'vendor', 'calendar-mcp.patch.json'), 'utf8'));
+  const decoder = decoderChainFrom(lock);
+  const missingDecoder = decoder.filter((d) => d.version === 'MISSING');
+  if (missingDecoder.length > 0) {
+    io.err.write(
+      `notices: FAIL - package-lock.json has no root entry for ${missingDecoder.map((d) => d.name).join(', ')}.\n`,
+    );
+    return 1;
+  }
 
   const text = buildNotices({
+    v2: {
+      whisperTag: whisperPin.whisper.tag,
+      whisperUrl: whisperPin.whisper.url,
+      whisperMit: readFileSync(WHISPER_MIT_PATH, 'utf8'),
+      whisperCrt: existsSync(whisperManifest) ? stagedCrtFrom(readFileSync(whisperManifest, 'utf8')) : [],
+      decoder,
+      libopusLicense: readFileSync(LIBOPUS_LICENSE_PATH, 'utf8'),
+      calendarPatch: {
+        version: calPin.version,
+        unpatchedSha: calPin.bundleSha256Unpatched,
+        patchedSha: calPin.bundleSha256Patched,
+        insertions: calPatch.insertions.map((i) => ({ id: i.id, name: i.name })),
+      },
+    },
     llamaTag: pin.llama.tag,
     llamaUrl: pin.llama.url,
     llamaMit: readFileSync(LLAMA_MIT_PATH, 'utf8'),

@@ -20,3 +20,10 @@ export const SCREENS_DIR = join(TEST_RESULTS_DIR, 'screens');
 export const FAKE_BRIDGE_TS = join(REPO_ROOT, 'tests', 'fakes', 'fake-bridge.ts');
 export const FAKE_MCP_TS = join(REPO_ROOT, 'tests', 'fakes', 'fake-mcp-calendar.ts');
 export const FAKE_LLAMA_TS = join(REPO_ROOT, 'tests', 'fakes', 'fake-llama-server.ts');
+
+// ---- [V2] T2 10.0: the spawnable job fakes (started by the APP through WCA_CLI_CMD / WCA_WHISPER_CMD with the system node.exe;
+// `readSeams` drops any entry whose script is not directly under <appPath>\tests\fakes\ or whose last argument is not --fake-end).
+export const FAKES_DIR = join(REPO_ROOT, 'tests', 'fakes');
+export const FAKE_CLAUDE_CLI_MJS = join(FAKES_DIR, 'fake-claude-cli.mjs');
+export const FAKE_AGY_MJS = join(FAKES_DIR, 'fake-agy.mjs');
+export const FAKE_WHISPER_MJS = join(FAKES_DIR, 'whisper-cli.mjs');

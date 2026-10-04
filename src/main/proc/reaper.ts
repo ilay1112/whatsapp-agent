@@ -6,6 +6,7 @@ import path from 'node:path';
 import type { ProcessInfo, ProcessQuery, SpawnFn } from '../deps';
 import type { EpochMs } from '../../shared/types';
 import { isChildName, isSamePath, parsePidFile, taskkillArgs } from './supervisor';
+import { jobKindOfPidFile } from './jobRunner';
 import type { ChildName } from './supervisor';
 
 const PID_FILE_SUFFIX = '.pid.json';
@@ -104,6 +105,9 @@ export interface ReapDeps {
   execPath?: string | readonly string[];
   log?: (event: string, meta: Record<string, string | number>) => void;
   toleranceMs?: number;
+  /** [V2 ADD] C2 13 reapOrphansV2 third parameter, carried in deps so every v1 caller keeps compiling (W0 refinement): the
+   *  locator-resolved CLI exe paths of meta.cli_exe_paths_json. Job pid files (job-<kind>-<uuid>.pid.json) are V2-W1-06's. */
+  acceptedCliExePaths?: readonly string[];
 }
 
 function matches(info: ProcessInfo, file: { exePath: string; startedAt: EpochMs }, toleranceMs: number): boolean {
@@ -116,13 +120,13 @@ export async function reapOrphans(
   runDir: string,
   ownResourcesDir: string | readonly string[],
   deps: ReapDeps = {},
-): Promise<{ killed: ChildName[]; stalePidFiles: number }> {
+): Promise<{ killed: Array<ChildName | 'job-voice' | 'job-cli'>; stalePidFiles: number }> {
   const execPath = deps.execPath ?? process.execPath;
   const log = deps.log ?? ((): void => {});
   const toleranceMs = deps.toleranceMs ?? CREATION_TOLERANCE_MS;
   const query = deps.processQuery ?? createWindowsProcessQuery({ spawn: deps.spawn });
 
-  const killed: ChildName[] = [];
+  const killed: Array<ChildName | 'job-voice' | 'job-cli'> = [];
   let stalePidFiles = 0;
 
   let files: string[];
@@ -154,8 +158,14 @@ export async function reapOrphans(
     }
 
     // [R2] parsePidFile FIRST: a rejected file is discarded and nothing is spawned, queried or killed.
-    const parsed = parsePidFile(text, ownResourcesDir, execPath);
-    if (parsed === null || !isChildName(name)) {
+    // [V2, B31] job pid files are routed by kind: a CLI job is accepted ONLY with an exePath exactly equal to a recorded
+    // locator-resolved CLI path; a voice job (whisper) and the three children only under our roots / the execPath list.
+    const jobKind = jobKindOfPidFile(file);
+    const parsed =
+      jobKind === 'cli'
+        ? parsePidFile(text, [], [], deps.acceptedCliExePaths ?? [])
+        : parsePidFile(text, ownResourcesDir, execPath, []);
+    if (parsed === null || (jobKind === null && !isChildName(name))) {
       stalePidFiles += 1;
       log('reaper_pidfile_rejected', { file: name });
       discard(full);
@@ -172,7 +182,7 @@ export async function reapOrphans(
 
     log('reaper_kill', { name, pid: parsed.pid });
     await query.kill(parsed.pid, true); // taskkill /PID <pid> /T /F - never /IM
-    killed.push(name);
+    killed.push(jobKind === null ? (name as ChildName) : (`job-${jobKind}` as const));
     discard(full);
   }
 

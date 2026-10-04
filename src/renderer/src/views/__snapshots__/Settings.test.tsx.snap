@@ -52,6 +52,15 @@ exports[`Settings - RTL > RTL snapshot 1`] = `
       <li>
         <button
           class="btn btn-quiet"
+          data-testid="settings-nav-auto"
+          type="button"
+        >
+          מצב אוטומטי
+        </button>
+      </li>
+      <li>
+        <button
+          class="btn btn-quiet"
           data-testid="settings-nav-rules"
           type="button"
         >
@@ -110,7 +119,7 @@ exports[`Settings - RTL > RTL snapshot 1`] = `
         data-testid="settings-row-language"
       >
         <div
-          class="flex min-w-60 grow flex-col"
+          class="flex min-w-60 grow basis-60 flex-col"
         >
           <span
             class="font-semibold"
@@ -177,7 +186,7 @@ exports[`Settings - RTL > RTL snapshot 1`] = `
         data-testid="settings-row-autostart"
       >
         <div
-          class="flex min-w-60 grow flex-col"
+          class="flex min-w-60 grow basis-60 flex-col"
         >
           <span
             class="font-semibold"
@@ -213,7 +222,7 @@ exports[`Settings - RTL > RTL snapshot 1`] = `
         data-testid="settings-row-notifications"
       >
         <div
-          class="flex min-w-60 grow flex-col"
+          class="flex min-w-60 grow basis-60 flex-col"
         >
           <label
             class="font-semibold"
@@ -225,6 +234,8 @@ exports[`Settings - RTL > RTL snapshot 1`] = `
             class="text-sm text-text-muted"
           >
             התראה לעולם אינה מכילה טקסט של הודעה.
+            <br />
+            שינויים אוטומטיים ביומן תמיד מציגים התראה, גם כשזה כבוי.
           </span>
         </div>
         <div
@@ -253,7 +264,7 @@ exports[`Settings - RTL > RTL snapshot 1`] = `
         data-testid="settings-row-timezone"
       >
         <div
-          class="flex min-w-60 grow flex-col"
+          class="flex min-w-60 grow basis-60 flex-col"
         >
           <span
             class="font-semibold"
@@ -276,7 +287,7 @@ exports[`Settings - RTL > RTL snapshot 1`] = `
         data-testid="settings-row-pause"
       >
         <div
-          class="flex min-w-60 grow flex-col"
+          class="flex min-w-60 grow basis-60 flex-col"
         >
           <span
             class="font-semibold"
@@ -424,28 +435,29 @@ exports[`Settings - RTL > RTL snapshot 1`] = `
           </div>
           <div
             class="flex flex-col gap-2 rounded-md p-3 border border-line bg-surface"
+            data-active="0"
             data-selected="0"
-            data-testid="ai-card-claude"
+            data-testid="ai-card-claude_cli"
           >
             <label
               class="flex items-start gap-2"
             >
               <input
-                data-testid="choose-ai-claude"
+                data-testid="choose-ai-claude_cli"
                 name="ai-provider"
                 type="radio"
-                value="claude"
+                value="claude_cli"
               />
               <span
                 class="grow font-semibold"
               >
-                Claude (בענן)
+                Claude - המנוי שלך
               </span>
             </label>
             <p
               class="m-0 text-text-muted"
             >
-              מהיר וחזק. השיחה שמנותחת נשלחת אל Anthropic.
+              משתמש במנוי Claude שכבר יש לך, דרך Claude Code שהתקנת. בלי מפתח API.
             </p>
             <p
               class="m-0 flex items-start gap-2 text-sm text-text-muted"
@@ -471,72 +483,162 @@ exports[`Settings - RTL > RTL snapshot 1`] = `
                 />
               </svg>
               <span>
-                השיחה שמנותחת נשלחת אל חברת Anthropic - בלי שמות ובלי מספרי טלפון.
+                השיחה שמנותחת נשלחת אל Anthropic דרך החשבון שלך - בלי שמות ובלי מספרי טלפון.
               </span>
             </p>
+            <section
+              class="flex flex-col gap-2"
+              data-selected="false"
+              data-size="full"
+              data-state="not_installed"
+              data-testid="connect-claude_cli"
+            >
+              <div
+                class="flex flex-wrap items-center gap-2"
+              >
+                <span
+                  aria-hidden="true"
+                  class="icon icon-terminal text-warn"
+                />
+                <span
+                  class="grow"
+                  data-testid="connect-state-claude_cli"
+                  role="status"
+                >
+                  Claude Code לא מותקן במחשב הזה.
+                </span>
+              </div>
+              <p
+                class="m-0 text-sm"
+              >
+                הריצו את הפקודה ב-PowerShell וחזרו לכאן:
+              </p>
+              <div
+                class="flex flex-wrap items-center gap-2"
+              >
+                <input
+                  aria-label="פקודת התקנה / פקודת עדכון"
+                  class="field command-field min-w-0 grow basis-60"
+                  data-testid="connect-command-claude_cli"
+                  dir="ltr"
+                  readonly=""
+                  value="irm https://claude.ai/install.ps1 | iex"
+                />
+                <button
+                  class="btn btn-primary"
+                  data-testid="connect-copy-claude_cli"
+                  type="button"
+                >
+                  העתקת הפקודה
+                </button>
+              </div>
+              <div
+                class="flex flex-wrap items-center gap-2"
+              >
+                <span
+                  class="grow text-sm text-text-muted"
+                >
+                  האפליקציה אף פעם לא מתקינה דבר בעצמה.
+                </span>
+                <button
+                  class="btn btn-quiet"
+                  data-testid="connect-open-install-claude_cli"
+                  type="button"
+                >
+                  פתיחת דף ההתקנה
+                </button>
+                <button
+                  class="btn btn-quiet"
+                  data-testid="connect-check-claude_cli"
+                  type="button"
+                >
+                  בדיקה חוזרת
+                </button>
+                <span
+                  class="text-xs text-text-muted"
+                  data-testid="connect-checked-claude_cli"
+                >
+                  נבדק זה עתה
+                </span>
+              </div>
+              <div
+                class="flex flex-col items-start gap-1"
+              >
+                <button
+                  aria-describedby="ai-use-why-claude_cli"
+                  class="btn btn-outline"
+                  data-testid="ai-use-claude_cli"
+                  disabled=""
+                  type="button"
+                >
+                  שימוש ב-Claude - המנוי שלך
+                </button>
+                <span
+                  class="text-xs text-text-muted"
+                  id="ai-use-why-claude_cli"
+                >
+                  קודם צריך להשלים את השלבים שלמעלה
+                </span>
+              </div>
+            </section>
           </div>
-          <div
-            class="flex flex-col gap-2 rounded-md p-3 border border-line bg-surface"
-            data-selected="0"
-            data-testid="ai-card-gemini"
+          <button
+            aria-controls="ai-experimental-cards"
+            aria-expanded="false"
+            class="btn btn-quiet self-start"
+            data-testid="ai-show-experimental"
+            type="button"
           >
-            <label
-              class="flex items-start gap-2"
+            <span
+              aria-hidden="true"
+              class="icon-dir inline-block"
             >
-              <input
-                data-testid="choose-ai-gemini"
-                name="ai-provider"
-                type="radio"
-                value="gemini"
-              />
-              <span
-                class="grow font-semibold"
-              >
-                Gemini (בענן)
-              </span>
-            </label>
-            <p
-              class="m-0 text-text-muted"
+              ›
+            </span>
+            הצגת אפשרויות ניסיוניות
+          </button>
+          <button
+            aria-controls="ai-advanced-cards"
+            aria-expanded="false"
+            class="btn btn-quiet self-start"
+            data-testid="ai-advanced"
+            type="button"
+          >
+            <span
+              aria-hidden="true"
+              class="icon-dir inline-block"
             >
-              מהיר, ויש מסלול חינמי. השיחה שמנותחת נשלחת אל Google.
-            </p>
-            <p
-              class="m-0 flex items-start gap-2 text-sm text-text-muted"
-            >
-              <svg
-                aria-hidden="true"
-                class="shrink-0"
-                fill="none"
-                height="16"
-                stroke="currentColor"
-                stroke-width="1.5"
-                viewBox="0 0 16 16"
-                width="16"
-              >
-                <path
-                  d="M8 1.8 3.2 3.6v4.1c0 3 2 5.1 4.8 6.5 2.8-1.4 4.8-3.5 4.8-6.5V3.6L8 1.8Z"
-                  stroke-linejoin="round"
-                />
-                <path
-                  d="m5.9 7.9 1.5 1.6 2.9-3.1"
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                />
-              </svg>
-              <span>
-                השיחה שמנותחת נשלחת אל חברת Google - בלי שמות ובלי מספרי טלפון.
-                 במסלול החינמי ייתכן ש-Google תשתמש בטקסט שלכם כדי לשפר את המודלים שלה.
-              </span>
-            </p>
-          </div>
+              ›
+            </span>
+            מתקדם: שימוש במפתח API
+          </button>
         </div>
+      </div>
+      <div
+        class="flex flex-col gap-1"
+      >
+        <button
+          aria-controls="settings-cli-limits-body"
+          aria-expanded="false"
+          class="btn btn-quiet self-start"
+          data-testid="settings-cli-limits"
+          type="button"
+        >
+          <span
+            aria-hidden="true"
+            class="icon-dir inline-block"
+          >
+            ›
+          </span>
+          מגבלות שימוש
+        </button>
       </div>
       <div
         class="flex flex-wrap items-center gap-3 border-b border-line py-3 last:border-b-0"
         data-testid="settings-row-acceleration"
       >
         <div
-          class="flex min-w-60 grow flex-col"
+          class="flex min-w-60 grow basis-60 flex-col"
         >
           <label
             class="font-semibold"
@@ -571,7 +673,7 @@ exports[`Settings - RTL > RTL snapshot 1`] = `
         data-testid="settings-row-speed"
       >
         <div
-          class="flex min-w-60 grow flex-col"
+          class="flex min-w-60 grow basis-60 flex-col"
         >
           <span
             class="font-semibold"
@@ -608,13 +710,13 @@ exports[`Settings - RTL > RTL snapshot 1`] = `
         data-testid="settings-row-budget"
       >
         <div
-          class="flex min-w-60 grow flex-col"
+          class="flex min-w-60 grow basis-60 flex-col"
         >
           <label
             class="font-semibold"
             for="settings-budget"
           >
-            תקציב ענן יומי
+            תקציב ענן יומי (למפתחות API בלבד)
           </label>
         </div>
         <div
@@ -638,6 +740,215 @@ exports[`Settings - RTL > RTL snapshot 1`] = `
           </span>
         </div>
       </div>
+      <section
+        aria-labelledby="settings-h-voice"
+        class="flex flex-col gap-1 border-t border-line pt-3"
+        data-testid="settings-voice"
+      >
+        <h3
+          class="m-0 text-base font-semibold"
+          id="settings-h-voice"
+        >
+          הודעות קוליות
+        </h3>
+        <p
+          class="m-0 text-sm text-text-muted"
+        >
+          הודעות קוליות מתומללות תמיד במחשב הזה. שום דבר לא נשלח.
+        </p>
+        <div
+          aria-labelledby="settings-h-voice"
+          class="flex flex-col gap-1"
+          role="radiogroup"
+        >
+          <div
+            class="flex flex-wrap items-center gap-2"
+          >
+            <label
+              class="flex grow basis-60 items-center gap-2"
+            >
+              <input
+                checked=""
+                data-testid="settings-voice-off"
+                name="settings-voice"
+                type="radio"
+                value="off"
+              />
+              <span>
+                כבוי
+              </span>
+            </label>
+          </div>
+          <div
+            class="flex flex-wrap items-center gap-2"
+          >
+            <label
+              class="flex grow basis-60 items-center gap-2"
+            >
+              <input
+                data-testid="settings-voice-voice-hebrew"
+                name="settings-voice"
+                type="radio"
+                value="voice-hebrew"
+              />
+              <span>
+                מותאם לעברית (מומלץ)
+              </span>
+            </label>
+          </div>
+          <div
+            class="flex flex-wrap items-center gap-2"
+          >
+            <label
+              class="flex grow basis-60 items-center gap-2"
+            >
+              <input
+                data-testid="settings-voice-voice-multilingual"
+                name="settings-voice"
+                type="radio"
+                value="voice-multilingual"
+              />
+              <span>
+                כל שפה, בזיהוי אוטומטי
+              </span>
+            </label>
+          </div>
+          <div
+            class="flex flex-wrap items-center gap-2"
+          >
+            <label
+              class="flex grow basis-60 items-center gap-2"
+            >
+              <input
+                data-testid="settings-voice-voice-lite"
+                name="settings-voice"
+                type="radio"
+                value="voice-lite"
+              />
+              <span>
+                קל - מהיר יותר, מדויק פחות
+              </span>
+            </label>
+          </div>
+        </div>
+        <div
+          class="flex flex-wrap items-center gap-2"
+        >
+          <span
+            class="grow text-sm"
+            data-testid="settings-voice-bench"
+          >
+            מהירות במחשב הזה: עדיין לא נמדדה
+          </span>
+          <button
+            class="btn btn-outline"
+            data-testid="settings-voice-test"
+            type="button"
+          >
+            בדיקה
+          </button>
+        </div>
+        <p
+          class="m-0 text-sm text-text-muted"
+        >
+          הודעות ארוכות מ-15 דקות לא מתומללות.
+        </p>
+      </section>
+      <section
+        aria-labelledby="settings-h-images"
+        class="flex flex-col gap-1 border-t border-line pt-3"
+        data-testid="settings-images"
+      >
+        <h3
+          class="m-0 text-base font-semibold"
+          id="settings-h-images"
+        >
+          תמונות
+        </h3>
+        <div
+          class="flex flex-wrap items-center gap-3 border-b border-line py-3 last:border-b-0"
+          data-testid="settings-row-images-enabled"
+        >
+          <div
+            class="flex min-w-60 grow basis-60 flex-col"
+          >
+            <span
+              class="font-semibold"
+              id="row-images-enabled"
+            >
+              קריאת תמונות
+            </span>
+            <span
+              class="text-sm text-text-muted"
+            >
+              תאריכים ומקומות שכתובים בתמונה (הזמנה, מודעה) הופכים להצעות לאירוע. מה שנקרא תמיד מוצג בכרטיס.
+            </span>
+          </div>
+          <div
+            class="flex flex-wrap items-center gap-2"
+          >
+            <button
+              aria-checked="true"
+              aria-labelledby="row-images-enabled"
+              class="switch"
+              data-testid="settings-images-enabled"
+              role="switch"
+              type="button"
+            >
+              <span
+                class="switch-thumb"
+              >
+                <svg
+                  aria-hidden="true"
+                  class="shrink-0"
+                  fill="none"
+                  height="12"
+                  stroke="currentColor"
+                  stroke-width="1.75"
+                  viewBox="0 0 16 16"
+                  width="12"
+                >
+                  <path
+                    d="m3.2 8.4 3.2 3.3 6.4-7"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  />
+                </svg>
+              </span>
+            </button>
+          </div>
+        </div>
+        <div
+          class="flex flex-wrap items-center gap-3 border-b border-line py-3 last:border-b-0"
+          data-testid="settings-row-images-local"
+        >
+          <div
+            class="flex min-w-60 grow basis-60 flex-col"
+          >
+            <span
+              class="font-semibold"
+            >
+              קריאת תמונות במחשב הזה
+            </span>
+            <span
+              class="text-sm text-text-muted"
+            >
+              משמשת כשהבינה בענן לא קוראת תמונות. יורדת רק כשמבקשים.
+            </span>
+          </div>
+          <div
+            class="flex flex-wrap items-center gap-2"
+          >
+            <span
+              class="text-sm"
+              data-status="unknown"
+              data-testid="settings-images-local-status"
+            >
+              לא הורד
+            </span>
+          </div>
+        </div>
+      </section>
     </section>
     <section
       aria-labelledby="settings-h-whatsapp"
@@ -656,7 +967,7 @@ exports[`Settings - RTL > RTL snapshot 1`] = `
         data-testid="settings-row-wa-status"
       >
         <div
-          class="flex min-w-60 grow flex-col"
+          class="flex min-w-60 grow basis-60 flex-col"
         >
           <span
             class="font-semibold"
@@ -686,7 +997,7 @@ exports[`Settings - RTL > RTL snapshot 1`] = `
         data-testid="settings-row-wipe"
       >
         <div
-          class="flex min-w-60 grow flex-col"
+          class="flex min-w-60 grow basis-60 flex-col"
         >
           <span
             class="font-semibold"
@@ -724,7 +1035,7 @@ exports[`Settings - RTL > RTL snapshot 1`] = `
         data-testid="settings-row-google-account"
       >
         <div
-          class="flex min-w-60 grow flex-col"
+          class="flex min-w-60 grow basis-60 flex-col"
         >
           <span
             class="font-semibold"
@@ -768,7 +1079,7 @@ exports[`Settings - RTL > RTL snapshot 1`] = `
         data-testid="settings-row-target-calendar"
       >
         <div
-          class="flex min-w-60 grow flex-col"
+          class="flex min-w-60 grow basis-60 flex-col"
         >
           <label
             class="font-semibold"
@@ -791,6 +1102,13 @@ exports[`Settings - RTL > RTL snapshot 1`] = `
               Personal
             </option>
           </select>
+          <span
+            class="basis-full text-sm text-text-muted"
+            data-role="owner"
+            data-testid="settings-calendar-role"
+          >
+            היומן הזה בבעלותך
+          </span>
         </div>
       </div>
       <div
@@ -798,7 +1116,7 @@ exports[`Settings - RTL > RTL snapshot 1`] = `
         data-testid="settings-row-conflicts"
       >
         <div
-          class="flex min-w-60 grow flex-col"
+          class="flex min-w-60 grow basis-60 flex-col"
         >
           <span
             class="font-semibold"
@@ -832,6 +1150,278 @@ exports[`Settings - RTL > RTL snapshot 1`] = `
       </div>
     </section>
     <section
+      aria-labelledby="settings-h-auto"
+      class="flex flex-col gap-3 border-t border-line pt-4"
+      data-testid="settings-group-auto"
+      id="settings-group-auto"
+    >
+      <h2
+        class="m-0 text-md font-semibold"
+        id="settings-h-auto"
+      >
+        מצב אוטומטי
+      </h2>
+      <div
+        class="flex flex-wrap items-center gap-2 rounded-md border border-line bg-surface p-3"
+        data-state="none"
+        data-testid="auto-state-card"
+      >
+        <span
+          aria-hidden="true"
+          class="icon icon-auto text-accent"
+        />
+        <span
+          class="grow basis-60"
+          role="status"
+        >
+          כבוי - אירועים ממתינים לאישור שלך.
+        </span>
+      </div>
+      <p
+        class="m-0"
+      >
+        הסוכן מוסיף ומשנה אירועים ביומן 
+        <bdi>
+          Personal
+        </bdi>
+         בעצמו. תשובות תמיד ממתינות לך.
+      </p>
+      <div
+        class="flex flex-wrap gap-4"
+      >
+        <div
+          class="flex min-w-60 grow basis-60 flex-col gap-1"
+        >
+          <h3
+            class="m-0 text-base font-semibold"
+            id="auto-happens-title"
+          >
+            מה קורה בלי לשאול אותך
+          </h3>
+          <ul
+            aria-labelledby="auto-happens-title"
+            class="m-0 flex flex-col gap-1 ps-5"
+            data-testid="auto-happens"
+          >
+            <li>
+              רק עם אנשים שכתבת להם, בשיחות שכתבת בהן ביממה האחרונה
+            </li>
+            <li>
+              בתוך 30 הימים הקרובים, באורך של 5 דקות עד 4 שעות
+            </li>
+            <li>
+              עד 3 ביום לכל איש קשר ועד 15 ביום בסך הכול
+            </li>
+            <li>
+              על כל אחד מופיעה התראה עם אפשרות ביטול
+            </li>
+            <li>
+              תשובות עדיין ממתינות לאישור שלך
+            </li>
+            <li>
+              מסתיים מעצמו אחרי 30 ימים
+            </li>
+          </ul>
+        </div>
+        <div
+          class="flex min-w-60 grow basis-60 flex-col gap-1"
+        >
+          <h3
+            class="m-0 text-base font-semibold"
+            id="auto-never-title"
+          >
+            מה אף פעם לא קורה
+          </h3>
+          <ul
+            aria-labelledby="auto-never-title"
+            class="m-0 flex flex-col gap-1 ps-5"
+            data-testid="auto-never"
+          >
+            <li>
+              מחיקת אירוע
+            </li>
+            <li>
+              הזמנת אנשים
+            </li>
+            <li>
+              שליחת הודעת וואטסאפ
+            </li>
+            <li>
+              שום דבר שמקורו בהודעה קולית או בתמונה
+            </li>
+            <li>
+              שום דבר שהבינה לא הייתה בטוחה בו או שיש עליו אזהרה
+            </li>
+            <li>
+              שינוי אירועים שהסוכן לא הוסיף
+            </li>
+          </ul>
+        </div>
+      </div>
+      <div
+        class="flex flex-col"
+      >
+        <div
+          class="flex flex-wrap items-center gap-3 border-b border-line py-2"
+        >
+          <span
+            class="grow basis-60"
+            id="auto-scope-edits-label"
+          >
+            לשנות גם אירועים כשאיש הקשר מבקש
+          </span>
+          <button
+            aria-checked="true"
+            aria-labelledby="auto-scope-edits-label"
+            class="switch"
+            data-testid="auto-scope-edits"
+            role="switch"
+            type="button"
+          >
+            <span
+              class="switch-thumb"
+            >
+              <svg
+                aria-hidden="true"
+                class="shrink-0"
+                fill="none"
+                height="12"
+                stroke="currentColor"
+                stroke-width="1.75"
+                viewBox="0 0 16 16"
+                width="12"
+              >
+                <path
+                  d="m3.2 8.4 3.2 3.3 6.4-7"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                />
+              </svg>
+            </span>
+          </button>
+        </div>
+        <div
+          class="flex flex-wrap items-center gap-3 border-b border-line py-2"
+        >
+          <span
+            class="flex grow basis-60 flex-col"
+          >
+            <span
+              id="auto-scope-cancels-label"
+            >
+              לבטל גם אירועים כשאיש הקשר מבקש
+            </span>
+            <span
+              class="text-sm text-text-muted"
+              id="auto-scope-cancels-desc"
+            >
+              אירוע שבוטל נשאר ניתן לשחזור - ביטול השינוי מחזיר אותו.
+            </span>
+          </span>
+          <button
+            aria-checked="false"
+            aria-describedby="auto-scope-cancels-desc"
+            aria-labelledby="auto-scope-cancels-label"
+            class="switch"
+            data-testid="auto-scope-cancels"
+            role="switch"
+            type="button"
+          >
+            <span
+              class="switch-thumb"
+            />
+          </button>
+        </div>
+        <div
+          class="flex flex-wrap items-center gap-3 border-b border-line py-2"
+        >
+          <span
+            class="grow basis-60"
+            id="auto-scope-quiet-label"
+          >
+            לא בשעות השקטות (22:00-07:00)
+          </span>
+          <button
+            aria-checked="true"
+            aria-labelledby="auto-scope-quiet-label"
+            class="switch"
+            data-testid="auto-scope-quiet"
+            role="switch"
+            type="button"
+          >
+            <span
+              class="switch-thumb"
+            >
+              <svg
+                aria-hidden="true"
+                class="shrink-0"
+                fill="none"
+                height="12"
+                stroke="currentColor"
+                stroke-width="1.75"
+                viewBox="0 0 16 16"
+                width="12"
+              >
+                <path
+                  d="m3.2 8.4 3.2 3.3 6.4-7"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                />
+              </svg>
+            </span>
+          </button>
+        </div>
+        <div
+          class="flex flex-wrap items-center gap-3 py-2"
+        >
+          <label
+            class="grow basis-60"
+            for="auto-scope-validity-select"
+          >
+            מסתיים אחרי
+          </label>
+          <select
+            class="field w-40"
+            data-testid="auto-scope-validity"
+            id="auto-scope-validity-select"
+          >
+            <option
+              value="30"
+            >
+              30 ימים
+            </option>
+            <option
+              value="90"
+            >
+              90 ימים
+            </option>
+          </select>
+        </div>
+      </div>
+      <p
+        class="m-0 flex flex-wrap items-center gap-2"
+        data-reason="trackRecord"
+        data-testid="auto-precondition"
+      >
+        <span
+          aria-hidden="true"
+          class="icon icon-alert text-warn"
+        />
+        <span
+          class="grow"
+        >
+          יהיה זמין אחרי שתאשרו בעצמכם 3 אירועים (עד עכשיו 0 מתוך 3).
+        </span>
+      </p>
+      <button
+        class="btn btn-quiet self-start"
+        data-testid="auto-open-activity"
+        type="button"
+      >
+        צפייה בפעילות האוטומטית
+      </button>
+    </section>
+    <section
       aria-labelledby="settings-h-rules"
       class="border-t border-line pt-4"
       data-testid="settings-group-rules"
@@ -848,7 +1438,7 @@ exports[`Settings - RTL > RTL snapshot 1`] = `
         data-testid="settings-row-unknown"
       >
         <div
-          class="flex min-w-60 grow flex-col"
+          class="flex min-w-60 grow basis-60 flex-col"
         >
           <span
             class="font-semibold"
@@ -880,11 +1470,107 @@ exports[`Settings - RTL > RTL snapshot 1`] = `
         </div>
       </div>
       <div
+        class="flex flex-col gap-1 border-b border-line py-3"
+        data-testid="settings-row-readtools"
+      >
+        <span
+          class="font-semibold"
+          id="row-readtools"
+        >
+          לאפשר לבינה לקרוא הודעות ישנות
+        </span>
+        <span
+          class="text-sm text-text-muted"
+        >
+          הבינה יכולה להסתכל אחורה כשהודעה מתייחסת למשהו שנאמר קודם.
+        </span>
+        <div
+          aria-labelledby="row-readtools"
+          class="flex flex-col gap-1"
+          role="radiogroup"
+        >
+          <label
+            class="flex flex-wrap items-center gap-2"
+          >
+            <input
+              data-testid="settings-readtools-off"
+              name="settings-readtools"
+              type="radio"
+              value="off"
+            />
+            <span>
+              כבוי
+            </span>
+          </label>
+          <label
+            class="flex flex-wrap items-center gap-2"
+          >
+            <input
+              checked=""
+              data-testid="settings-readtools-trigger_chat"
+              name="settings-readtools"
+              type="radio"
+              value="trigger_chat"
+            />
+            <span>
+              רק מהשיחה הזו
+            </span>
+            <span
+              class="text-sm text-text-muted"
+            >
+              (
+              מומלץ
+              )
+            </span>
+          </label>
+          <label
+            class="flex flex-wrap items-center gap-2"
+          >
+            <input
+              data-testid="settings-readtools-all_chats"
+              name="settings-readtools"
+              type="radio"
+              value="all_chats"
+            />
+            <span>
+              מכל השיחות שלי
+            </span>
+          </label>
+        </div>
+        <div
+          class="flex flex-wrap items-center gap-3"
+        >
+          <label
+            class="text-sm"
+            for="settings-readtools-days-input"
+          >
+            כמה זמן אחורה
+          </label>
+          <input
+            aria-valuetext="30 ימים"
+            class="grow basis-40"
+            data-testid="settings-readtools-days"
+            id="settings-readtools-days-input"
+            max="90"
+            min="1"
+            step="1"
+            type="range"
+            value="30"
+          />
+          <span
+            class="tnum text-sm"
+            dir="auto"
+          >
+            30 ימים
+          </span>
+        </div>
+      </div>
+      <div
         class="flex flex-wrap items-center gap-3 border-b border-line py-3 last:border-b-0"
         data-testid="settings-row-backlog"
       >
         <div
-          class="flex min-w-60 grow flex-col"
+          class="flex min-w-60 grow basis-60 flex-col"
         >
           <label
             class="font-semibold"
@@ -934,7 +1620,7 @@ exports[`Settings - RTL > RTL snapshot 1`] = `
         data-testid="settings-row-ambiguous"
       >
         <div
-          class="flex min-w-60 grow flex-col"
+          class="flex min-w-60 grow basis-60 flex-col"
         >
           <span
             class="font-semibold"
@@ -986,7 +1672,7 @@ exports[`Settings - RTL > RTL snapshot 1`] = `
         data-testid="settings-row-duration"
       >
         <div
-          class="flex min-w-60 grow flex-col"
+          class="flex min-w-60 grow basis-60 flex-col"
         >
           <label
             class="font-semibold"
@@ -1036,7 +1722,7 @@ exports[`Settings - RTL > RTL snapshot 1`] = `
         data-testid="settings-row-ignored"
       >
         <div
-          class="flex min-w-60 grow flex-col"
+          class="flex min-w-60 grow basis-60 flex-col"
         >
           <span
             class="font-semibold"
@@ -1074,7 +1760,7 @@ exports[`Settings - RTL > RTL snapshot 1`] = `
         data-testid="settings-row-gender"
       >
         <div
-          class="flex min-w-60 grow flex-col"
+          class="flex min-w-60 grow basis-60 flex-col"
         >
           <span
             class="font-semibold"
@@ -1202,12 +1888,48 @@ exports[`Settings - RTL > RTL snapshot 1`] = `
               class="border-b border-line py-1 text-start font-normal"
               scope="row"
             >
-              Claude (בינה בענן)
+              Claude - המנוי שלך
             </th>
             <td
               class="border-b border-line py-1"
             >
-              הטקסט של השיחה שמנותחת, בלי שמות ובלי מספרי טלפון
+              הטקסט של השיחה שמנותחת, בלי שמות ומספרי טלפון; תמלולים של הודעות קוליות; תמונות כשהאפשרות "קריאת תמונות עם Anthropic" פעילה; הודעות קודמות מהשיחה הזו (או מכל השיחות, אם בחרתם בזה)
+            </td>
+            <td
+              class="border-b border-line py-1"
+            >
+              חברת Anthropic, דרך ההתחברות שלכם ל-Claude Code
+            </td>
+          </tr>
+          <tr>
+            <th
+              class="border-b border-line py-1 text-start font-normal"
+              scope="row"
+            >
+              Gemini - המנוי שלך (ניסיוני)
+            </th>
+            <td
+              class="border-b border-line py-1"
+            >
+              אותו טקסט, תמלולים והודעות קודמות; אף פעם לא תמונות. Antigravity גם שומר עותק של כל בקשה במחשב הזה.
+            </td>
+            <td
+              class="border-b border-line py-1"
+            >
+              חברת Google, דרך ההתחברות שלכם ל-Antigravity
+            </td>
+          </tr>
+          <tr>
+            <th
+              class="border-b border-line py-1 text-start font-normal"
+              scope="row"
+            >
+              Claude עם מפתח API
+            </th>
+            <td
+              class="border-b border-line py-1"
+            >
+              הטקסט של השיחה שמנותחת, בלי שמות ומספרי טלפון; תמלולים של הודעות קוליות; תמונות כשהאפשרות פעילה; הודעות קודמות
             </td>
             <td
               class="border-b border-line py-1"
@@ -1220,12 +1942,12 @@ exports[`Settings - RTL > RTL snapshot 1`] = `
               class="border-b border-line py-1 text-start font-normal"
               scope="row"
             >
-              Gemini (בינה בענן)
+              Gemini עם מפתח API
             </th>
             <td
               class="border-b border-line py-1"
             >
-              הטקסט של השיחה שמנותחת, בלי שמות ובלי מספרי טלפון
+              הטקסט של השיחה שמנותחת, בלי שמות ומספרי טלפון; תמלולים של הודעות קוליות; תמונות כשהאפשרות פעילה; הודעות קודמות
             </td>
             <td
               class="border-b border-line py-1"
@@ -1238,12 +1960,30 @@ exports[`Settings - RTL > RTL snapshot 1`] = `
               class="border-b border-line py-1 text-start font-normal"
               scope="row"
             >
+              הודעות קוליות
+            </th>
+            <td
+              class="border-b border-line py-1"
+            >
+              כלום - התמלול נעשה במחשב הזה
+            </td>
+            <td
+              class="border-b border-line py-1"
+            >
+              אף אחד
+            </td>
+          </tr>
+          <tr>
+            <th
+              class="border-b border-line py-1 text-start font-normal"
+              scope="row"
+            >
               יומן Google
             </th>
             <td
               class="border-b border-line py-1"
             >
-              השעות התפוסות והפנויות, והאירועים שאישרתם
+              השעות התפוסות והפנויות, האירועים שאישרתם, והשינויים והביטולים שאישרתם או שהמצב האוטומטי ביצע
             </td>
             <td
               class="border-b border-line py-1"
@@ -1276,7 +2016,7 @@ exports[`Settings - RTL > RTL snapshot 1`] = `
         data-testid="settings-row-retention"
       >
         <div
-          class="flex min-w-60 grow flex-col"
+          class="flex min-w-60 grow basis-60 flex-col"
         >
           <label
             class="font-semibold"
@@ -1326,7 +2066,7 @@ exports[`Settings - RTL > RTL snapshot 1`] = `
         data-testid="settings-row-purge"
       >
         <div
-          class="flex min-w-60 grow flex-col"
+          class="flex min-w-60 grow basis-60 flex-col"
         >
           <span
             class="font-semibold"
@@ -1351,7 +2091,7 @@ exports[`Settings - RTL > RTL snapshot 1`] = `
         data-testid="settings-row-diagnostics"
       >
         <div
-          class="flex min-w-60 grow flex-col"
+          class="flex min-w-60 grow basis-60 flex-col"
         >
           <span
             class="font-semibold"
@@ -1381,7 +2121,7 @@ exports[`Settings - RTL > RTL snapshot 1`] = `
         data-testid="settings-row-licences"
       >
         <div
-          class="flex min-w-60 grow flex-col"
+          class="flex min-w-60 grow basis-60 flex-col"
         >
           <span
             class="font-semibold"

@@ -1,0 +1,61 @@
+
+> whatsapp-calendar-agent@0.1.0 verify
+> npm run lint && npm run format:check && npm run typecheck && npm run stage:mcp && npm run test:coverage && npm run test:e2e && npm run fetch:whisper && npm run test:smoke && npm run audit:prod
+
+
+> whatsapp-calendar-agent@0.1.0 lint
+> eslint . --max-warnings 0
+
+
+> whatsapp-calendar-agent@0.1.0 format:check
+> prettier --check .
+
+Checking formatting...
+[[33mwarn[39m] src/main/agent/existingEvent.ts
+[[33mwarn[39m] src/main/agent/resolveDelta.ts
+[[33mwarn[39m] src/main/agent/stage0.v2.test.ts
+[[33mwarn[39m] src/main/bridge/ingest.v2.test.ts
+[[33mwarn[39m] src/main/bridge/invariants.test.ts
+[[33mwarn[39m] src/main/bridge/invariants.ts
+[[33mwarn[39m] src/main/bridge/readClient.test.ts
+[[33mwarn[39m] src/main/bridge/readClient.ts
+[[33mwarn[39m] src/main/ipc/handlers/voice.test.ts
+[[33mwarn[39m] src/main/ipc/handlers/voice.ts
+[[33mwarn[39m] src/main/llm/cli/claudeCli.ts
+[[33mwarn[39m] src/main/llm/cli/locator.ts
+[[33mwarn[39m] src/main/llm/cli/runner.ts
+[[33mwarn[39m] src/main/llm/local/download.media.test.ts
+[[33mwarn[39m] src/main/llm/local/download.ts
+[[33mwarn[39m] src/main/llm/local/manifest.media.test.ts
+[[33mwarn[39m] src/main/llm/local/manifest.ts
+[[33mwarn[39m] src/main/llm/types.ts
+[[33mwarn[39m] src/main/media/fetch.test.ts
+[[33mwarn[39m] src/main/media/fetch.ts
+[[33mwarn[39m] src/main/media/imageDims.test.ts
+[[33mwarn[39m] src/main/media/imageDims.ts
+[[33mwarn[39m] src/main/media/mediaCache.test.ts
+[[33mwarn[39m] src/main/media/normalizeImage.test.ts
+[[33mwarn[39m] src/main/media/normalizeImage.ts
+[[33mwarn[39m] src/main/proc/jobRunner.ts
+[[33mwarn[39m] src/main/voice/decode.test.ts
+[[33mwarn[39m] src/main/voice/decode.ts
+[[33mwarn[39m] src/main/voice/ogg.test.ts
+[[33mwarn[39m] src/main/voice/ogg.ts
+[[33mwarn[39m] src/main/voice/service.test.ts
+[[33mwarn[39m] src/main/voice/service.ts
+[[33mwarn[39m] src/main/voice/wav.test.ts
+[[33mwarn[39m] src/main/voice/whisperCli.test.ts
+[[33mwarn[39m] src/main/voice/whisperCli.ts
+[[33mwarn[39m] src/renderer/src/store/cli.test.ts
+[[33mwarn[39m] src/renderer/src/store/dashboard.test.ts
+[[33mwarn[39m] src/renderer/src/store/dashboard.ts
+[[33mwarn[39m] src/renderer/src/store/health.test.ts
+[[33mwarn[39m] src/renderer/src/store/health.ts
+[[33mwarn[39m] src/renderer/src/store/settings.test.ts
+[[33mwarn[39m] src/shared/ipc.ts
+[[33mwarn[39m] src/shared/settings.ts
+[[33mwarn[39m] src/shared/state.ts
+[[33mwarn[39m] src/shared/types.ts
+[[33mwarn[39m] tests/fakes/fake-bridge.ts
+[[33mwarn[39m] tests/fakes/whisper-cli.mjs
+[[33mwarn[39m] Code style issues found in 47 files. Run Prettier with --write to fix.

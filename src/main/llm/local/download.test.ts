@@ -8,7 +8,7 @@ import { createHash } from 'node:crypto';
 import { afterEach, describe, expect, it } from 'vitest';
 import { startFakeLlamaServer, type FakeLlamaServer } from '../../../../tests/fakes/fake-llama-server';
 import type { Clock, ClockTimer, Logger, LogMeta } from '../../deps';
-import type { DownloadProgress, ModelFileRecord, ModelTier } from '../../../shared/types';
+import type { DownloadProgress, ModelFileId, ModelFileRecord, ModelTier } from '../../../shared/types';
 import { MODEL_TIERS } from '../../../shared/types';
 import type { Repos } from '../../db/index';
 import {
@@ -24,8 +24,8 @@ import type { ModelManifestEntry } from './manifest';
 // ---------------------------------------------------------------------------------------------------------------------
 // doubles
 // ---------------------------------------------------------------------------------------------------------------------
-function memoryModelsRepo(): Pick<Repos, 'models'> & { rows: Map<ModelTier, ModelFileRecord> } {
-  const rows = new Map<ModelTier, ModelFileRecord>();
+function memoryModelsRepo(): Pick<Repos, 'models'> & { rows: Map<ModelFileId, ModelFileRecord> } {
+  const rows = new Map<ModelFileId, ModelFileRecord>(); // [V2] keyed by ModelFileId (C2 16.1)
   return {
     rows,
     models: {
@@ -37,7 +37,7 @@ function memoryModelsRepo(): Pick<Repos, 'models'> & { rows: Map<ModelTier, Mode
         rows.delete(tier);
       },
     },
-  } as Pick<Repos, 'models'> & { rows: Map<ModelTier, ModelFileRecord> };
+  } as Pick<Repos, 'models'> & { rows: Map<ModelFileId, ModelFileRecord> };
 }
 
 function tickingClock(stepMs = 1000): Clock {
@@ -540,6 +540,7 @@ describe('ModelManager', () => {
     const h = await harness();
     const row = (tokPerSec: number): ModelFileRecord => ({
       id: 'small',
+      kind: 'llm', // [V2] C2 1.3
       path: 'x',
       size: h.entry.size,
       sha256: h.entry.sha256,

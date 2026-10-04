@@ -1,0 +1,1491 @@
+
+> whatsapp-calendar-agent@0.1.0 test:e2e
+> npm run build:e2e && playwright test
+
+
+> whatsapp-calendar-agent@0.1.0 build:e2e
+> electron-vite build --mode e2e && node scripts/mark-e2e-build.mjs
+
+[36mvite v7.3.6 [32mbuilding ssr environment for e2e...[36m[39m
+transforming...
+[32m✓[39m 153 modules transformed.
+rendering chunks...
+[2mout/main/[22m[32mmanifest.json                  [39m[1m[2m    4.10 kB[22m[1m[22m
+[2mout/main/[22m[36mtypes-C41rTKy-.js              [39m[1m[2m    0.45 kB[22m[1m[22m[2m │ map:     8.93 kB[22m
+[2mout/main/[22m[36mtestSeams-lG3oW8Xc.js          [39m[1m[2m    5.85 kB[22m[1m[22m[2m │ map:    18.60 kB[22m
+[2mout/main/[22m[36mscripted.fixtures-DKLq0vF2.js  [39m[1m[2m    7.66 kB[22m[1m[22m[2m │ map:    18.88 kB[22m
+[2mout/main/[22m[36mindex.js                       [39m[1m[33m1,064.43 kB[39m[22m[2m │ map: 2,313.06 kB[22m
+[32m✓ built in 780ms[39m
+[36mvite v7.3.6 [32mbuilding ssr environment for e2e...[36m[39m
+transforming...
+[32m✓[39m 1 modules transformed.
+rendering chunks...
+[2mout/preload/[22m[36mindex.cjs  [39m[1m[2m2.87 kB[22m[1m[22m
+[32m✓ built in 8ms[39m
+[36mvite v7.3.6 [32mbuilding client environment for e2e...[36m[39m
+transforming...
+[33mnode_modules/zod/v4/core/regexes.js (74:0): A comment
+
+"/** Anchors a pattern source. The interpolation lives here rather than at the call site because
+ * esbuild will not drop a `@__PURE__` call whose own argument interpolates a variable, but it
+ * will drop `anchor(dateSource)`. Keeping it inline pinned `date` into every bundle. */"
+
+in "node_modules/zod/v4/core/regexes.js" contains an annotation that Rollup cannot interpret due to the position of the comment. The comment will be removed to avoid issues.[39m
+[33mnode_modules/zod/v4/core/util.js (400:0): A comment
+
+"// Wrapped in a `@__PURE__` IIFE: esbuild never tree-shakes a top-level initializer that contains a member access on `Number`, so the bare object literal survived into every bundle."
+
+in "node_modules/zod/v4/core/util.js" contains an annotation that Rollup cannot interpret due to the position of the comment. The comment will be removed to avoid issues.[39m
+[32m✓[39m 215 modules transformed.
+rendering chunks...
+[2m../../out/renderer/[22m[32mindex.html                 [39m[1m[2m    1.12 kB[22m[1m[22m
+[2m../../out/renderer/[22m[35massets/index-B4eI6uxK.css  [39m[1m[2m   40.34 kB[22m[1m[22m
+[2m../../out/renderer/[22m[36massets/index-CxPcbqNs.js   [39m[1m[33m1,544.02 kB[39m[22m
+[32m✓ built in 971ms[39m
+
+Running 46 tests using 1 worker
+
+  ok  1 tests\e2e\app.spec.ts:14:1 › seeded profile boots to a dashboard with three empty lists, a healthy bridge and the setup strip (1.2s)
+  ok  2 tests\e2e\approval-first.spec.ts:79:1 › an inbound message is ingested and NOTHING is sent or written without an approval (6.2s)
+  ok  3 tests\e2e\approval-first.spec.ts:153:1 › approve -> exactly one send with the edited text; add to calendar -> exactly one create-event (31.2s)
+  ok  4 tests\e2e\approval-first.spec.ts:248:1 › an obedient attacker model causes no side effect and the card is badged as manipulation (27.0s)
+  x   5 tests\e2e\auto-mode.spec.ts:37:1 › automatic mode: off by default, reached only through the UI, writes with zero clicks when on, pauses from the tray (2.7m)
+  x   6 tests\e2e\auto-mode.spec.ts:37:1 › automatic mode: off by default, reached only through the UI, writes with zero clicks when on, pauses from the tray (retry #1) (2.7m)
+  ok  7 tests\e2e\cli-connect.spec.ts:31:1 › (1) {"claude_cli":null}: not installed - the install command, "Open install page" records claude_install, nothing runs (1.3s)
+  ok  8 tests\e2e\cli-connect.spec.ts:57:1 › (2) version 2.1.200 is too old: the update command is offered, nothing else (1.0s)
+  ok  9 tests\e2e\cli-connect.spec.ts:72:1 › (3) not signed in: "Sign in" records one visible-console argv (never cmd.exe), the flipped state file reads as ready (3.1s)
+  ok 10 tests\e2e\cli-connect.spec.ts:101:1 › (4) a garbage auth answer reads as "Could not tell whether you are signed in" (1.0s)
+  x  11 tests\e2e\cli-connect.spec.ts:161:1 › (5)+(6) consent: declining keeps Local and records nothing; accepting + Test; an inbound is drafted through S1 + S3 on the fake CLI (1.1m)
+  x  12 tests\e2e\cli-connect.spec.ts:161:1 › (5)+(6) consent: declining keeps Local and records nothing; accepting + Test; an inbound is drafted through S1 + S3 on the fake CLI (retry #1) (1.1m)
+  x  13 tests\e2e\cli-connect.spec.ts:268:1 › (7a) usage_limit: CLOUD_QUOTA with "continues by itself at HH:MM", new chats are held (1.2m)
+  x  14 tests\e2e\cli-connect.spec.ts:268:1 › (7a) usage_limit: CLOUD_QUOTA with "continues by itself at HH:MM", new chats are held (retry #1) (1.2m)
+  x  15 tests\e2e\cli-connect.spec.ts:300:1 › (7b) overage: CLOUD_OVERAGE pauses the provider and no further run starts (1.6m)
+  x  16 tests\e2e\cli-connect.spec.ts:300:1 › (7b) overage: CLOUD_OVERAGE pauses the provider and no further run starts (retry #1) (1.6m)
+  x  17 tests\e2e\cli-connect.spec.ts:329:1 › (7c) extra_tool: the init proof fails -> CLI_TOOLSET_MISMATCH with "Export diagnostics", nothing consumed a turn (1.3m)
+  x  18 tests\e2e\cli-connect.spec.ts:329:1 › (7c) extra_tool: the init proof fails -> CLI_TOOLSET_MISMATCH with "Export diagnostics", nothing consumed a turn (retry #1) (1.3m)
+  x  19 tests\e2e\cli-connect.spec.ts:355:1 › (8) experimental Gemini: hidden until "Show experimental", Terms read date, the user's own agy settings untouched, selectable (21.5s)
+  x  20 tests\e2e\cli-connect.spec.ts:355:1 › (8) experimental Gemini: hidden until "Show experimental", Terms read date, the user's own agy settings untouched, selectable (retry #1) (21.5s)
+  x  21 tests\e2e\cli-connect.spec.ts:410:1 › (9) quitting while a CLI job runs: the job pid is dead within 10 s, no job pid file, empty cli-runs dir (2.0s)
+  x  22 tests\e2e\cli-connect.spec.ts:410:1 › (9) quitting while a CLI job runs: the job pid is dead within 10 s, no job pid file, empty cli-runs dir (retry #1) (2.0s)
+  ok 23 tests\e2e\edit-change.spec.ts:23:1 › en: a Change card proposes the move, the editor edits only the new slot, Approve change sends one PATCH with ifMatch (44.1s)
+  ok 24 tests\e2e\edit-change.spec.ts:89:1 › he: "בוא נזיז ל-5" renders the Hebrew Change card right-to-left, and Keep 15:00 writes nothing (45.6s)
+  ok 25 tests\e2e\edit-change.spec.ts:118:1 › drift: Apply anyway applies the change, Keep Google's writes nothing; a vanished event offers "Add as new event" (1.5m)
+  ok 26 tests\e2e\edit-change.spec.ts:167:1 › event_missing: the change of an event that is gone from Google offers "Add as new event", one click = one create (44.3s)
+  ok 27 tests\e2e\i18n-rtl.spec.ts:23:1 › the header toggle flips dir without a reload and the choice survives a restart (1.5s)
+  ok 28 tests\e2e\i18n-rtl.spec.ts:69:1 › a language change reaches the tray menu in the main process (762ms)
+  ok 29 tests\e2e\i18n-rtl.spec.ts:96:1 › a Hebrew dashboard lays out towards the right and neither language scrolls horizontally at 420 px (1.0s)
+  ok 30 tests\e2e\i18n-rtl.spec.ts:131:1 › every view is screenshotted in both languages for the Hebrew review (1.9s)
+  x  31 tests\e2e\i18n-rtl.spec.ts:217:1 › [v2] AutoStrip, the Automatic-mode group and the activity page in both languages, no overflow at 420 px (1.5m)
+  x  32 tests\e2e\i18n-rtl.spec.ts:217:1 › [v2] AutoStrip, the Automatic-mode group and the activity page in both languages, no overflow at 420 px (retry #1) (1.5m)
+  ok 33 tests\e2e\i18n-rtl.spec.ts:249:1 › [v2] the Connect card states and both media bubbles in both languages (25.3s)
+  ok 34 tests\e2e\onboarding.spec.ts:85:1 › Welcome runs nothing before the disclosure is accepted, then the local model starts downloading (1.2s)
+  ok 35 tests\e2e\onboarding.spec.ts:150:1 › accepting the disclosure starts the bridge, and the QR can be scanned, expired and re-issued (5.7s)
+  ok 36 tests\e2e\onboarding.spec.ts:210:3 › the Google step offers "Later" and the Ready checklist hands over to a reply-only dashboard (en) (905ms)
+  ok 37 tests\e2e\onboarding.spec.ts:210:3 › the Google step offers "Later" and the Ready checklist hands over to a reply-only dashboard (he) (800ms)
+  ok 38 tests\e2e\onboarding.spec.ts:245:1 › a history sync after pairing produces zero cards (5.3s)
+  ok 39 tests\e2e\onboarding.spec.ts:278:1 › the wizard resumes at the step it was killed on (2.0s)
+  ok 40 tests\e2e\onboarding.spec.ts:310:1 › choosing a cloud provider blocks on the consent dialog, and declining writes no consent row (911ms)
+  ok 41 tests\e2e\onboarding.spec.ts:339:1 › the Choose AI step renders right-to-left in Hebrew (784ms)
+  ok 42 tests\e2e\onboarding.spec.ts:367:1 › the Google sign-in leg records the opened URL instead of opening a browser (712ms)
+  x  43 tests\e2e\pictures.spec.ts:139:1 › no projector: the Photo card offers "Download picture reading" with the size of the active tier's projector (33.2s)
+  x  44 tests\e2e\pictures.spec.ts:139:1 › no projector: the Photo card offers "Download picture reading" with the size of the active tier's projector (retry #1) (32.5s)
+  ok 45 tests\e2e\pictures.spec.ts:169:1 › projector ready: llama starts with --mmproj, the picture is read, the card shows a data: thumbnail + from_image + a proposal; an injection picture is flagged (47.7s)
+  ok 46 tests\e2e\tray-lifecycle.spec.ts:79:1 › close hides to the tray within 200 ms, shows the coach mark exactly once, and the tray re-opens it (1.3s)
+  ok 47 tests\e2e\tray-lifecycle.spec.ts:125:1 › a --hidden start paints no window but builds the tray (672ms)
+  ok 48 tests\e2e\tray-lifecycle.spec.ts:145:1 › a second launch on the same profile exits and re-shows the first window (1.1s)
+  ok 49 tests\e2e\tray-lifecycle.spec.ts:172:1 › the tray menu follows health and Pause, and the quit sequence kills every child (1.3s)
+  ok 50 tests\e2e\tray-lifecycle.spec.ts:248:1 › a pid file pointing at an unrelated process is discarded, never killed (2.2s)
+  x  51 tests\e2e\undo.spec.ts:26:1 › an automatic create is undone from the AutoStrip: Undoing... -> Undone, one update-event status:cancelled (1.5m)
+  x  52 tests\e2e\undo.spec.ts:26:1 › an automatic create is undone from the AutoStrip: Undoing... -> Undone, one update-event status:cancelled (retry #1) (1.5m)
+  x  53 tests\e2e\undo.spec.ts:87:1 › a manual reschedule is undone from its card back to the pre-write slot; a hidden window cannot undo (1.3m)
+  x  54 tests\e2e\undo.spec.ts:87:1 › a manual reschedule is undone from its card back to the pre-write slot; a hidden window cannot undo (retry #1) (1.3m)
+  ok 55 tests\e2e\undo.spec.ts:172:1 › cancel variant: Cancel event / Keep it; undoing a cancel that Google refuses offers "Add it back" = one new event (47.5s)
+  x  56 tests\e2e\voice.spec.ts:105:1 › a voice note is transcribed by the (fake) whisper job, shown as a VoiceBubble with its transcript, and proposed (24.9s)
+  x  57 tests\e2e\voice.spec.ts:105:1 › a voice note is transcribed by the (fake) whisper job, shown as a VoiceBubble with its transcript, and proposed (retry #1) (24.7s)
+  x  58 tests\e2e\voice.spec.ts:168:1 › whisper exit 3 = VOICE_MODEL_MISSING: the card offers "Download (1.6 GB)" with the manifest size (1.0m)
+  x  59 tests\e2e\voice.spec.ts:168:1 › whisper exit 3 = VOICE_MODEL_MISSING: the card offers "Download (1.6 GB)" with the manifest size (retry #1) (1.0m)
+
+
+  1) tests\e2e\auto-mode.spec.ts:37:1 › automatic mode: off by default, reached only through the UI, writes with zero clicks when on, pauses from the tray 
+
+    Error: the enable buttons are offered right after the third approval (AutoState is current when Settings opens)
+
+    expect(locator).toHaveCount(expected) failed
+
+    Locator:  getByTestId('auto-precondition')
+    Expected: 0
+    Received: 1
+    Timeout:  10000ms
+
+    Call log:
+      - the enable buttons are offered right after the third approval (AutoState is current when Settings opens) getByTestId('auto-precondition') with timeout 10000ms
+      - waiting for getByTestId('auto-precondition')
+        24 × locator resolved to 1 element
+           - unexpected value "1"
+
+
+       at helpers\auto.ts:136
+
+      134 |       : expect(target, message);
+      135 |     if (want === 'visible') await e.toBeVisible({ timeout });
+    > 136 |     else await e.toHaveCount(0, { timeout });
+          |                  ^
+      137 |   };
+      138 |   await check(true, 10_000);
+      139 |   const ok = want === 'visible' ? (await target.count()) > 0 : (await target.count()) === 0;
+        at check (C:\dev\whatsapp agent\tests\e2e\helpers\auto.ts:136:18)
+        at expectAutoGroup (C:\dev\whatsapp agent\tests\e2e\helpers\auto.ts:138:9)
+        at enableAutoViaUi (C:\dev\whatsapp agent\tests\e2e\helpers\auto.ts:173:9)
+        at C:\dev\whatsapp agent\tests\e2e\auto-mode.spec.ts:85:27
+
+    Error: "End trial" is offered right after the third shadow decision (AutoState is current when Settings opens)
+
+    expect(locator).toBeVisible() failed
+
+    Locator: getByTestId('auto-end-shadow')
+    Expected: visible
+    Timeout: 10000ms
+    Error: element(s) not found
+
+    Call log:
+      - "End trial" is offered right after the third shadow decision (AutoState is current when Settings opens) getByTestId('auto-end-shadow') with timeout 10000ms
+      - waiting for getByTestId('auto-end-shadow')
+
+
+       at helpers\auto.ts:135
+
+      133 |       ? expect.soft(target, `${message} (AutoState is current when Settings opens)`)
+      134 |       : expect(target, message);
+    > 135 |     if (want === 'visible') await e.toBeVisible({ timeout });
+          |                                     ^
+      136 |     else await e.toHaveCount(0, { timeout });
+      137 |   };
+      138 |   await check(true, 10_000);
+        at check (C:\dev\whatsapp agent\tests\e2e\helpers\auto.ts:135:37)
+        at expectAutoGroup (C:\dev\whatsapp agent\tests\e2e\helpers\auto.ts:138:9)
+        at enableAutoViaUi (C:\dev\whatsapp agent\tests\e2e\helpers\auto.ts:206:9)
+        at C:\dev\whatsapp agent\tests\e2e\auto-mode.spec.ts:85:27
+
+    Error Context: test-results\auto-mode-automatic-mode-o-c0765-hen-on-pauses-from-the-tray\error-context.md
+
+    attachment #2: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results\auto-mode-automatic-mode-o-c0765-hen-on-pauses-from-the-tray\trace.zip
+    Usage:
+
+        npx playwright show-trace test-results\auto-mode-automatic-mode-o-c0765-hen-on-pauses-from-the-tray\trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Retry #1 ───────────────────────────────────────────────────────────────────────────────────────
+
+    Error: the enable buttons are offered right after the third approval (AutoState is current when Settings opens)
+
+    expect(locator).toHaveCount(expected) failed
+
+    Locator:  getByTestId('auto-precondition')
+    Expected: 0
+    Received: 1
+    Timeout:  10000ms
+
+    Call log:
+      - the enable buttons are offered right after the third approval (AutoState is current when Settings opens) getByTestId('auto-precondition') with timeout 10000ms
+      - waiting for getByTestId('auto-precondition')
+        24 × locator resolved to 1 element
+           - unexpected value "1"
+
+
+       at helpers\auto.ts:136
+
+      134 |       : expect(target, message);
+      135 |     if (want === 'visible') await e.toBeVisible({ timeout });
+    > 136 |     else await e.toHaveCount(0, { timeout });
+          |                  ^
+      137 |   };
+      138 |   await check(true, 10_000);
+      139 |   const ok = want === 'visible' ? (await target.count()) > 0 : (await target.count()) === 0;
+        at check (C:\dev\whatsapp agent\tests\e2e\helpers\auto.ts:136:18)
+        at expectAutoGroup (C:\dev\whatsapp agent\tests\e2e\helpers\auto.ts:138:9)
+        at enableAutoViaUi (C:\dev\whatsapp agent\tests\e2e\helpers\auto.ts:173:9)
+        at C:\dev\whatsapp agent\tests\e2e\auto-mode.spec.ts:85:27
+
+    Error: "End trial" is offered right after the third shadow decision (AutoState is current when Settings opens)
+
+    expect(locator).toBeVisible() failed
+
+    Locator: getByTestId('auto-end-shadow')
+    Expected: visible
+    Timeout: 10000ms
+    Error: element(s) not found
+
+    Call log:
+      - "End trial" is offered right after the third shadow decision (AutoState is current when Settings opens) getByTestId('auto-end-shadow') with timeout 10000ms
+      - waiting for getByTestId('auto-end-shadow')
+
+
+       at helpers\auto.ts:135
+
+      133 |       ? expect.soft(target, `${message} (AutoState is current when Settings opens)`)
+      134 |       : expect(target, message);
+    > 135 |     if (want === 'visible') await e.toBeVisible({ timeout });
+          |                                     ^
+      136 |     else await e.toHaveCount(0, { timeout });
+      137 |   };
+      138 |   await check(true, 10_000);
+        at check (C:\dev\whatsapp agent\tests\e2e\helpers\auto.ts:135:37)
+        at expectAutoGroup (C:\dev\whatsapp agent\tests\e2e\helpers\auto.ts:138:9)
+        at enableAutoViaUi (C:\dev\whatsapp agent\tests\e2e\helpers\auto.ts:206:9)
+        at C:\dev\whatsapp agent\tests\e2e\auto-mode.spec.ts:85:27
+
+    Error Context: test-results\auto-mode-automatic-mode-o-c0765-hen-on-pauses-from-the-tray-retry1\error-context.md
+
+    attachment #2: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results\auto-mode-automatic-mode-o-c0765-hen-on-pauses-from-the-tray-retry1\trace.zip
+    Usage:
+
+        npx playwright show-trace test-results\auto-mode-automatic-mode-o-c0765-hen-on-pauses-from-the-tray-retry1\trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  2) tests\e2e\cli-connect.spec.ts:161:1 › (5)+(6) consent: declining keeps Local and records nothing; accepting + Test; an inbound is drafted through S1 + S3 on the fake CLI 
+
+    Error: the manipulation badge is visible on the card
+
+    expect(locator).toBeVisible() failed
+
+    Locator: getByTestId('card-2').getByTestId('badge-manipulation')
+    Expected: visible
+    Timeout: 10000ms
+    Error: element(s) not found
+
+    Call log:
+      - the manipulation badge is visible on the card getByTestId('card-2').getByTestId('badge-manipulation') with timeout 10000ms
+      - waiting for getByTestId('card-2').getByTestId('badge-manipulation')
+
+
+      234 |       'the manipulation badge is visible on the card',
+      235 |     )
+    > 236 |     .toBeVisible({ timeout: 10_000 });
+          |      ^
+      237 |   await e2e.screenshot(page, 'cli-attacker-manipulation-en');
+      238 |   const attackerRuns = runsOf(w.cli.claude!.journal(), 'draft').filter((r) => r.mode === 'attacker');
+      239 |   expect(attackerRuns.length).toBeGreaterThanOrEqual(1);
+        at C:\dev\whatsapp agent\tests\e2e\cli-connect.spec.ts:236:6
+
+    Error Context: test-results\cli-connect--5-6-consent-d-ff527-rough-S1-S3-on-the-fake-CLI\error-context.md
+
+    attachment #2: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results\cli-connect--5-6-consent-d-ff527-rough-S1-S3-on-the-fake-CLI\trace.zip
+    Usage:
+
+        npx playwright show-trace test-results\cli-connect--5-6-consent-d-ff527-rough-S1-S3-on-the-fake-CLI\trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Retry #1 ───────────────────────────────────────────────────────────────────────────────────────
+
+    Error: the manipulation badge is visible on the card
+
+    expect(locator).toBeVisible() failed
+
+    Locator: getByTestId('card-2').getByTestId('badge-manipulation')
+    Expected: visible
+    Timeout: 10000ms
+    Error: element(s) not found
+
+    Call log:
+      - the manipulation badge is visible on the card getByTestId('card-2').getByTestId('badge-manipulation') with timeout 10000ms
+      - waiting for getByTestId('card-2').getByTestId('badge-manipulation')
+
+
+      234 |       'the manipulation badge is visible on the card',
+      235 |     )
+    > 236 |     .toBeVisible({ timeout: 10_000 });
+          |      ^
+      237 |   await e2e.screenshot(page, 'cli-attacker-manipulation-en');
+      238 |   const attackerRuns = runsOf(w.cli.claude!.journal(), 'draft').filter((r) => r.mode === 'attacker');
+      239 |   expect(attackerRuns.length).toBeGreaterThanOrEqual(1);
+        at C:\dev\whatsapp agent\tests\e2e\cli-connect.spec.ts:236:6
+
+    Error Context: test-results\cli-connect--5-6-consent-d-ff527-rough-S1-S3-on-the-fake-CLI-retry1\error-context.md
+
+    attachment #2: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results\cli-connect--5-6-consent-d-ff527-rough-S1-S3-on-the-fake-CLI-retry1\trace.zip
+    Usage:
+
+        npx playwright show-trace test-results\cli-connect--5-6-consent-d-ff527-rough-S1-S3-on-the-fake-CLI-retry1\trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  3) tests\e2e\cli-connect.spec.ts:268:1 › (7a) usage_limit: CLOUD_QUOTA with "continues by itself at HH:MM", new chats are held 
+
+    Error: held until resetsAt (budget)
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: "budget"
+    Received: "waiting_llm"
+
+      288 |       'held until resetsAt (budget)',
+      289 |     )
+    > 290 |     .toBe('budget');
+          |      ^
+      291 |   expect(runsOf(w.cli.claude!.journal(), 'extract', 'draft').filter((r) => r.mode !== 'usage_limit')).toHaveLength(0);
+      292 |   await expectLlmCode(w, 'CLOUD_QUOTA');
+      293 |   await expect
+        at C:\dev\whatsapp agent\tests\e2e\cli-connect.spec.ts:290:6
+
+    Error: AppHealth.llm.code is CLOUD_QUOTA
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: "CLOUD_QUOTA"
+    Received: undefined
+
+    Call Log:
+    - Timeout 45000ms exceeded while waiting on the predicate
+
+      259 |   await expect
+      260 |     .soft(async () => expect((await wca(w.app).health()).llm.code).toBe(code), `AppHealth.llm.code is ${code}`)
+    > 261 |     .toPass({ timeout: 45_000 });
+          |      ^
+      262 |   await openAiCard(w.page, 'claude_cli');
+      263 |   await expect
+      264 |     .soft(w.page.getByTestId('connect-error-claude_cli'), `the Connect card shows the ${code} row`)
+        at expectLlmCode (C:\dev\whatsapp agent\tests\e2e\cli-connect.spec.ts:261:6)
+        at C:\dev\whatsapp agent\tests\e2e\cli-connect.spec.ts:292:9
+
+    Error: the Connect card shows the CLOUD_QUOTA row
+
+    expect(locator).toHaveAttribute(expected) failed
+
+    Locator: getByTestId('connect-error-claude_cli')
+    Expected: "CLOUD_QUOTA"
+    Timeout: 5000ms
+    Error: element(s) not found
+
+    Call log:
+      - the Connect card shows the CLOUD_QUOTA row getByTestId('connect-error-claude_cli') with timeout 5000ms
+      - waiting for getByTestId('connect-error-claude_cli')
+
+
+      263 |   await expect
+      264 |     .soft(w.page.getByTestId('connect-error-claude_cli'), `the Connect card shows the ${code} row`)
+    > 265 |     .toHaveAttribute('data-code', code, { timeout: 5_000 });
+          |      ^
+      266 | }
+      267 |
+      268 | test('(7a) usage_limit: CLOUD_QUOTA with "continues by itself at HH:MM", new chats are held', async ({ e2e }) => {
+        at expectLlmCode (C:\dev\whatsapp agent\tests\e2e\cli-connect.spec.ts:265:6)
+        at C:\dev\whatsapp agent\tests\e2e\cli-connect.spec.ts:292:3
+
+    Error: the row says when usage resets (HH:MM)
+
+    expect(locator).toContainText(expected) failed
+
+    Locator: getByTestId('connect-error-claude_cli')
+    Expected pattern: /\d{1,2}:\d{2}/
+    Timeout: 2000ms
+    Error: element(s) not found
+
+    Call log:
+      - the row says when usage resets (HH:MM) getByTestId('connect-error-claude_cli') with timeout 2000ms
+      - waiting for getByTestId('connect-error-claude_cli')
+
+
+      293 |   await expect
+      294 |     .soft(page.getByTestId('connect-error-claude_cli'), 'the row says when usage resets (HH:MM)')
+    > 295 |     .toContainText(/\d{1,2}:\d{2}/, { timeout: 2_000 });
+          |      ^
+      296 |   await e2e.screenshot(page, 'connect-quota-en');
+      297 |   expect(w.bridge.fake.sent).toHaveLength(0);
+      298 | });
+        at C:\dev\whatsapp agent\tests\e2e\cli-connect.spec.ts:295:6
+
+    Error Context: test-results\cli-connect--7a-usage-limi-28484-at-HH-MM-new-chats-are-held\error-context.md
+
+    attachment #2: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results\cli-connect--7a-usage-limi-28484-at-HH-MM-new-chats-are-held\trace.zip
+    Usage:
+
+        npx playwright show-trace test-results\cli-connect--7a-usage-limi-28484-at-HH-MM-new-chats-are-held\trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Retry #1 ───────────────────────────────────────────────────────────────────────────────────────
+
+    Error: held until resetsAt (budget)
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: "budget"
+    Received: "waiting_llm"
+
+      288 |       'held until resetsAt (budget)',
+      289 |     )
+    > 290 |     .toBe('budget');
+          |      ^
+      291 |   expect(runsOf(w.cli.claude!.journal(), 'extract', 'draft').filter((r) => r.mode !== 'usage_limit')).toHaveLength(0);
+      292 |   await expectLlmCode(w, 'CLOUD_QUOTA');
+      293 |   await expect
+        at C:\dev\whatsapp agent\tests\e2e\cli-connect.spec.ts:290:6
+
+    Error: AppHealth.llm.code is CLOUD_QUOTA
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: "CLOUD_QUOTA"
+    Received: undefined
+
+    Call Log:
+    - Timeout 45000ms exceeded while waiting on the predicate
+
+      259 |   await expect
+      260 |     .soft(async () => expect((await wca(w.app).health()).llm.code).toBe(code), `AppHealth.llm.code is ${code}`)
+    > 261 |     .toPass({ timeout: 45_000 });
+          |      ^
+      262 |   await openAiCard(w.page, 'claude_cli');
+      263 |   await expect
+      264 |     .soft(w.page.getByTestId('connect-error-claude_cli'), `the Connect card shows the ${code} row`)
+        at expectLlmCode (C:\dev\whatsapp agent\tests\e2e\cli-connect.spec.ts:261:6)
+        at C:\dev\whatsapp agent\tests\e2e\cli-connect.spec.ts:292:9
+
+    Error: the Connect card shows the CLOUD_QUOTA row
+
+    expect(locator).toHaveAttribute(expected) failed
+
+    Locator: getByTestId('connect-error-claude_cli')
+    Expected: "CLOUD_QUOTA"
+    Timeout: 5000ms
+    Error: element(s) not found
+
+    Call log:
+      - the Connect card shows the CLOUD_QUOTA row getByTestId('connect-error-claude_cli') with timeout 5000ms
+      - waiting for getByTestId('connect-error-claude_cli')
+
+
+      263 |   await expect
+      264 |     .soft(w.page.getByTestId('connect-error-claude_cli'), `the Connect card shows the ${code} row`)
+    > 265 |     .toHaveAttribute('data-code', code, { timeout: 5_000 });
+          |      ^
+      266 | }
+      267 |
+      268 | test('(7a) usage_limit: CLOUD_QUOTA with "continues by itself at HH:MM", new chats are held', async ({ e2e }) => {
+        at expectLlmCode (C:\dev\whatsapp agent\tests\e2e\cli-connect.spec.ts:265:6)
+        at C:\dev\whatsapp agent\tests\e2e\cli-connect.spec.ts:292:3
+
+    Error: the row says when usage resets (HH:MM)
+
+    expect(locator).toContainText(expected) failed
+
+    Locator: getByTestId('connect-error-claude_cli')
+    Expected pattern: /\d{1,2}:\d{2}/
+    Timeout: 2000ms
+    Error: element(s) not found
+
+    Call log:
+      - the row says when usage resets (HH:MM) getByTestId('connect-error-claude_cli') with timeout 2000ms
+      - waiting for getByTestId('connect-error-claude_cli')
+
+
+      293 |   await expect
+      294 |     .soft(page.getByTestId('connect-error-claude_cli'), 'the row says when usage resets (HH:MM)')
+    > 295 |     .toContainText(/\d{1,2}:\d{2}/, { timeout: 2_000 });
+          |      ^
+      296 |   await e2e.screenshot(page, 'connect-quota-en');
+      297 |   expect(w.bridge.fake.sent).toHaveLength(0);
+      298 | });
+        at C:\dev\whatsapp agent\tests\e2e\cli-connect.spec.ts:295:6
+
+    Error Context: test-results\cli-connect--7a-usage-limi-28484-at-HH-MM-new-chats-are-held-retry1\error-context.md
+
+    attachment #2: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results\cli-connect--7a-usage-limi-28484-at-HH-MM-new-chats-are-held-retry1\trace.zip
+    Usage:
+
+        npx playwright show-trace test-results\cli-connect--7a-usage-limi-28484-at-HH-MM-new-chats-are-held-retry1\trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  4) tests\e2e\cli-connect.spec.ts:300:1 › (7b) overage: CLOUD_OVERAGE pauses the provider and no further run starts 
+
+    Error: AppHealth.llm.code is CLOUD_OVERAGE
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: "CLOUD_OVERAGE"
+    Received: undefined
+
+    Call Log:
+    - Timeout 45000ms exceeded while waiting on the predicate
+
+      259 |   await expect
+      260 |     .soft(async () => expect((await wca(w.app).health()).llm.code).toBe(code), `AppHealth.llm.code is ${code}`)
+    > 261 |     .toPass({ timeout: 45_000 });
+          |      ^
+      262 |   await openAiCard(w.page, 'claude_cli');
+      263 |   await expect
+      264 |     .soft(w.page.getByTestId('connect-error-claude_cli'), `the Connect card shows the ${code} row`)
+        at expectLlmCode (C:\dev\whatsapp agent\tests\e2e\cli-connect.spec.ts:261:6)
+        at C:\dev\whatsapp agent\tests\e2e\cli-connect.spec.ts:325:9
+
+    Error Context: test-results\cli-connect--7b-overage-CL-63119-r-and-no-further-run-starts\error-context.md
+
+    attachment #2: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results\cli-connect--7b-overage-CL-63119-r-and-no-further-run-starts\trace.zip
+    Usage:
+
+        npx playwright show-trace test-results\cli-connect--7b-overage-CL-63119-r-and-no-further-run-starts\trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Retry #1 ───────────────────────────────────────────────────────────────────────────────────────
+
+    Error: AppHealth.llm.code is CLOUD_OVERAGE
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: "CLOUD_OVERAGE"
+    Received: undefined
+
+    Call Log:
+    - Timeout 45000ms exceeded while waiting on the predicate
+
+      259 |   await expect
+      260 |     .soft(async () => expect((await wca(w.app).health()).llm.code).toBe(code), `AppHealth.llm.code is ${code}`)
+    > 261 |     .toPass({ timeout: 45_000 });
+          |      ^
+      262 |   await openAiCard(w.page, 'claude_cli');
+      263 |   await expect
+      264 |     .soft(w.page.getByTestId('connect-error-claude_cli'), `the Connect card shows the ${code} row`)
+        at expectLlmCode (C:\dev\whatsapp agent\tests\e2e\cli-connect.spec.ts:261:6)
+        at C:\dev\whatsapp agent\tests\e2e\cli-connect.spec.ts:325:9
+
+    Error Context: test-results\cli-connect--7b-overage-CL-63119-r-and-no-further-run-starts-retry1\error-context.md
+
+    attachment #2: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results\cli-connect--7b-overage-CL-63119-r-and-no-further-run-starts-retry1\trace.zip
+    Usage:
+
+        npx playwright show-trace test-results\cli-connect--7b-overage-CL-63119-r-and-no-further-run-starts-retry1\trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  5) tests\e2e\cli-connect.spec.ts:329:1 › (7c) extra_tool: the init proof fails -> CLI_TOOLSET_MISMATCH with "Export diagnostics", nothing consumed a turn 
+
+    Error: AppHealth.llm.code is CLI_TOOLSET_MISMATCH
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: "CLI_TOOLSET_MISMATCH"
+    Received: undefined
+
+    Call Log:
+    - Timeout 45000ms exceeded while waiting on the predicate
+
+      259 |   await expect
+      260 |     .soft(async () => expect((await wca(w.app).health()).llm.code).toBe(code), `AppHealth.llm.code is ${code}`)
+    > 261 |     .toPass({ timeout: 45_000 });
+          |      ^
+      262 |   await openAiCard(w.page, 'claude_cli');
+      263 |   await expect
+      264 |     .soft(w.page.getByTestId('connect-error-claude_cli'), `the Connect card shows the ${code} row`)
+        at expectLlmCode (C:\dev\whatsapp agent\tests\e2e\cli-connect.spec.ts:261:6)
+        at C:\dev\whatsapp agent\tests\e2e\cli-connect.spec.ts:347:9
+
+    Error: the Connect card shows the CLI_TOOLSET_MISMATCH row
+
+    expect(locator).toHaveAttribute(expected) failed
+
+    Locator: getByTestId('connect-error-claude_cli')
+    Expected: "CLI_TOOLSET_MISMATCH"
+    Timeout: 5000ms
+    Error: element(s) not found
+
+    Call log:
+      - the Connect card shows the CLI_TOOLSET_MISMATCH row getByTestId('connect-error-claude_cli') with timeout 5000ms
+      - waiting for getByTestId('connect-error-claude_cli')
+
+
+      263 |   await expect
+      264 |     .soft(w.page.getByTestId('connect-error-claude_cli'), `the Connect card shows the ${code} row`)
+    > 265 |     .toHaveAttribute('data-code', code, { timeout: 5_000 });
+          |      ^
+      266 | }
+      267 |
+      268 | test('(7a) usage_limit: CLOUD_QUOTA with "continues by itself at HH:MM", new chats are held', async ({ e2e }) => {
+        at expectLlmCode (C:\dev\whatsapp agent\tests\e2e\cli-connect.spec.ts:265:6)
+        at C:\dev\whatsapp agent\tests\e2e\cli-connect.spec.ts:347:3
+
+    Error: the row offers Export diagnostics and names the local AI
+
+    expect(locator).toContainText(expected) failed
+
+    Locator: getByTestId('connect-error-claude_cli')
+    Expected substring: "Export diagnostics"
+    Timeout: 2000ms
+    Error: element(s) not found
+
+    Call log:
+      - the row offers Export diagnostics and names the local AI getByTestId('connect-error-claude_cli') with timeout 2000ms
+      - waiting for getByTestId('connect-error-claude_cli')
+
+
+      348 |   await expect
+      349 |     .soft(page.getByTestId('connect-error-claude_cli'), 'the row offers Export diagnostics and names the local AI')
+    > 350 |     .toContainText('Export diagnostics', { timeout: 2_000 });
+          |      ^
+      351 |   await e2e.screenshot(page, 'connect-toolset-mismatch-en');
+      352 |   expect(w.bridge.fake.sent).toHaveLength(0);
+      353 | });
+        at C:\dev\whatsapp agent\tests\e2e\cli-connect.spec.ts:350:6
+
+    Error Context: test-results\cli-connect--7c-extra-tool-c67eb-ics-nothing-consumed-a-turn\error-context.md
+
+    attachment #2: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results\cli-connect--7c-extra-tool-c67eb-ics-nothing-consumed-a-turn\trace.zip
+    Usage:
+
+        npx playwright show-trace test-results\cli-connect--7c-extra-tool-c67eb-ics-nothing-consumed-a-turn\trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Retry #1 ───────────────────────────────────────────────────────────────────────────────────────
+
+    Error: AppHealth.llm.code is CLI_TOOLSET_MISMATCH
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: "CLI_TOOLSET_MISMATCH"
+    Received: undefined
+
+    Call Log:
+    - Timeout 45000ms exceeded while waiting on the predicate
+
+      259 |   await expect
+      260 |     .soft(async () => expect((await wca(w.app).health()).llm.code).toBe(code), `AppHealth.llm.code is ${code}`)
+    > 261 |     .toPass({ timeout: 45_000 });
+          |      ^
+      262 |   await openAiCard(w.page, 'claude_cli');
+      263 |   await expect
+      264 |     .soft(w.page.getByTestId('connect-error-claude_cli'), `the Connect card shows the ${code} row`)
+        at expectLlmCode (C:\dev\whatsapp agent\tests\e2e\cli-connect.spec.ts:261:6)
+        at C:\dev\whatsapp agent\tests\e2e\cli-connect.spec.ts:347:9
+
+    Error: the Connect card shows the CLI_TOOLSET_MISMATCH row
+
+    expect(locator).toHaveAttribute(expected) failed
+
+    Locator: getByTestId('connect-error-claude_cli')
+    Expected: "CLI_TOOLSET_MISMATCH"
+    Timeout: 5000ms
+    Error: element(s) not found
+
+    Call log:
+      - the Connect card shows the CLI_TOOLSET_MISMATCH row getByTestId('connect-error-claude_cli') with timeout 5000ms
+      - waiting for getByTestId('connect-error-claude_cli')
+
+
+      263 |   await expect
+      264 |     .soft(w.page.getByTestId('connect-error-claude_cli'), `the Connect card shows the ${code} row`)
+    > 265 |     .toHaveAttribute('data-code', code, { timeout: 5_000 });
+          |      ^
+      266 | }
+      267 |
+      268 | test('(7a) usage_limit: CLOUD_QUOTA with "continues by itself at HH:MM", new chats are held', async ({ e2e }) => {
+        at expectLlmCode (C:\dev\whatsapp agent\tests\e2e\cli-connect.spec.ts:265:6)
+        at C:\dev\whatsapp agent\tests\e2e\cli-connect.spec.ts:347:3
+
+    Error: the row offers Export diagnostics and names the local AI
+
+    expect(locator).toContainText(expected) failed
+
+    Locator: getByTestId('connect-error-claude_cli')
+    Expected substring: "Export diagnostics"
+    Timeout: 2000ms
+    Error: element(s) not found
+
+    Call log:
+      - the row offers Export diagnostics and names the local AI getByTestId('connect-error-claude_cli') with timeout 2000ms
+      - waiting for getByTestId('connect-error-claude_cli')
+
+
+      348 |   await expect
+      349 |     .soft(page.getByTestId('connect-error-claude_cli'), 'the row offers Export diagnostics and names the local AI')
+    > 350 |     .toContainText('Export diagnostics', { timeout: 2_000 });
+          |      ^
+      351 |   await e2e.screenshot(page, 'connect-toolset-mismatch-en');
+      352 |   expect(w.bridge.fake.sent).toHaveLength(0);
+      353 | });
+        at C:\dev\whatsapp agent\tests\e2e\cli-connect.spec.ts:350:6
+
+    Error Context: test-results\cli-connect--7c-extra-tool-c67eb-ics-nothing-consumed-a-turn-retry1\error-context.md
+
+    attachment #2: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results\cli-connect--7c-extra-tool-c67eb-ics-nothing-consumed-a-turn-retry1\trace.zip
+    Usage:
+
+        npx playwright show-trace test-results\cli-connect--7c-extra-tool-c67eb-ics-nothing-consumed-a-turn-retry1\trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  6) tests\e2e\cli-connect.spec.ts:355:1 › (8) experimental Gemini: hidden until "Show experimental", Terms read date, the user's own agy settings untouched, selectable 
+
+    Error: the workspace-trust step shows its one-line diff
+
+    expect(locator).toBeVisible() failed
+
+    Locator: getByTestId('agy-workspace-diff')
+    Expected: visible
+    Timeout: 10000ms
+    Error: element(s) not found
+
+    Call log:
+      - the workspace-trust step shows its one-line diff getByTestId('agy-workspace-diff') with timeout 10000ms
+      - waiting for getByTestId('agy-workspace-diff')
+
+
+      388 |   await expect
+      389 |     .soft(page.getByTestId('agy-workspace-diff'), 'the workspace-trust step shows its one-line diff')
+    > 390 |     .toBeVisible({ timeout: 10_000 });
+          |      ^
+      391 |
+      392 |   // hard: the user's own settings file is untouched and no backup was written
+      393 |   expect(readFileSync(settingsFile, 'utf8')).toBe(original);
+        at C:\dev\whatsapp agent\tests\e2e\cli-connect.spec.ts:390:6
+
+    Error: Gemini - your subscription can be chosen
+
+    expect(locator).toBeEnabled() failed
+
+    Locator:  getByTestId('ai-use-antigravity_cli')
+    Expected: enabled
+    Received: disabled
+    Timeout:  10000ms
+
+    Call log:
+      - Gemini - your subscription can be chosen getByTestId('ai-use-antigravity_cli') with timeout 10000ms
+      - waiting for getByTestId('ai-use-antigravity_cli')
+        23 × locator resolved to <button disabled type="button" class="btn btn-outline" data-testid="ai-use-antigravity_cli" aria-describedby="ai-use-why-antigravity_cli">Use Gemini - your subscription</button>
+           - unexpected value "disabled"
+
+
+      396 |
+      397 |   // the provider must be selectable once ready ("Use Gemini - your subscription"): the consent shows the Terms read date
+    > 398 |   await expect(page.getByTestId('ai-use-antigravity_cli'), 'Gemini - your subscription can be chosen').toBeEnabled({
+          |                                                                                                        ^
+      399 |     timeout: 10_000,
+      400 |   });
+      401 |   await page.waitForTimeout(600);
+        at C:\dev\whatsapp agent\tests\e2e\cli-connect.spec.ts:398:104
+
+    Error Context: test-results\cli-connect--8-experimenta-3b4d4-ttings-untouched-selectable\error-context.md
+
+    attachment #2: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results\cli-connect--8-experimenta-3b4d4-ttings-untouched-selectable\trace.zip
+    Usage:
+
+        npx playwright show-trace test-results\cli-connect--8-experimenta-3b4d4-ttings-untouched-selectable\trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Retry #1 ───────────────────────────────────────────────────────────────────────────────────────
+
+    Error: the workspace-trust step shows its one-line diff
+
+    expect(locator).toBeVisible() failed
+
+    Locator: getByTestId('agy-workspace-diff')
+    Expected: visible
+    Timeout: 10000ms
+    Error: element(s) not found
+
+    Call log:
+      - the workspace-trust step shows its one-line diff getByTestId('agy-workspace-diff') with timeout 10000ms
+      - waiting for getByTestId('agy-workspace-diff')
+
+
+      388 |   await expect
+      389 |     .soft(page.getByTestId('agy-workspace-diff'), 'the workspace-trust step shows its one-line diff')
+    > 390 |     .toBeVisible({ timeout: 10_000 });
+          |      ^
+      391 |
+      392 |   // hard: the user's own settings file is untouched and no backup was written
+      393 |   expect(readFileSync(settingsFile, 'utf8')).toBe(original);
+        at C:\dev\whatsapp agent\tests\e2e\cli-connect.spec.ts:390:6
+
+    Error: Gemini - your subscription can be chosen
+
+    expect(locator).toBeEnabled() failed
+
+    Locator:  getByTestId('ai-use-antigravity_cli')
+    Expected: enabled
+    Received: disabled
+    Timeout:  10000ms
+
+    Call log:
+      - Gemini - your subscription can be chosen getByTestId('ai-use-antigravity_cli') with timeout 10000ms
+      - waiting for getByTestId('ai-use-antigravity_cli')
+        23 × locator resolved to <button disabled type="button" class="btn btn-outline" data-testid="ai-use-antigravity_cli" aria-describedby="ai-use-why-antigravity_cli">Use Gemini - your subscription</button>
+           - unexpected value "disabled"
+
+
+      396 |
+      397 |   // the provider must be selectable once ready ("Use Gemini - your subscription"): the consent shows the Terms read date
+    > 398 |   await expect(page.getByTestId('ai-use-antigravity_cli'), 'Gemini - your subscription can be chosen').toBeEnabled({
+          |                                                                                                        ^
+      399 |     timeout: 10_000,
+      400 |   });
+      401 |   await page.waitForTimeout(600);
+        at C:\dev\whatsapp agent\tests\e2e\cli-connect.spec.ts:398:104
+
+    Error Context: test-results\cli-connect--8-experimenta-3b4d4-ttings-untouched-selectable-retry1\error-context.md
+
+    attachment #2: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results\cli-connect--8-experimenta-3b4d4-ttings-untouched-selectable-retry1\trace.zip
+    Usage:
+
+        npx playwright show-trace test-results\cli-connect--8-experimenta-3b4d4-ttings-untouched-selectable-retry1\trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  7) tests\e2e\cli-connect.spec.ts:410:1 › (9) quitting while a CLI job runs: the job pid is dead within 10 s, no job pid file, empty cli-runs dir 
+
+    Error: E2E quit leak: pid files left in run\: job-cli-384109f7-e7b1-4c50-a90a-b9df01454693; job pid files left in run\ (1)
+
+       at helpers\fixtures.ts:588
+
+      586 |     }
+      587 |     leaks.push(...jobDirLeaks(launched.userDataDir));
+    > 588 |     if (leaks.length > 0) throw new Error(`E2E quit leak: ${leaks.join('; ')}`);
+          |                                 ^
+      589 |   }
+      590 |
+      591 |   /**
+        at E2eContext.quit (C:\dev\whatsapp agent\tests\e2e\helpers\fixtures.ts:588:33)
+        at C:\dev\whatsapp agent\tests\e2e\cli-connect.spec.ts:426:3
+
+    Error Context: test-results\cli-connect--9-quitting-wh-53e08-pid-file-empty-cli-runs-dir\error-context.md
+
+    attachment #2: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results\cli-connect--9-quitting-wh-53e08-pid-file-empty-cli-runs-dir\trace.zip
+    Usage:
+
+        npx playwright show-trace test-results\cli-connect--9-quitting-wh-53e08-pid-file-empty-cli-runs-dir\trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Retry #1 ───────────────────────────────────────────────────────────────────────────────────────
+
+    Error: E2E quit leak: pid files left in run\: job-cli-0e5b9570-ab04-4db3-8d21-38d888abaecf; job pid files left in run\ (1)
+
+       at helpers\fixtures.ts:588
+
+      586 |     }
+      587 |     leaks.push(...jobDirLeaks(launched.userDataDir));
+    > 588 |     if (leaks.length > 0) throw new Error(`E2E quit leak: ${leaks.join('; ')}`);
+          |                                 ^
+      589 |   }
+      590 |
+      591 |   /**
+        at E2eContext.quit (C:\dev\whatsapp agent\tests\e2e\helpers\fixtures.ts:588:33)
+        at C:\dev\whatsapp agent\tests\e2e\cli-connect.spec.ts:426:3
+
+    Error Context: test-results\cli-connect--9-quitting-wh-53e08-pid-file-empty-cli-runs-dir-retry1\error-context.md
+
+    attachment #2: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results\cli-connect--9-quitting-wh-53e08-pid-file-empty-cli-runs-dir-retry1\trace.zip
+    Usage:
+
+        npx playwright show-trace test-results\cli-connect--9-quitting-wh-53e08-pid-file-empty-cli-runs-dir-retry1\trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  8) tests\e2e\i18n-rtl.spec.ts:217:1 › [v2] AutoStrip, the Automatic-mode group and the activity page in both languages, no overflow at 420 px 
+
+    Error: the enable buttons are offered right after the third approval (AutoState is current when Settings opens)
+
+    expect(locator).toHaveCount(expected) failed
+
+    Locator:  getByTestId('auto-precondition')
+    Expected: 0
+    Received: 1
+    Timeout:  10000ms
+
+    Call log:
+      - the enable buttons are offered right after the third approval (AutoState is current when Settings opens) getByTestId('auto-precondition') with timeout 10000ms
+      - waiting for getByTestId('auto-precondition')
+        24 × locator resolved to 1 element
+           - unexpected value "1"
+
+
+       at helpers\auto.ts:136
+
+      134 |       : expect(target, message);
+      135 |     if (want === 'visible') await e.toBeVisible({ timeout });
+    > 136 |     else await e.toHaveCount(0, { timeout });
+          |                  ^
+      137 |   };
+      138 |   await check(true, 10_000);
+      139 |   const ok = want === 'visible' ? (await target.count()) > 0 : (await target.count()) === 0;
+        at check (C:\dev\whatsapp agent\tests\e2e\helpers\auto.ts:136:18)
+        at expectAutoGroup (C:\dev\whatsapp agent\tests\e2e\helpers\auto.ts:138:9)
+        at enableAutoViaUi (C:\dev\whatsapp agent\tests\e2e\helpers\auto.ts:173:9)
+        at C:\dev\whatsapp agent\tests\e2e\i18n-rtl.spec.ts:223:3
+
+    Error: "End trial" is offered right after the third shadow decision (AutoState is current when Settings opens)
+
+    expect(locator).toBeVisible() failed
+
+    Locator: getByTestId('auto-end-shadow')
+    Expected: visible
+    Timeout: 10000ms
+    Error: element(s) not found
+
+    Call log:
+      - "End trial" is offered right after the third shadow decision (AutoState is current when Settings opens) getByTestId('auto-end-shadow') with timeout 10000ms
+      - waiting for getByTestId('auto-end-shadow')
+
+
+       at helpers\auto.ts:135
+
+      133 |       ? expect.soft(target, `${message} (AutoState is current when Settings opens)`)
+      134 |       : expect(target, message);
+    > 135 |     if (want === 'visible') await e.toBeVisible({ timeout });
+          |                                     ^
+      136 |     else await e.toHaveCount(0, { timeout });
+      137 |   };
+      138 |   await check(true, 10_000);
+        at check (C:\dev\whatsapp agent\tests\e2e\helpers\auto.ts:135:37)
+        at expectAutoGroup (C:\dev\whatsapp agent\tests\e2e\helpers\auto.ts:138:9)
+        at enableAutoViaUi (C:\dev\whatsapp agent\tests\e2e\helpers\auto.ts:206:9)
+        at C:\dev\whatsapp agent\tests\e2e\i18n-rtl.spec.ts:223:3
+
+    Error Context: test-results\i18n-rtl--v2-AutoStrip-the-77551-uages-no-overflow-at-420-px\error-context.md
+
+    attachment #2: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results\i18n-rtl--v2-AutoStrip-the-77551-uages-no-overflow-at-420-px\trace.zip
+    Usage:
+
+        npx playwright show-trace test-results\i18n-rtl--v2-AutoStrip-the-77551-uages-no-overflow-at-420-px\trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Retry #1 ───────────────────────────────────────────────────────────────────────────────────────
+
+    Error: the enable buttons are offered right after the third approval (AutoState is current when Settings opens)
+
+    expect(locator).toHaveCount(expected) failed
+
+    Locator:  getByTestId('auto-precondition')
+    Expected: 0
+    Received: 1
+    Timeout:  10000ms
+
+    Call log:
+      - the enable buttons are offered right after the third approval (AutoState is current when Settings opens) getByTestId('auto-precondition') with timeout 10000ms
+      - waiting for getByTestId('auto-precondition')
+        23 × locator resolved to 1 element
+           - unexpected value "1"
+
+
+       at helpers\auto.ts:136
+
+      134 |       : expect(target, message);
+      135 |     if (want === 'visible') await e.toBeVisible({ timeout });
+    > 136 |     else await e.toHaveCount(0, { timeout });
+          |                  ^
+      137 |   };
+      138 |   await check(true, 10_000);
+      139 |   const ok = want === 'visible' ? (await target.count()) > 0 : (await target.count()) === 0;
+        at check (C:\dev\whatsapp agent\tests\e2e\helpers\auto.ts:136:18)
+        at expectAutoGroup (C:\dev\whatsapp agent\tests\e2e\helpers\auto.ts:138:9)
+        at enableAutoViaUi (C:\dev\whatsapp agent\tests\e2e\helpers\auto.ts:173:9)
+        at C:\dev\whatsapp agent\tests\e2e\i18n-rtl.spec.ts:223:3
+
+    Error: "End trial" is offered right after the third shadow decision (AutoState is current when Settings opens)
+
+    expect(locator).toBeVisible() failed
+
+    Locator: getByTestId('auto-end-shadow')
+    Expected: visible
+    Timeout: 10000ms
+    Error: element(s) not found
+
+    Call log:
+      - "End trial" is offered right after the third shadow decision (AutoState is current when Settings opens) getByTestId('auto-end-shadow') with timeout 10000ms
+      - waiting for getByTestId('auto-end-shadow')
+
+
+       at helpers\auto.ts:135
+
+      133 |       ? expect.soft(target, `${message} (AutoState is current when Settings opens)`)
+      134 |       : expect(target, message);
+    > 135 |     if (want === 'visible') await e.toBeVisible({ timeout });
+          |                                     ^
+      136 |     else await e.toHaveCount(0, { timeout });
+      137 |   };
+      138 |   await check(true, 10_000);
+        at check (C:\dev\whatsapp agent\tests\e2e\helpers\auto.ts:135:37)
+        at expectAutoGroup (C:\dev\whatsapp agent\tests\e2e\helpers\auto.ts:138:9)
+        at enableAutoViaUi (C:\dev\whatsapp agent\tests\e2e\helpers\auto.ts:206:9)
+        at C:\dev\whatsapp agent\tests\e2e\i18n-rtl.spec.ts:223:3
+
+    Error Context: test-results\i18n-rtl--v2-AutoStrip-the-77551-uages-no-overflow-at-420-px-retry1\error-context.md
+
+    attachment #2: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results\i18n-rtl--v2-AutoStrip-the-77551-uages-no-overflow-at-420-px-retry1\trace.zip
+    Usage:
+
+        npx playwright show-trace test-results\i18n-rtl--v2-AutoStrip-the-77551-uages-no-overflow-at-420-px-retry1\trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  9) tests\e2e\pictures.spec.ts:139:1 › no projector: the Photo card offers "Download picture reading" with the size of the active tier's projector 
+
+    Error: the size follows F24 (formatModelSize of the mmproj-mid manifest entry)
+
+    expect(locator).toContainText(expected) failed
+
+    Locator: getByTestId('image-unread-action-1')
+    Expected substring: "0.18 GB"
+    Received string:    "Download picture reading (0.2 GB)"
+    Timeout: 10000ms
+
+    Call log:
+      - the size follows F24 (formatModelSize of the mmproj-mid manifest entry) getByTestId('image-unread-action-1') with timeout 10000ms
+      - waiting for getByTestId('image-unread-action-1')
+        24 × locator resolved to <button type="button" class="btn btn-outline" data-cause="no_local_reader" data-testid="image-unread-action-1">Download picture reading (0.2 GB)</button>
+           - unexpected value "Download picture reading (0.2 GB)"
+
+
+      159 |   await expect
+      160 |     .soft(action, 'the size follows F24 (formatModelSize of the mmproj-mid manifest entry)')
+    > 161 |     .toContainText(formatModelSize(MEDIA_MODEL_MANIFEST['mmproj-mid']));
+          |      ^
+      162 |   await e2e.screenshot(page, 'picture-no-reader-en');
+      163 |   // nothing read the picture: no image request reached the (fake) model
+      164 |   const reads = readJsonlJournal(p.llamaJournal).filter((e) => JSON.stringify(e).includes('image_url'));
+        at C:\dev\whatsapp agent\tests\e2e\pictures.spec.ts:161:6
+
+    Error Context: test-results\pictures-no-projector-the--62bd8-the-active-tier-s-projector\error-context.md
+
+    attachment #2: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results\pictures-no-projector-the--62bd8-the-active-tier-s-projector\trace.zip
+    Usage:
+
+        npx playwright show-trace test-results\pictures-no-projector-the--62bd8-the-active-tier-s-projector\trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Retry #1 ───────────────────────────────────────────────────────────────────────────────────────
+
+    Error: the size follows F24 (formatModelSize of the mmproj-mid manifest entry)
+
+    expect(locator).toContainText(expected) failed
+
+    Locator: getByTestId('image-unread-action-1')
+    Expected substring: "0.18 GB"
+    Received string:    "Download picture reading (0.2 GB)"
+    Timeout: 10000ms
+
+    Call log:
+      - the size follows F24 (formatModelSize of the mmproj-mid manifest entry) getByTestId('image-unread-action-1') with timeout 10000ms
+      - waiting for getByTestId('image-unread-action-1')
+        23 × locator resolved to <button type="button" class="btn btn-outline" data-cause="no_local_reader" data-testid="image-unread-action-1">Download picture reading (0.2 GB)</button>
+           - unexpected value "Download picture reading (0.2 GB)"
+
+
+      159 |   await expect
+      160 |     .soft(action, 'the size follows F24 (formatModelSize of the mmproj-mid manifest entry)')
+    > 161 |     .toContainText(formatModelSize(MEDIA_MODEL_MANIFEST['mmproj-mid']));
+          |      ^
+      162 |   await e2e.screenshot(page, 'picture-no-reader-en');
+      163 |   // nothing read the picture: no image request reached the (fake) model
+      164 |   const reads = readJsonlJournal(p.llamaJournal).filter((e) => JSON.stringify(e).includes('image_url'));
+        at C:\dev\whatsapp agent\tests\e2e\pictures.spec.ts:161:6
+
+    Error Context: test-results\pictures-no-projector-the--62bd8-the-active-tier-s-projector-retry1\error-context.md
+
+    attachment #2: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results\pictures-no-projector-the--62bd8-the-active-tier-s-projector-retry1\trace.zip
+    Usage:
+
+        npx playwright show-trace test-results\pictures-no-projector-the--62bd8-the-active-tier-s-projector-retry1\trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  10) tests\e2e\undo.spec.ts:26:1 › an automatic create is undone from the AutoStrip: Undoing... -> Undone, one update-event status:cancelled 
+
+    Error: the enable buttons are offered right after the third approval (AutoState is current when Settings opens)
+
+    expect(locator).toHaveCount(expected) failed
+
+    Locator:  getByTestId('auto-precondition')
+    Expected: 0
+    Received: 1
+    Timeout:  10000ms
+
+    Call log:
+      - the enable buttons are offered right after the third approval (AutoState is current when Settings opens) getByTestId('auto-precondition') with timeout 10000ms
+      - waiting for getByTestId('auto-precondition')
+        23 × locator resolved to 1 element
+           - unexpected value "1"
+
+
+       at helpers\auto.ts:136
+
+      134 |       : expect(target, message);
+      135 |     if (want === 'visible') await e.toBeVisible({ timeout });
+    > 136 |     else await e.toHaveCount(0, { timeout });
+          |                  ^
+      137 |   };
+      138 |   await check(true, 10_000);
+      139 |   const ok = want === 'visible' ? (await target.count()) > 0 : (await target.count()) === 0;
+        at check (C:\dev\whatsapp agent\tests\e2e\helpers\auto.ts:136:18)
+        at expectAutoGroup (C:\dev\whatsapp agent\tests\e2e\helpers\auto.ts:138:9)
+        at enableAutoViaUi (C:\dev\whatsapp agent\tests\e2e\helpers\auto.ts:173:9)
+        at C:\dev\whatsapp agent\tests\e2e\undo.spec.ts:32:3
+
+    Error: "End trial" is offered right after the third shadow decision (AutoState is current when Settings opens)
+
+    expect(locator).toBeVisible() failed
+
+    Locator: getByTestId('auto-end-shadow')
+    Expected: visible
+    Timeout: 10000ms
+    Error: element(s) not found
+
+    Call log:
+      - "End trial" is offered right after the third shadow decision (AutoState is current when Settings opens) getByTestId('auto-end-shadow') with timeout 10000ms
+      - waiting for getByTestId('auto-end-shadow')
+
+
+       at helpers\auto.ts:135
+
+      133 |       ? expect.soft(target, `${message} (AutoState is current when Settings opens)`)
+      134 |       : expect(target, message);
+    > 135 |     if (want === 'visible') await e.toBeVisible({ timeout });
+          |                                     ^
+      136 |     else await e.toHaveCount(0, { timeout });
+      137 |   };
+      138 |   await check(true, 10_000);
+        at check (C:\dev\whatsapp agent\tests\e2e\helpers\auto.ts:135:37)
+        at expectAutoGroup (C:\dev\whatsapp agent\tests\e2e\helpers\auto.ts:138:9)
+        at enableAutoViaUi (C:\dev\whatsapp agent\tests\e2e\helpers\auto.ts:206:9)
+        at C:\dev\whatsapp agent\tests\e2e\undo.spec.ts:32:3
+
+    Error Context: test-results\undo-an-automatic-create-i-e0efc-date-event-status-cancelled\error-context.md
+
+    attachment #2: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results\undo-an-automatic-create-i-e0efc-date-event-status-cancelled\trace.zip
+    Usage:
+
+        npx playwright show-trace test-results\undo-an-automatic-create-i-e0efc-date-event-status-cancelled\trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Retry #1 ───────────────────────────────────────────────────────────────────────────────────────
+
+    Error: the enable buttons are offered right after the third approval (AutoState is current when Settings opens)
+
+    expect(locator).toHaveCount(expected) failed
+
+    Locator:  getByTestId('auto-precondition')
+    Expected: 0
+    Received: 1
+    Timeout:  10000ms
+
+    Call log:
+      - the enable buttons are offered right after the third approval (AutoState is current when Settings opens) getByTestId('auto-precondition') with timeout 10000ms
+      - waiting for getByTestId('auto-precondition')
+        24 × locator resolved to 1 element
+           - unexpected value "1"
+
+
+       at helpers\auto.ts:136
+
+      134 |       : expect(target, message);
+      135 |     if (want === 'visible') await e.toBeVisible({ timeout });
+    > 136 |     else await e.toHaveCount(0, { timeout });
+          |                  ^
+      137 |   };
+      138 |   await check(true, 10_000);
+      139 |   const ok = want === 'visible' ? (await target.count()) > 0 : (await target.count()) === 0;
+        at check (C:\dev\whatsapp agent\tests\e2e\helpers\auto.ts:136:18)
+        at expectAutoGroup (C:\dev\whatsapp agent\tests\e2e\helpers\auto.ts:138:9)
+        at enableAutoViaUi (C:\dev\whatsapp agent\tests\e2e\helpers\auto.ts:173:9)
+        at C:\dev\whatsapp agent\tests\e2e\undo.spec.ts:32:3
+
+    Error: "End trial" is offered right after the third shadow decision (AutoState is current when Settings opens)
+
+    expect(locator).toBeVisible() failed
+
+    Locator: getByTestId('auto-end-shadow')
+    Expected: visible
+    Timeout: 10000ms
+    Error: element(s) not found
+
+    Call log:
+      - "End trial" is offered right after the third shadow decision (AutoState is current when Settings opens) getByTestId('auto-end-shadow') with timeout 10000ms
+      - waiting for getByTestId('auto-end-shadow')
+
+
+       at helpers\auto.ts:135
+
+      133 |       ? expect.soft(target, `${message} (AutoState is current when Settings opens)`)
+      134 |       : expect(target, message);
+    > 135 |     if (want === 'visible') await e.toBeVisible({ timeout });
+          |                                     ^
+      136 |     else await e.toHaveCount(0, { timeout });
+      137 |   };
+      138 |   await check(true, 10_000);
+        at check (C:\dev\whatsapp agent\tests\e2e\helpers\auto.ts:135:37)
+        at expectAutoGroup (C:\dev\whatsapp agent\tests\e2e\helpers\auto.ts:138:9)
+        at enableAutoViaUi (C:\dev\whatsapp agent\tests\e2e\helpers\auto.ts:206:9)
+        at C:\dev\whatsapp agent\tests\e2e\undo.spec.ts:32:3
+
+    Error Context: test-results\undo-an-automatic-create-i-e0efc-date-event-status-cancelled-retry1\error-context.md
+
+    attachment #2: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results\undo-an-automatic-create-i-e0efc-date-event-status-cancelled-retry1\trace.zip
+    Usage:
+
+        npx playwright show-trace test-results\undo-an-automatic-create-i-e0efc-date-event-status-cancelled-retry1\trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  11) tests\e2e\undo.spec.ts:87:1 › a manual reschedule is undone from its card back to the pre-write slot; a hidden window cannot undo 
+
+    Error: the card shows the restored 15:00 slot after Undo
+
+    expect(locator).toContainText(expected) failed
+
+    Locator: getByTestId('card-2').getByTestId('event-chip-range')
+    Expected substring: "15:00"
+    Received string:    "⁨17:00-18:00⁩"
+    Timeout: 30000ms
+
+    Call log:
+      - the card shows the restored 15:00 slot after Undo getByTestId('card-2').getByTestId('event-chip-range') with timeout 30000ms
+      - waiting for getByTestId('card-2').getByTestId('event-chip-range')
+        63 × locator resolved to <span data-testid="event-chip-range" class="tnum block text-sm text-text-muted">⁨17:00-18:00⁩</span>
+           - unexpected value "⁨17:00-18:00⁩"
+
+
+      155 |       'the card shows the restored 15:00 slot after Undo',
+      156 |     )
+    > 157 |     .toContainText('15:00', { timeout: 30_000 });
+          |      ^
+      158 |   await expect
+      159 |     .poll(
+      160 |       () =>
+        at C:\dev\whatsapp agent\tests\e2e\undo.spec.ts:157:6
+
+    Error Context: test-results\undo-a-manual-reschedule-i-8ead3-a-hidden-window-cannot-undo\error-context.md
+
+    attachment #2: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results\undo-a-manual-reschedule-i-8ead3-a-hidden-window-cannot-undo\trace.zip
+    Usage:
+
+        npx playwright show-trace test-results\undo-a-manual-reschedule-i-8ead3-a-hidden-window-cannot-undo\trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Retry #1 ───────────────────────────────────────────────────────────────────────────────────────
+
+    Error: the card shows the restored 15:00 slot after Undo
+
+    expect(locator).toContainText(expected) failed
+
+    Locator: getByTestId('card-2').getByTestId('event-chip-range')
+    Expected substring: "15:00"
+    Received string:    "⁨17:00-18:00⁩"
+    Timeout: 30000ms
+
+    Call log:
+      - the card shows the restored 15:00 slot after Undo getByTestId('card-2').getByTestId('event-chip-range') with timeout 30000ms
+      - waiting for getByTestId('card-2').getByTestId('event-chip-range')
+        63 × locator resolved to <span data-testid="event-chip-range" class="tnum block text-sm text-text-muted">⁨17:00-18:00⁩</span>
+           - unexpected value "⁨17:00-18:00⁩"
+
+
+      155 |       'the card shows the restored 15:00 slot after Undo',
+      156 |     )
+    > 157 |     .toContainText('15:00', { timeout: 30_000 });
+          |      ^
+      158 |   await expect
+      159 |     .poll(
+      160 |       () =>
+        at C:\dev\whatsapp agent\tests\e2e\undo.spec.ts:157:6
+
+    Error Context: test-results\undo-a-manual-reschedule-i-8ead3-a-hidden-window-cannot-undo-retry1\error-context.md
+
+    attachment #2: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results\undo-a-manual-reschedule-i-8ead3-a-hidden-window-cannot-undo-retry1\trace.zip
+    Usage:
+
+        npx playwright show-trace test-results\undo-a-manual-reschedule-i-8ead3-a-hidden-window-cannot-undo-retry1\trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  12) tests\e2e\voice.spec.ts:105:1 › a voice note is transcribed by the (fake) whisper job, shown as a VoiceBubble with its transcript, and proposed 
+
+    Error: the header line names the 0:03 duration of the note
+
+    expect(locator).toContainText(expected) failed
+
+    Locator: getByTestId('queue-transcribing')
+    Expected substring: "0:03"
+    Received string:    "Transcribing a voice note (0:00)..."
+    Timeout: 2000ms
+
+    Call log:
+      - the header line names the 0:03 duration of the note getByTestId('queue-transcribing') with timeout 2000ms
+      - waiting for getByTestId('queue-transcribing')
+        20 × locator resolved to <p data-testid="queue-transcribing" class="m-0 flex items-center gap-1 ps-1 text-xs text-text-muted">…</p>
+           - unexpected value "Transcribing a voice note (0:00)..."
+
+
+      123 |   await expect
+      124 |     .soft(page.getByTestId('queue-transcribing'), 'the header line names the 0:03 duration of the note')
+    > 125 |     .toContainText('0:03', { timeout: 2_000 });
+          |      ^
+      126 |   await e2e.screenshot(page, 'voice-transcribing-en');
+      127 |   let jobPid: number | undefined;
+      128 |   await expect
+        at C:\dev\whatsapp agent\tests\e2e\voice.spec.ts:125:6
+
+    Error Context: test-results\voice-a-voice-note-is-tran-fcf75-its-transcript-and-proposed\error-context.md
+
+    attachment #2: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results\voice-a-voice-note-is-tran-fcf75-its-transcript-and-proposed\trace.zip
+    Usage:
+
+        npx playwright show-trace test-results\voice-a-voice-note-is-tran-fcf75-its-transcript-and-proposed\trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Retry #1 ───────────────────────────────────────────────────────────────────────────────────────
+
+    Error: the header line names the 0:03 duration of the note
+
+    expect(locator).toContainText(expected) failed
+
+    Locator: getByTestId('queue-transcribing')
+    Expected substring: "0:03"
+    Received string:    "Transcribing a voice note (0:00)..."
+    Timeout: 2000ms
+
+    Call log:
+      - the header line names the 0:03 duration of the note getByTestId('queue-transcribing') with timeout 2000ms
+      - waiting for getByTestId('queue-transcribing')
+        20 × locator resolved to <p data-testid="queue-transcribing" class="m-0 flex items-center gap-1 ps-1 text-xs text-text-muted">…</p>
+           - unexpected value "Transcribing a voice note (0:00)..."
+
+
+      123 |   await expect
+      124 |     .soft(page.getByTestId('queue-transcribing'), 'the header line names the 0:03 duration of the note')
+    > 125 |     .toContainText('0:03', { timeout: 2_000 });
+          |      ^
+      126 |   await e2e.screenshot(page, 'voice-transcribing-en');
+      127 |   let jobPid: number | undefined;
+      128 |   await expect
+        at C:\dev\whatsapp agent\tests\e2e\voice.spec.ts:125:6
+
+    Error Context: test-results\voice-a-voice-note-is-tran-fcf75-its-transcript-and-proposed-retry1\error-context.md
+
+    attachment #2: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results\voice-a-voice-note-is-tran-fcf75-its-transcript-and-proposed-retry1\trace.zip
+    Usage:
+
+        npx playwright show-trace test-results\voice-a-voice-note-is-tran-fcf75-its-transcript-and-proposed-retry1\trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  13) tests\e2e\voice.spec.ts:168:1 › whisper exit 3 = VOICE_MODEL_MISSING: the card offers "Download (1.6 GB)" with the manifest size 
+
+    Error: a card for 972550... appears
+
+    a card for 972550... appears
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: true
+    Received: false
+
+    Call Log:
+    - Timeout 60000ms exceeded while waiting on the predicate
+
+       at helpers\v2.ts:193
+
+      191 |       { timeout: timeoutMs, message: `a card for ${chatJid.slice(0, 6)}... appears` },
+      192 |     )
+    > 193 |     .toBe(true);
+          |      ^
+      194 |   return itemId!;
+      195 | }
+      196 |
+        at cardOfChat (C:\dev\whatsapp agent\tests\e2e\helpers\v2.ts:193:6)
+        at C:\dev\whatsapp agent\tests\e2e\voice.spec.ts:180:24
+
+    Error Context: test-results\voice-whisper-exit-3-VOICE-76b3b-6-GB-with-the-manifest-size\error-context.md
+
+    attachment #2: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results\voice-whisper-exit-3-VOICE-76b3b-6-GB-with-the-manifest-size\trace.zip
+    Usage:
+
+        npx playwright show-trace test-results\voice-whisper-exit-3-VOICE-76b3b-6-GB-with-the-manifest-size\trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Retry #1 ───────────────────────────────────────────────────────────────────────────────────────
+
+    Error: a card for 972550... appears
+
+    a card for 972550... appears
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: true
+    Received: false
+
+    Call Log:
+    - Timeout 60000ms exceeded while waiting on the predicate
+
+       at helpers\v2.ts:193
+
+      191 |       { timeout: timeoutMs, message: `a card for ${chatJid.slice(0, 6)}... appears` },
+      192 |     )
+    > 193 |     .toBe(true);
+          |      ^
+      194 |   return itemId!;
+      195 | }
+      196 |
+        at cardOfChat (C:\dev\whatsapp agent\tests\e2e\helpers\v2.ts:193:6)
+        at C:\dev\whatsapp agent\tests\e2e\voice.spec.ts:180:24
+
+    Error Context: test-results\voice-whisper-exit-3-VOICE-76b3b-6-GB-with-the-manifest-size-retry1\error-context.md
+
+    attachment #2: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results\voice-whisper-exit-3-VOICE-76b3b-6-GB-with-the-manifest-size-retry1\trace.zip
+    Usage:
+
+        npx playwright show-trace test-results\voice-whisper-exit-3-VOICE-76b3b-6-GB-with-the-manifest-size-retry1\trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  13 failed
+    tests\e2e\auto-mode.spec.ts:37:1 › automatic mode: off by default, reached only through the UI, writes with zero clicks when on, pauses from the tray 
+    tests\e2e\cli-connect.spec.ts:161:1 › (5)+(6) consent: declining keeps Local and records nothing; accepting + Test; an inbound is drafted through S1 + S3 on the fake CLI 
+    tests\e2e\cli-connect.spec.ts:268:1 › (7a) usage_limit: CLOUD_QUOTA with "continues by itself at HH:MM", new chats are held 
+    tests\e2e\cli-connect.spec.ts:300:1 › (7b) overage: CLOUD_OVERAGE pauses the provider and no further run starts 
+    tests\e2e\cli-connect.spec.ts:329:1 › (7c) extra_tool: the init proof fails -> CLI_TOOLSET_MISMATCH with "Export diagnostics", nothing consumed a turn 
+    tests\e2e\cli-connect.spec.ts:355:1 › (8) experimental Gemini: hidden until "Show experimental", Terms read date, the user's own agy settings untouched, selectable 
+    tests\e2e\cli-connect.spec.ts:410:1 › (9) quitting while a CLI job runs: the job pid is dead within 10 s, no job pid file, empty cli-runs dir 
+    tests\e2e\i18n-rtl.spec.ts:217:1 › [v2] AutoStrip, the Automatic-mode group and the activity page in both languages, no overflow at 420 px 
+    tests\e2e\pictures.spec.ts:139:1 › no projector: the Photo card offers "Download picture reading" with the size of the active tier's projector 
+    tests\e2e\undo.spec.ts:26:1 › an automatic create is undone from the AutoStrip: Undoing... -> Undone, one update-event status:cancelled 
+    tests\e2e\undo.spec.ts:87:1 › a manual reschedule is undone from its card back to the pre-write slot; a hidden window cannot undo 
+    tests\e2e\voice.spec.ts:105:1 › a voice note is transcribed by the (fake) whisper job, shown as a VoiceBubble with its transcript, and proposed 
+    tests\e2e\voice.spec.ts:168:1 › whisper exit 3 = VOICE_MODEL_MISSING: the card offers "Download (1.6 GB)" with the manifest size 
+  33 passed (36.6m)

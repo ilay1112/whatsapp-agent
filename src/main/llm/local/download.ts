@@ -8,30 +8,43 @@ import type { Repos } from '../../db/index';
 import type {
   DownloadProgress,
   HardwareInfo,
+  ModelFileId,
   ModelFileStatus,
   ModelPlan,
   ModelTier,
   TierInfo,
 } from '../../../shared/types';
-import { MODEL_TIERS } from '../../../shared/types';
+import { MODEL_TIERS, modelFileKindOf } from '../../../shared/types';
 import type { ErrorCode } from '../../../shared/errors';
-import { DOWNLOAD_HOST_ALLOWLIST, type ModelManifestEntry } from './manifest';
+import {
+  DOWNLOAD_HOST_ALLOWLIST,
+  MEDIA_MODEL_MANIFEST,
+  MMPROJ_FOR_TIER,
+  type MediaModelFileId,
+  type MediaModelManifestEntry,
+  type ModelManifestEntry,
+} from './manifest';
 
+/** [V2 CHANGE, V2-W1-07] every member takes a ModelFileId (widening from ModelTier): ONE downloader queue for the LLM tiers, the
+ *  projectors and the voice files (C2 1.5 DownloadProgress.tier). An LLM tier keeps the v1 behaviour byte for byte; a media file
+ *  (MEDIA_MODEL_MANIFEST) queues BEHIND a running LLM download and is checked against its own magic. */
 export interface ModelManager {
   plan(): Promise<ModelPlan>;
   /** Starts (or resumes) the download of `tier` (default: selected tier); verifies sha256 after the last byte; status -> ready. */
-  start(tier?: ModelTier): Promise<DownloadProgress>;
-  pause(tier?: ModelTier): Promise<DownloadProgress>;
-  resume(tier?: ModelTier): Promise<DownloadProgress>;
-  cancel(tier?: ModelTier): Promise<ModelPlan>;
-  delete(tier: ModelTier): Promise<ModelPlan>;
+  start(tier?: ModelFileId): Promise<DownloadProgress>;
+  pause(tier?: ModelFileId): Promise<DownloadProgress>;
+  resume(tier?: ModelFileId): Promise<DownloadProgress>;
+  cancel(tier?: ModelFileId): Promise<ModelPlan>;
+  delete(tier: ModelFileId): Promise<ModelPlan>;
   /** 4 Hz max; unsubscribe function. */
   onProgress(cb: (p: DownloadProgress) => void): () => void;
   /** Absolute path of a READY model file for the runtime, null otherwise. */
-  readyPath(tier: ModelTier): string | null;
+  readyPath(tier: ModelFileId): string | null;
 }
 export interface ModelManagerDeps {
   manifest: Readonly<Record<ModelTier, ModelManifestEntry>>;
+  /** [V2 ADD] projector + voice files (default MEDIA_MODEL_MANIFEST; the WCA_MODEL_MANIFEST e2e seam replaces it). */
+  mediaManifest?: Readonly<Record<MediaModelFileId, MediaModelManifestEntry>>;
   allowHttpLoopback?: boolean; // e2e seam only
   modelsDir: string;
   repos: Pick<Repos, 'models'>;
@@ -52,6 +65,18 @@ export const DISK_HEADROOM = 1.05;
 export const PROGRESS_INTERVAL_MS = 250;
 /** GGUF magic - fails fast on HTML error pages / captive portals. */
 export const GGUF_MAGIC = 'GGUF';
+/** [V2 ADD] whisper.cpp ggml model magic: bytes 6c 6d 67 67 ('lmgg') - the voice files (B18). */
+export const GGML_MAGIC = 'lmgg';
+
+const isLlmTier = (id: ModelFileId): id is ModelTier => (MODEL_TIERS as readonly string[]).includes(id);
+interface AnyEntry {
+  url: string;
+  size: number;
+  sha256: string;
+  label: string;
+  localName: string;
+  magic: typeof GGUF_MAGIC | typeof GGML_MAGIC;
+}
 /** A sha256 / size mismatch triggers exactly ONE automatic re-download. */
 export const MAX_AUTO_RETRIES = 1;
 /** Below this the UI may suggest a smaller tier (never an automatic switch). */
@@ -100,31 +125,53 @@ class DownloadAbort extends Error {
 export function createModelManager(deps: ModelManagerDeps): ModelManager {
   const log = deps.log.child('models');
   const listeners = new Set<(p: DownloadProgress) => void>();
-  const controllers = new Map<ModelTier, AbortController>();
-  const running = new Map<ModelTier, Promise<void>>();
-  const lastEmitAt = new Map<ModelTier, number>();
-  const pausedTiers = new Set<ModelTier>();
+  const controllers = new Map<ModelFileId, AbortController>();
+  const running = new Map<ModelFileId, Promise<void>>();
+  const lastEmitAt = new Map<ModelFileId, number>(); // [V2] keyed by DownloadProgress.tier (ModelFileId, C2 1.5)
+  const pausedTiers = new Set<ModelFileId>();
+  const media = deps.mediaManifest ?? MEDIA_MODEL_MANIFEST;
 
-  const entryOf = (tier: ModelTier): ModelManifestEntry => {
-    const entry = deps.manifest[tier];
-    if (entry === undefined) throw new Error(`unknown tier: ${tier}`);
-    return entry;
+  const entryOf = (tier: ModelFileId): AnyEntry => {
+    if (isLlmTier(tier)) {
+      const entry = deps.manifest[tier];
+      if (entry === undefined) throw new Error(`unknown tier: ${tier}`);
+      return {
+        url: entry.url,
+        size: entry.size,
+        sha256: entry.sha256,
+        label: entry.label,
+        localName: entry.fileName,
+        magic: GGUF_MAGIC,
+      };
+    }
+    const m = media[tier];
+    if (m === undefined) throw new Error(`unknown tier: ${tier}`);
+    // two projectors share the upstream name mmproj-F16.gguf: the LOCAL name is prefixed with the file id
+    return {
+      url: m.url,
+      size: m.size,
+      sha256: m.sha256,
+      label: m.label,
+      localName: `${tier}-${m.fileName}`,
+      magic: m.magic === 'GGML' ? GGML_MAGIC : GGUF_MAGIC,
+    };
   };
-  const finalPath = (tier: ModelTier): string => path.join(deps.modelsDir, entryOf(tier).fileName);
-  const partPath = (tier: ModelTier): string => `${finalPath(tier)}.part`;
-  const sidecarPath = (tier: ModelTier): string => `${partPath(tier)}.json`;
+  const finalPath = (tier: ModelFileId): string => path.join(deps.modelsDir, entryOf(tier).localName);
+  const partPath = (tier: ModelFileId): string => `${finalPath(tier)}.part`;
+  const sidecarPath = (tier: ModelFileId): string => `${partPath(tier)}.json`;
 
-  const statusOf = (tier: ModelTier): ModelFileStatus => deps.repos.models.get(tier)?.status ?? 'none';
-  const bytesDoneOf = (tier: ModelTier): number => deps.repos.models.get(tier)?.bytesDone ?? 0;
+  const statusOf = (tier: ModelFileId): ModelFileStatus => deps.repos.models.get(tier)?.status ?? 'none';
+  const bytesDoneOf = (tier: ModelFileId): number => deps.repos.models.get(tier)?.bytesDone ?? 0;
 
   const record = (
-    tier: ModelTier,
+    tier: ModelFileId,
     patch: { status: ModelFileStatus; bytesDone: number; mtime?: number; verifiedAt?: number | null },
   ): void => {
     const entry = entryOf(tier);
     const prev = deps.repos.models.get(tier);
     deps.repos.models.upsert({
       id: tier,
+      kind: modelFileKindOf(tier), // [V2 ADD] 'llm' | 'mmproj' | 'asr' | 'vad'
       path: finalPath(tier),
       size: entry.size,
       sha256: entry.sha256,
@@ -137,7 +184,7 @@ export function createModelManager(deps: ModelManagerDeps): ModelManager {
   };
 
   const progressOf = (
-    tier: ModelTier,
+    tier: ModelFileId,
     over: {
       status?: ModelFileStatus;
       bytesDone?: number;
@@ -163,14 +210,14 @@ export function createModelManager(deps: ModelManagerDeps): ModelManager {
     for (const cb of [...listeners]) cb(p);
   };
 
-  const readSidecar = async (tier: ModelTier): Promise<Sidecar | null> => {
+  const readSidecar = async (tier: ModelFileId): Promise<Sidecar | null> => {
     try {
       return JSON.parse(await fsp.readFile(sidecarPath(tier), 'utf8')) as Sidecar;
     } catch {
       return null;
     }
   };
-  const writeSidecar = async (tier: ModelTier, side: Sidecar): Promise<void> => {
+  const writeSidecar = async (tier: ModelFileId, side: Sidecar): Promise<void> => {
     await fsp.writeFile(sidecarPath(tier), JSON.stringify(side), 'utf8');
   };
   const removeQuietly = async (file: string): Promise<void> => {
@@ -193,13 +240,13 @@ export function createModelManager(deps: ModelManagerDeps): ModelManager {
       stream.on('end', () => resolve(hash.digest('hex')));
     });
 
-  const hasGgufMagic = async (file: string): Promise<boolean> => {
+  const hasMagic = async (file: string, magic: string): Promise<boolean> => {
     let handle: fsp.FileHandle | null = null;
     try {
       handle = await fsp.open(file, 'r');
       const buf = Buffer.alloc(4);
       const { bytesRead } = await handle.read(buf, 0, 4, 0);
-      return bytesRead === 4 && buf.toString('ascii') === GGUF_MAGIC;
+      return bytesRead === 4 && buf.toString('ascii') === magic;
     } catch {
       return false;
     } finally {
@@ -208,7 +255,7 @@ export function createModelManager(deps: ModelManagerDeps): ModelManager {
   };
 
   /** One transfer attempt into `<file>.part`. Throws DownloadAbort on a refusal, returns the byte count on success. */
-  const transfer = async (tier: ModelTier, signal: AbortSignal): Promise<number> => {
+  const transfer = async (tier: ModelFileId, signal: AbortSignal): Promise<number> => {
     const entry = entryOf(tier);
     const part = partPath(tier);
     const side = await readSidecar(tier);
@@ -295,12 +342,12 @@ export function createModelManager(deps: ModelManagerDeps): ModelManager {
     return done;
   };
 
-  const verifyAndPromote = async (tier: ModelTier): Promise<void> => {
+  const verifyAndPromote = async (tier: ModelFileId): Promise<void> => {
     const entry = entryOf(tier);
     const part = partPath(tier);
     const size = await sizeOf(part);
     if (size !== entry.size) throw new DownloadAbort('DOWNLOAD_FAILED', 'size_mismatch');
-    if (!(await hasGgufMagic(part))) throw new DownloadAbort('DOWNLOAD_FAILED', 'bad_magic');
+    if (!(await hasMagic(part, entry.magic))) throw new DownloadAbort('DOWNLOAD_FAILED', 'bad_magic');
     record(tier, { status: 'verifying', bytesDone: size });
     emit(progressOf(tier, { status: 'verifying', bytesDone: size }), true);
     const digest = await sha256OfFile(part);
@@ -314,7 +361,7 @@ export function createModelManager(deps: ModelManagerDeps): ModelManager {
     log.info('model_ready', { tier });
   };
 
-  const run = async (tier: ModelTier, signal: AbortSignal): Promise<void> => {
+  const run = async (tier: ModelFileId, signal: AbortSignal): Promise<void> => {
     for (let attempt = 0; attempt <= MAX_AUTO_RETRIES; attempt += 1) {
       try {
         const done = await transfer(tier, signal);
@@ -343,14 +390,14 @@ export function createModelManager(deps: ModelManagerDeps): ModelManager {
     }
   };
 
-  const resolveTier = async (tier?: ModelTier): Promise<ModelTier> => {
+  const resolveTier = async (tier?: ModelFileId): Promise<ModelFileId> => {
     if (tier !== undefined) return tier;
     const selected = deps.selectedTier();
     if (selected !== 'auto') return selected;
     return (await deps.hardware()).recommendedTier;
   };
 
-  const startInternal = async (tier: ModelTier): Promise<DownloadProgress> => {
+  const startInternal = async (tier: ModelFileId): Promise<DownloadProgress> => {
     if (statusOf(tier) === 'ready' && (await sizeOf(finalPath(tier))) === entryOf(tier).size) {
       return progressOf(tier, { status: 'ready', bytesDone: entryOf(tier).size });
     }
@@ -368,7 +415,13 @@ export function createModelManager(deps: ModelManagerDeps): ModelManager {
     const controller = new AbortController();
     controllers.set(tier, controller);
     record(tier, { status: 'downloading', bytesDone: partBytes });
-    const task = run(tier, controller.signal).finally(() => {
+    // [V2] one queue: a projector / voice file waits for every running LLM download before it transfers a byte
+    const ahead = isLlmTier(tier) ? [] : [...running.entries()].filter(([t]) => isLlmTier(t)).map(([, p]) => p);
+    const task = (
+      ahead.length === 0
+        ? run(tier, controller.signal)
+        : Promise.allSettled(ahead).then(() => run(tier, controller.signal))
+    ).finally(() => {
       running.delete(tier);
       controllers.delete(tier);
     });
@@ -378,11 +431,24 @@ export function createModelManager(deps: ModelManagerDeps): ModelManager {
     return p;
   };
 
-  const stopInternal = async (tier: ModelTier, paused: boolean): Promise<void> => {
+  const stopInternal = async (tier: ModelFileId, paused: boolean): Promise<void> => {
     if (paused) pausedTiers.add(tier);
     controllers.get(tier)?.abort();
     const task = running.get(tier);
     if (task !== undefined) await task;
+  };
+
+  const mmprojOf = (tier: ModelTier): ModelPlan['mmproj'] => {
+    const id = MMPROJ_FOR_TIER[tier];
+    const entry = media[id];
+    if (entry === undefined) return null;
+    const rec = deps.repos.models.get(id);
+    return {
+      id: id as import('../../../shared/types').MmprojId,
+      sizeBytes: entry.size,
+      status: rec?.status ?? 'none',
+      bytesDone: rec?.status === 'ready' ? entry.size : (rec?.bytesDone ?? 0),
+    };
   };
 
   const plan = async (): Promise<ModelPlan> => {
@@ -411,6 +477,7 @@ export function createModelManager(deps: ModelManagerDeps): ModelManager {
       selectedTier,
       tiers,
       suggestSmaller: smallerExists && bench !== null && bench.tokPerSec < SUGGEST_SMALLER_TOK_PER_SEC,
+      mmproj: mmprojOf(selectedTier), // [V2 ADD] projector of the selected tier (C2 1.5 ModelPlan.mmproj), from MEDIA_MODEL_MANIFEST
     };
   };
 

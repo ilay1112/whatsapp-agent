@@ -14,6 +14,10 @@ export type ItemPatch = Parameters<ItemsRepo['update']>[1];
 /** in_calendar cards close 1 day after the event started (ARCHITECTURE section 7: "in_calendar --event start + 1 day--> closed 'past'"). */
 export const PAST_EVENT_GRACE_MS = 24 * 3600_000;
 
+/** [V2] The editable-event filter of findExistingEvent (two parameters: chat_id, sinceTs). */
+const EDITABLE_EVENT_FILTER = `chat_id = ? AND state = 'in_calendar' AND calendar_event_id IS NOT NULL
+      AND event_state IN ('created','updated') AND event_start_ts IS NOT NULL AND event_start_ts >= ?`;
+
 const selectById = (db: Db, id: T.ItemId): T.Item | null => {
   const row = db.prepare<ItemRow>(`SELECT ${ITEM_COLUMNS} FROM items WHERE id = ?`).get(id);
   return row ? toItem(row) : null;
@@ -39,7 +43,8 @@ export function updateItemRow(db: Db, id: T.ItemId, patch: ItemPatch, now: T.Epo
   db.prepare(
     `UPDATE items SET state=?, analysis=?, hold_reason=?, error_code=?, reply_state=?, event_state=?, trigger_msg_id=?, trigger_ts=?,
             missing_json=?, badges_json=?, current_proposal_id=?, editing_until=?, calendar_event_id=?, calendar_html_link=?,
-            event_start_ts=?, closed_reason=?, closed_at=?, updated_at=?
+            event_start_ts=?, closed_reason=?, closed_at=?, updated_at=?,
+            linked_item_id=?, event_revision=?, calendar_updated=?, trigger_kind=?, event_origin_item_id=?
        WHERE id=?`,
   ).run(
     next.state,
@@ -60,6 +65,11 @@ export function updateItemRow(db: Db, id: T.ItemId, patch: ItemPatch, now: T.Epo
     next.closedReason,
     next.closedAt,
     next.updatedAt,
+    next.linkedItemId,
+    next.eventRevision,
+    next.calendarUpdated,
+    next.triggerKind,
+    next.eventOriginItemId,
     id,
   );
   return next;
@@ -190,6 +200,36 @@ export function createItemsRepo(db: Db): ItemsRepo {
         )
         .all(itemId)
         .map(toItemMessage);
+    },
+    // ---- [V2 ADD] C2 16.1 (V2-W1-01-db) ----
+    /** findExistingEvent's query (P2 7.1, B20): the NEWEST (created_at, then id) in_calendar item of the chat holding an event id with
+     *  event_state created|updated (a cancelled event is never an edit target) and event_start_ts >= sinceTs. */
+    newestEditableEvent(chatId, sinceTs) {
+      const row = db
+        .prepare<ItemRow>(
+          `SELECT ${ITEM_COLUMNS} FROM items WHERE ${EDITABLE_EVENT_FILTER} ORDER BY created_at DESC, id DESC LIMIT 1`,
+        )
+        .get(chatId, sinceTs);
+      return row ? toItem(row) : null;
+    },
+
+    /** [F31] the same filter, counted per DISTINCT event (a source item and the delta item acting on it hold the same event id). */
+    countEditableEvents(chatId, sinceTs) {
+      return db
+        .prepare<{ n: number }>(
+          `SELECT COUNT(DISTINCT calendar_event_id) AS n FROM items WHERE ${EDITABLE_EVENT_FILTER}`,
+        )
+        .get(chatId, sinceTs)!.n;
+    },
+
+    /** Every item holding this event (source + acting items), oldest first. */
+    byCalendarEventId(eventId) {
+      return db
+        .prepare<ItemRow>(
+          `SELECT ${ITEM_COLUMNS} FROM items WHERE calendar_event_id = ? ORDER BY created_at ASC, id ASC`,
+        )
+        .all(eventId)
+        .map(toItem);
     },
   };
 }

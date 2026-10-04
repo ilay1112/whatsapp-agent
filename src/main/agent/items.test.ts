@@ -23,6 +23,11 @@ const EXTRACTION: Extraction = {
   location: '',
   missing: [],
   suspicious: false,
+  // [V2] C2 5: the four B20 fields S1 v2 always returns (null-event defaults of the S1 v2 few-shots)
+  refersToExisting: false,
+  change: 'no_change',
+  changeConfidence: 'high',
+  confidence: 'high',
 };
 
 describe('formatPhoneDisplay', () => {
@@ -139,6 +144,7 @@ describe('createItemService', () => {
       sendable: true,
       isKnown: true,
       policy: 'default',
+      autoPolicy: 'inherit', // [V2] C2 1.5
     });
     expect(card.draft).toMatchObject({ text: 'Tomorrow at 17:00 works for me', lang: 'en', proposalVersion: 1 });
     expect(card.event).toMatchObject({ startLocal: '2026-09-22T17:00:00' });
@@ -219,7 +225,7 @@ describe('createItemService', () => {
   it('shows at most one control per kind and carries the previous attempt error as lastError', () => {
     triage();
     const send = env.repos.actions.forItem(item.id).find((a) => a.kind === 'send_reply')!;
-    env.repos.actions.markApprovedExecuting(send.id, send.canonicalJson, now);
+    env.repos.actions.markApprovedExecuting(send.id, send.canonicalJson, now, 'user');
     env.repos.actions.markFailed(send.id, 'SEND_FAILED', now);
     const clone = env.repos.actions.insertPending({
       itemId: item.id,
@@ -519,7 +525,13 @@ describe('createItemService', () => {
     env.repos.items.update(item.id, { eventState: 'created', eventStartTs: (ANCHOR_MS + 86_400_000) as EpochMs }, now);
     const data = service.dashboard();
     expect(data.inCalendar.map((c) => c.itemId)).toEqual([item.id]);
-    expect(data.inCalendar[0]!.calendar).toEqual({ eventStartTs: ANCHOR_MS + 86_400_000 });
+    // [V2] C2 1.5: + the opaque eventKey (16 hex), the event revision and status
+    expect(data.inCalendar[0]!.calendar).toEqual({
+      eventStartTs: ANCHOR_MS + 86_400_000,
+      eventKey: expect.stringMatching(/^[0-9a-f]{16}$/),
+      revision: expect.any(Number),
+      status: 'confirmed',
+    });
     expect(data.counts.inCalendar).toBe(1);
   });
 

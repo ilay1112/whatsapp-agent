@@ -3,7 +3,7 @@ import type { Db, Repos } from '../index';
 import { type ModelFileRow, toModelFile } from './rows';
 
 export type ModelsRepo = Repos['models'];
-const MODEL_COLUMNS = 'id, path, size, sha256, mtime, status, bytes_done, verified_at, bench_json';
+const MODEL_COLUMNS = 'id, kind, path, size, sha256, mtime, status, bytes_done, verified_at, bench_json'; // [V2] + kind (migration v4)
 
 export function createModelsRepo(db: Db): ModelsRepo {
   return {
@@ -13,13 +13,14 @@ export function createModelsRepo(db: Db): ModelsRepo {
     },
     upsert(r) {
       db.prepare(
-        `INSERT INTO model_files(id, path, size, sha256, mtime, status, bytes_done, verified_at, bench_json)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `INSERT INTO model_files(id, kind, path, size, sha256, mtime, status, bytes_done, verified_at, bench_json)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(id) DO UPDATE SET path = excluded.path, size = excluded.size, sha256 = excluded.sha256, mtime = excluded.mtime,
                                        status = excluded.status, bytes_done = excluded.bytes_done, verified_at = excluded.verified_at,
                                        bench_json = excluded.bench_json`,
       ).run(
         r.id,
+        r.kind,
         r.path,
         r.size,
         r.sha256,

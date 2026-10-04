@@ -4,6 +4,8 @@ import {
   configureElectronLog,
   createLogger,
   errorMeta,
+  jobStderrMeta,
+  JOB_STDERR_MARKERS,
   LOG_FILE_COUNT,
   LOG_FILE_MAX_BYTES,
   LOG_FILE_NAME,
@@ -257,5 +259,87 @@ describe('electron-log wiring', () => {
     createLogger({ logsDir: 'C:\\tmp', sink: (l) => lines.push(l) }).info('x');
     expect(spy).not.toHaveBeenCalled();
     spy.mockRestore();
+  });
+});
+
+// ---------------------------------------------------------------------------------------------------------------------
+// [V2] B16 per-run MCP token, the vendor OAuth env names, job stdout / stderr (B27).
+// ---------------------------------------------------------------------------------------------------------------------
+describe('[V2] redact - MCP token shape and env names', () => {
+  // 43 chars of base64url = what toolServer.ts mints from 32 random bytes (synthetic value, T5).
+  const TOKEN43 = 'TESTONLY_mcp-token_0123456789abcdefghijklmn';
+
+  it('the synthetic token really has the 43-char base64url shape', () => {
+    expect(TOKEN43).toMatch(/^[A-Za-z0-9_-]{43}$/);
+  });
+
+  it('redacts a standalone 43-char token anywhere in a line, idempotently', () => {
+    for (const line of [`token ${TOKEN43} end`, TOKEN43, `"${TOKEN43}"`, `a=${TOKEN43}`]) {
+      const once = redact(line);
+      expect(once).not.toContain(TOKEN43);
+      expect(once).toContain('[REDACTED-TOKEN43]');
+      expect(redact(once)).toBe(once);
+    }
+  });
+
+  it('does not cut a longer id or a 42/44-char run', () => {
+    const short = TOKEN43.slice(1);
+    const long = `${TOKEN43}x`;
+    expect(redact(`id ${short} end`)).toBe(`id ${short} end`);
+    expect(redact(`id ${long} end`)).toBe(`id ${long} end`);
+  });
+
+  it.each(['WCA_MCP_TOKEN', 'CLAUDE_CODE_OAUTH_TOKEN', 'ANTHROPIC_AUTH_TOKEN'])('redacts the value of %s=', (name) => {
+    const out = redact(`env ${name}=abc.def-123 next=1`);
+    expect(out).toBe(`env ${name}=[REDACTED] next=1`);
+  });
+
+  it('a Claude OAuth token (sk-ant-oat...) is caught by the Anthropic key row', () => {
+    expect(redact('sk-ant-oat01-TESTONLYabcdefghij')).toBe('[REDACTED-ANTHROPIC-KEY]');
+  });
+});
+
+describe('[V2] job output never reaches a sink as text', () => {
+  const setup = (): { lines: string[]; log: ReturnType<typeof createLogger> } => {
+    const lines: string[] = [];
+    return { lines, log: createLogger({ logsDir: 'C:/tmp/logs', sink: (l) => lines.push(l), now: () => 0 }) };
+  };
+
+  it('a `stdout` / `jobStdout` meta key is dropped entirely - not even its length', () => {
+    const { lines, log } = setup();
+    log.info('job_done', { stdout: 'SENTINEL_CLI_STDOUT answer', jobStdout: 'SENTINEL_TRANSCRIPT_STDOUT', exit: 0 });
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).not.toContain('SENTINEL');
+    expect(lines[0]).not.toMatch(/stdout/i);
+    expect(lines[0]).toContain('exit=0');
+  });
+
+  it('a `stderr` / `jobStderr` meta key becomes bytes + sha8 + markers, never the text', () => {
+    const { lines, log } = setup();
+    const stderr = 'SENTINEL_WHISPER_STDERR: error 429 rate limit; ENOENT model.bin';
+    log.warn('job_failed', { stderr, jobStderr: 42 });
+    expect(lines[0]).not.toContain('SENTINEL');
+    expect(lines[0]).not.toContain('model.bin');
+    expect(lines[0]).toContain(`stderrSha8="${sha8(stderr)}"`);
+    expect(lines[0]).toContain(`stderrBytes=${Buffer.byteLength(stderr, 'utf8')}`);
+    expect(lines[0]).toContain('stderrMarkers="rate_limit,not_found"');
+    expect(lines[0]).toContain(`stderrSha8="${sha8('42')}"`);
+  });
+
+  it('jobStderrMeta recognises each marker of the closed set and nothing else', () => {
+    const samples: Record<(typeof JOB_STDERR_MARKERS)[number], string> = {
+      rate_limit: 'HTTP 429 Too Many Requests',
+      auth: 'Error: not logged in',
+      not_found: 'ENOENT: no such file',
+      timeout: 'request timed out',
+      out_of_memory: 'std::bad_alloc',
+      dll_missing: 'exit -1073741515',
+      permission: 'Access is denied.',
+    };
+    for (const marker of JOB_STDERR_MARKERS) {
+      expect(jobStderrMeta(samples[marker]).stderrMarkers, marker).toBe(marker);
+    }
+    expect(jobStderrMeta('all fine').stderrMarkers).toBe('');
+    expect(jobStderrMeta('')).toEqual({ stderrBytes: 0, stderrSha8: sha8(''), stderrMarkers: '' });
   });
 });

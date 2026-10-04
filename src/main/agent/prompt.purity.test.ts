@@ -87,6 +87,7 @@ const read: McpReadClient = {
     Promise.resolve({ ok: true, value: { nowIso: '2026-09-21T09:00:00+03:00', timeZone: 'Asia/Jerusalem' } }),
   getFreeBusy: () => Promise.resolve({ ok: true, value: [] }),
   findAppEvent: () => Promise.resolve({ ok: true, value: null }),
+  getEvent: () => Promise.resolve({ ok: false as const, error: 'unavailable' as const }), // [V2] C2 11 (unused by v1)
 };
 
 const SPECIALS = [
@@ -130,6 +131,8 @@ describe(`I4 property test (seed ${SEED}, ${ITERATIONS} iterations)`, () => {
     settings: () => DEFAULT_SETTINGS,
     calendarConnected: () => true,
     audit: () => {},
+    wa: { recentChats: () => [], chatMessages: () => [], search: () => [], context: () => null }, // [V2] C2 10
+    waAvailable: () => false, // [V2]
   });
   const promptBaseline = buildSystemPrompt(PROMPT_INPUT);
   const toolsBaseline = JSON.stringify(gate.exposedTools());
@@ -190,5 +193,77 @@ describe(`I4 property test (seed ${SEED}, ${ITERATIONS} iterations)`, () => {
       expect(promptBaseline).not.toContain(c.payload);
       expect(toolsBaseline).not.toContain(c.payload);
     }
+  });
+});
+
+// ======================= [V2-W1-03] I4' extension (P2 16 row `prompt.purity.test.ts`, T2 5) =======================
+// The untrusted text of v2 - the existing event's title / location (quoted contact text), picture text (imageText) and voice transcripts -
+// may live ONLY inside the nonce block, and never moves a single byte of any system prompt (S1 / S3 / V1), whatever the provider or
+// settings: buildSystemPrompt() takes no provider, no settings and no policy input at all (B15, B29).
+describe(`I4' v2 property test (seed ${SEED}, ${ITERATIONS} iterations)`, () => {
+  const STAGES = ['extract', 'draft', 'read_image'] as const;
+  const baselines = Object.fromEntries(STAGES.map((stage) => [stage, buildSystemPrompt({ ...PROMPT_INPUT, stage })]));
+
+  it('existing_event title/location, imageText and transcripts stay inside the block; every stage prompt is byte-identical', () => {
+    const rnd = prng(SEED ^ 0x2);
+    for (let i = 0; i < ITERATIONS; i += 1) {
+      const tag = `UNTRUSTED-V2-${i}`;
+      const picture: Message = { ...msg(untrusted(rnd, `${tag}-caption`)), waMsgId: 'PIC', mediaType: 'image' };
+      const voice: Message = {
+        ...msg(''),
+        rowid: 2,
+        waMsgId: 'VOICE',
+        mediaType: 'audio',
+        voice: { transcript: untrusted(rnd, `${tag}-transcript`), language: 'he', seconds: 5 },
+      };
+      const common = {
+        messages: [picture, voice],
+        nonce: NONCE,
+        dayTable: DAY_TABLE,
+        nowIso: PROMPT_INPUT.nowIso,
+        timeZone: PROMPT_INPUT.tz,
+        replyLang: 'he' as const,
+        existingEvent: {
+          title: untrusted(rnd, `${tag}-title`),
+          date: '2026-09-23',
+          weekday: 3,
+          weekday_en: 'Wednesday',
+          weekday_he: 'יום רביעי',
+          start_local: '2026-09-23T15:00:00',
+          end_local: '2026-09-23T16:00:00',
+          time_zone: 'Asia/Jerusalem',
+          location: untrusted(rnd, `${tag}-location`),
+          status: 'confirmed' as const,
+        },
+        imageText: { waMsgId: 'PIC', readText: untrusted(rnd, `${tag}-imagetext`), kind: 'flyer' as const },
+      };
+      for (const built of [
+        buildContext({ ...common, stage: 'extract' }),
+        buildContext({ ...common, stage: 'draft', busy: [], slot: SLOT }),
+      ]) {
+        const open = built.userMessage.indexOf(`<<DATA-${NONCE}>>`);
+        const close = built.userMessage.indexOf(`<<END-DATA-${NONCE}>>`);
+        expect(open, `iteration ${i}`).toBeGreaterThan(-1);
+        expect(close, `iteration ${i}`).toBeGreaterThan(open);
+        const outside = built.userMessage.slice(0, open) + built.userMessage.slice(close);
+        expect(outside, `iteration ${i} (seed ${SEED})`).not.toContain(tag);
+        expect(built.userMessage.split(`<<END-DATA-${NONCE}>>`), `iteration ${i}`).toHaveLength(2);
+      }
+      for (const stage of STAGES) {
+        const prompt = buildSystemPrompt({ ...PROMPT_INPUT, stage });
+        expect(prompt, `iteration ${i} ${stage}`).toBe(baselines[stage]);
+        expect(prompt).not.toContain(tag);
+      }
+    }
+  });
+
+  it('the S1 / S3 / V1 prompts contain no word about automatic mode, tools of a session, or settings (B29)', () => {
+    for (const stage of STAGES) {
+      expect(baselines[stage]).not.toMatch(/\b(automatic|auto-?approve|undo|policy|settings)\b/i);
+    }
+  });
+
+  it('buildSystemPrompt has no provider / settings / policy input: its declared inputs are the six trusted facts only', () => {
+    expect(Object.keys(PROMPT_INPUT).sort()).toEqual(['nonce', 'nowIso', 'replyLang', 'stage', 'tz', 'userGender']);
   });
 });

@@ -14,7 +14,11 @@ describe('settings repo', () => {
   it('patch() deep-merges, round-trips through JSON and is re-validated', () => {
     const { repos } = memRepos();
     const patched = repos.settings.patch({ whatsapp: { backlogHours: 12 }, llm: { local: { tier: 'small' } } });
-    expect(patched.whatsapp).toEqual({ processUnknownSenders: false, backlogHours: 12 });
+    expect(patched.whatsapp).toEqual({
+      processUnknownSenders: false,
+      backlogHours: 12,
+      readTools: { enabled: true, scope: 'trigger_chat', windowDays: 30 }, // [V2] C2 4 whatsapp.readTools default
+    });
     expect(patched.llm.local).toEqual({ tier: 'small', acceleration: 'auto', forceCpu: false });
     expect(repos.settings.get()).toEqual(patched);
     expect(repos.settings.patch({ privacy: { retentionDays: 7 } }).whatsapp.backlogHours).toBe(12);

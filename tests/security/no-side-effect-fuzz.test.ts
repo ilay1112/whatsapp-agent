@@ -17,6 +17,7 @@ import { createHarness, type Harness } from '../helpers/harness.ts';
 import type { InjectionCase } from '../fakes/obedient-attacker-llm.ts';
 import { CREATE_EVENT_WHITELIST } from '../fakes/fake-mcp-calendar.ts';
 import { IPC_CHANNELS, IPC_REQUEST_SCHEMAS, type IpcChannel } from '../../src/shared/ipc.ts';
+import { CONSENT_KIND_FOR, CONSENT_VERSIONS } from '../../src/shared/types.ts';
 
 const CHAT = '972550000031@s.whatsapp.net';
 const HOUR = 3_600_000;
@@ -44,8 +45,11 @@ const FAKE_GOOGLE_CREDENTIALS = JSON.stringify({
   },
 });
 
-/** Every channel the fuzz drives: everything except the one channel that is ALLOWED to cause a side effect. */
-const FUZZ_CHANNELS: IpcChannel[] = IPC_CHANNELS.filter((c) => c !== 'action:approve');
+/** Every channel the fuzz drives: everything except the channels that are ALLOWED to cause a side effect after a user click.
+ *  [V2] (V2-W2-02, T2 8.2) + `item:undoChange` and `auto:undo` (an undo IS an approved calendar write). `auto:requestEnable` stays
+ *  fuzzed: the harness dialog script is empty, so its native confirmation can never be confirmed. */
+const SIDE_EFFECT_CHANNELS: readonly IpcChannel[] = ['action:approve', 'item:undoChange', 'auto:undo'];
+const FUZZ_CHANNELS: IpcChannel[] = IPC_CHANNELS.filter((c) => !SIDE_EFFECT_CHANNELS.includes(c));
 
 /** The chat used for the single legitimate approve at the end (outside the 9725500000{10..99} corpus range). */
 const APPROVE_CHAT = CHAT;
@@ -287,11 +291,52 @@ describe('I1 - the whole corpus plus 1 200 fuzzed IPC calls cause no side effect
     expect(nonReadCalendarCalls(harness), 'the fuzz produced a calendar write').toEqual([]);
     expect(harness.calendar.violations).toEqual([]);
     expect(harness.bridge.violations ?? []).toEqual([]);
+    // [V2] every new channel was driven (incl. auto:requestEnable, cli:*, voice:*, wa:setReadScope, item:restoreOriginal /
+    // cancelEvent) and none of them created a policy, an automatic decision or an automatic write
+    for (const c of [
+      'auto:requestEnable',
+      'auto:endShadow',
+      'auto:resume',
+      'wa:setReadScope',
+      'cli:setOverage',
+      'cli:allowWorkspace',
+      'item:restoreOriginal',
+      'item:cancelEvent',
+      'voice:retry',
+    ] as const)
+      expect(perChannel.get(c)?.attempted ?? 0, c).toBeGreaterThan(0);
+    const count = (sql: string): number => harness.repos.db.prepare<{ n: number }>(sql).get()!.n;
+    expect(count('SELECT COUNT(*) AS n FROM auto_policies'), 'the fuzz created a policy row').toBe(0);
+    expect(count("SELECT COUNT(*) AS n FROM auto_decisions WHERE verdict = 'auto'")).toBe(0);
+    expect(count('SELECT COUNT(*) AS n FROM auto_writes')).toBe(0);
+    expect(count("SELECT COUNT(*) AS n FROM audit_log WHERE kind = 'auto_policy_enabled'")).toBe(0);
+    expect(
+      count('SELECT COUNT(*) AS n FROM actions WHERE approved_by IS NOT NULL'),
+      'an action was approved by the fuzz',
+    ).toBe(0);
+    expect(harness.calendar.calls.filter((c) => c.tool === 'update-event' || c.tool === 'delete-event')).toEqual([]);
 
     // ---- 4. one legitimate approve -> exactly one side effect --------------------------------------------------
     // The fuzz also clicks `agent:setPaused`, `item:dismiss` and `data:purgeNow`, so the app is put back into a normal
     // state first. Nothing here weakens the assertion: the approve still has to pass every real gate.
     await harness.invoke('agent:setPaused', { paused: false });
+    // [V2] the fuzz can also complete consent:accept + llm:setProvider for a CLOUD provider and then clear its key (the v2
+    // channel count reshuffles the seeded sequence onto that path). Re-arm that provider through the same real channels
+    // with a synthetic key (T5) - every gate still runs; the scripted provider answers either way.
+    const cfg = await harness.invoke('llm:getConfig', undefined);
+    if (cfg.ok && (cfg.value.provider === 'claude' || cfg.value.provider === 'gemini')) {
+      const provider = cfg.value.provider;
+      await harness.invoke('consent:accept', {
+        kind: CONSENT_KIND_FOR[provider],
+        version: CONSENT_VERSIONS[CONSENT_KIND_FOR[provider]],
+      });
+      await harness.invoke('secrets:set', {
+        name: provider === 'claude' ? 'anthropic_api_key' : 'gemini_api_key',
+        value: 'TESTONLY-fuzz-restore-0123456789',
+      });
+      const restored = await harness.invoke('llm:setProvider', { provider });
+      expect(restored.ok, 'the cloud provider could not be re-armed after the fuzz').toBe(true);
+    }
     await harness.advance(2 * HOUR); // the hourly LLM / send budgets slide
     if (harness.health().calendar.state !== 'connected') {
       // `google:disconnect` is one of the fuzzed channels; offer the real wizard synthetic credentials again

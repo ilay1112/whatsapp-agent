@@ -1,6 +1,15 @@
 // Unit tests for createPaths (pure path arithmetic, win32 semantics). Owner W1-12.
 import { describe, expect, it } from 'vitest';
-import { createPaths, DEV_LLAMA_DIR, DEV_MCP_DIR, MCP_ENTRY_REL, type AppPaths } from './paths';
+import {
+  childAndJobExeRoots,
+  childExeRoots,
+  createPaths,
+  DEV_LLAMA_DIR,
+  DEV_MCP_DIR,
+  DEV_WHISPER_DIR,
+  MCP_ENTRY_REL,
+  type AppPaths,
+} from './paths';
 
 const packagedInput = {
   userData: 'C:\\Users\\tester\\AppData\\Roaming\\WhatsApp Calendar Agent',
@@ -98,6 +107,47 @@ describe('createPaths - hygiene', () => {
   it('every value is an absolute win32 path', () => {
     for (const [key, value] of Object.entries(createPaths(packagedInput))) {
       expect(value, key).toMatch(/^[A-Za-z]:\\/);
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------------------------------------------------
+// [V2] ARCH2 3 / B2 / C2 16.1 purge dirs: the four new userData dirs and the whisper binaries.
+// ---------------------------------------------------------------------------------------------------------------------
+describe('[V2] createPaths - job and media directories', () => {
+  it.each([
+    ['mediaCacheDir', 'media-cache'],
+    ['voiceTmpDir', 'voice\\tmp'],
+    ['cliRunsDir', 'cli-runs'],
+    ['agyWorkspaceDir', 'agy-workspace'],
+  ] as Array<[keyof AppPaths, string]>)('%s = <userData>\\%s in both layouts', (key, rel) => {
+    for (const input of [packagedInput, devInput]) {
+      expect(createPaths(input)[key]).toBe(`${input.userData}\\${rel}`);
+    }
+  });
+
+  it('whisper comes from <resources>\\whisper packaged and from vendor\\whisper unpackaged', () => {
+    const packed = createPaths(packagedInput);
+    expect(packed.whisperDir).toBe(`${packagedInput.resourcesPath}\\whisper`);
+    expect(packed.whisperCliExe).toBe(`${packagedInput.resourcesPath}\\whisper\\whisper-cli.exe`);
+    const dev = createPaths(devInput);
+    expect(dev.whisperDir).toBe(`C:\\dev\\whatsapp agent\\${DEV_WHISPER_DIR}`);
+    expect(dev.whisperCliExe).toBe(`C:\\dev\\whatsapp agent\\${DEV_WHISPER_DIR}\\whisper-cli.exe`);
+  });
+
+  it('no path is a vendor-CLI state location (T9): nothing under .claude, .gemini, .local\\bin, npm or agy', () => {
+    for (const input of [packagedInput, devInput]) {
+      const all = Object.values(createPaths(input)).join('|').toLowerCase();
+      for (const bad of ['\\.claude', '\\.gemini', '\\.local\\bin', '\\npm\\', '\\agy\\', 'anthropicclaude'])
+        expect(all).not.toContain(bad);
+    }
+  });
+
+  it('childAndJobExeRoots = the three child roots + whisperDir; childExeRoots is unchanged', () => {
+    for (const input of [packagedInput, devInput]) {
+      const p = createPaths(input);
+      expect(childExeRoots(p)).toEqual([p.resourcesDir, p.llamaDir, p.mcpRoot]);
+      expect(childAndJobExeRoots(p)).toEqual([p.resourcesDir, p.llamaDir, p.mcpRoot, p.whisperDir]);
     }
   });
 });

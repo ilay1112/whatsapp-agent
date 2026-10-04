@@ -211,3 +211,83 @@ export function assertBridgeSpawnInvariants(
     throw new SpawnInvariantError([...ordered]);
   }
 }
+
+// ---------------------------------------------------------------------------------------------------------------------
+// [V2] B5 (A16 amended): five implemented endpoints; GET /api/media only through media/fetch.ts (V2-W1-07-media-voice)
+// ---------------------------------------------------------------------------------------------------------------------
+/** The FIVE bridge endpoints the app implements (v1 four + GET /api/media). */
+export const BRIDGE_ENDPOINTS = [
+  '/api/health',
+  '/api/pairing/status',
+  '/api/pairing/qr.png',
+  '/api/send',
+  '/api/media',
+] as const;
+/** Endpoint names referenced NOWHERE in src/ code. Stored as names (the sweep builds `/api/<name>`) so this file does not reference them. */
+export const FORBIDDEN_BRIDGE_ENDPOINT_NAMES = ['download', 'typing', 'react', 'group/'] as const;
+/** The only module that may call `BridgeReadClient.getMedia` (B5, I6'). */
+export const MEDIA_FETCH_MODULE = 'src/main/media/fetch.ts';
+/** Modules that may carry the `/api/media` path literal: the transport that builds the request and this list. */
+export const MEDIA_PATH_MODULES = ['src/main/bridge/readClient.ts', 'src/main/bridge/invariants.ts'] as const;
+
+export interface EndpointSweepFinding {
+  file: string;
+  kind: 'forbidden_endpoint' | 'media_path_outside_transport' | 'get_media_outside_fetch';
+  detail: string;
+}
+
+/** Removes block and line comments (C2 doc comments quote the forbidden names on purpose); string contents are kept. */
+export function stripComments(source: string): string {
+  let out = '';
+  let i = 0;
+  let quote: string | null = null;
+  while (i < source.length) {
+    const c = source[i] as string;
+    const next = source[i + 1];
+    if (quote !== null) {
+      out += c;
+      if (c === '\\' && next !== undefined) {
+        out += next;
+        i += 2;
+        continue;
+      }
+      if (c === quote) quote = null;
+      i += 1;
+      continue;
+    }
+    if (c === '/' && next === '*') {
+      const end = source.indexOf('*/', i + 2);
+      i = end === -1 ? source.length : end + 2;
+      continue;
+    }
+    if (c === '/' && next === '/') {
+      const end = source.indexOf('\n', i + 2);
+      i = end === -1 ? source.length : end;
+      continue;
+    }
+    if (c === "'" || c === '"' || c === '`') quote = c;
+    out += c;
+    i += 1;
+  }
+  return out;
+}
+
+/** B5 sweep over repo-relative, forward-slash source files (tests and fixtures excluded by the caller). Pure. */
+export function sweepBridgeEndpointRefs(files: ReadonlyArray<{ path: string; text: string }>): EndpointSweepFinding[] {
+  const findings: EndpointSweepFinding[] = [];
+  const mediaPathOk = MEDIA_PATH_MODULES as readonly string[];
+  for (const f of files) {
+    const code = stripComments(f.text);
+    for (const name of FORBIDDEN_BRIDGE_ENDPOINT_NAMES) {
+      if (code.includes(`/api/${name}`))
+        findings.push({ file: f.path, kind: 'forbidden_endpoint', detail: `/api/${name}` });
+    }
+    if (code.includes('/api/media') && !mediaPathOk.includes(f.path)) {
+      findings.push({ file: f.path, kind: 'media_path_outside_transport', detail: '/api/media' });
+    }
+    if (/\.getMedia\s*\(/.test(code) && f.path !== MEDIA_FETCH_MODULE) {
+      findings.push({ file: f.path, kind: 'get_media_outside_fetch', detail: 'getMedia(' });
+    }
+  }
+  return findings;
+}

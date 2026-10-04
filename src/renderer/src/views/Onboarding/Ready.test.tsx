@@ -15,7 +15,15 @@ const state = (
   rest: Partial<OnboardingState> = {},
 ): OnboardingState => ({
   step: 'ready',
-  checklist: { ai: 'ready', aiPercent: null, whatsapp: 'ready', calendar: 'ready', ...patch },
+  checklist: {
+    ai: 'ready',
+    aiPercent: null,
+    whatsapp: 'ready',
+    calendar: 'ready',
+    voice: 'off',
+    voicePercent: null,
+    ...patch,
+  }, // [V2] + voice
   userDataCloudSynced: false,
   ...rest,
 });

@@ -1,12 +1,17 @@
 // scripts/smoke-packaged.notices.test.mjs - the THIRD_PARTY_NOTICES generator (TESTS 5.3 row `scripts/*.mjs`).
 // Pure input -> text; no fs writes, no network, no binaries.
 import { describe, expect, it } from 'vitest';
+import { readFileSync } from 'node:fs';
 import {
   buildNotices,
   licenseHistogram,
   productionPackages,
   stagedCrtFrom,
   CRT_FILES,
+  DECODER_CHAIN,
+  LIBOPUS_LICENSE_PATH,
+  NOTICE_ANCHORS_V2,
+  decoderChainFrom,
 } from './smoke-packaged.notices.mjs';
 
 const lock = {
@@ -108,5 +113,73 @@ describe('buildNotices', () => {
     const text = buildNotices(input);
     expect(text).not.toMatch(/sk-ant-/);
     expect(text).not.toMatch(/AIza/);
+  });
+});
+
+// [V2-W2-04] sections 9-13 (ARCH-v2 12) and the anchors the packaged smoke (check 12) requires.
+describe('[V2] buildV2Sections / NOTICE_ANCHORS_V2', () => {
+  const v2 = {
+    whisperTag: 'b5130',
+    whisperUrl: 'https://example.invalid/whisper.zip',
+    whisperMit: 'MIT License\n\nCopyright (c) 2023-2026 The ggml authors\n',
+    whisperCrt: [],
+    decoder: decoderChainFrom({
+      packages: {
+        'node_modules/opus-decoder': { version: '0.7.12', license: 'MIT' },
+        'node_modules/@wasm-audio-decoders/common': { version: '9.0.7', license: 'MIT' },
+        'node_modules/simple-yenc': { version: '1.0.4', license: 'MIT' },
+        'node_modules/@eshaz/web-worker': { version: '1.2.2', license: 'Apache-2.0' },
+      },
+    }),
+    libopusLicense: readFileSync(LIBOPUS_LICENSE_PATH, 'utf8'),
+    calendarPatch: {
+      version: '2.6.3',
+      unpatchedSha: 'a'.repeat(64),
+      patchedSha: 'b'.repeat(64),
+      insertions: [1, 2, 3, 4, 5, 6, 7].map((id) => ({ id, name: `insertion_${String(id)}` })),
+    },
+  };
+
+  it('the full text carries every v2 anchor, the whisper MIT text verbatim and the libopus patent paragraph', () => {
+    const text = buildNotices({ ...input, v2 });
+    for (const anchor of Object.values(NOTICE_ANCHORS_V2)) expect(text).toContain(anchor);
+    expect(text).toContain(v2.whisperMit.trim());
+    expect(text).toContain('https://datatracker.ietf.org/ipr/1524/');
+    expect(text).toContain('Redistributions in binary form must reproduce the above copyright');
+    expect(text.indexOf('9. whisper.cpp')).toBeLessThan(text.indexOf('END OF THIRD PARTY NOTICES'));
+  });
+
+  it('lists the decoder chain with versions and licences, and the seven calendar insertions with both shas', () => {
+    const text = buildNotices({ ...input, v2 });
+    expect(text).toContain('opus-decoder@0.7.12  -  MIT');
+    expect(text).toContain('@eshaz/web-worker@1.2.2  -  Apache-2.0');
+    expect(text).toContain('(7) insertion_7');
+    expect(text).toContain('a'.repeat(64));
+    expect(text).toContain('b'.repeat(64));
+  });
+
+  it('says whether whisper got its own CRT copy', () => {
+    expect(buildNotices({ ...input, v2 })).toContain('NOT shipped beside it in this build');
+    expect(buildNotices({ ...input, v2: { ...v2, whisperCrt: ['msvcp140.dll'] } })).toContain('Its own copy');
+  });
+
+  it('a v1-only input produces no v2 section (the generator main() always passes v2; smoke check 12 enforces it)', () => {
+    expect(buildNotices(input)).not.toContain(NOTICE_ANCHORS_V2.whisperCpp);
+  });
+
+  it('decoderChainFrom reports a missing lockfile row instead of skipping it', () => {
+    expect(decoderChainFrom({ packages: {} }).map((d) => d.version)).toEqual([
+      'MISSING',
+      'MISSING',
+      'MISSING',
+      'MISSING',
+    ]);
+    expect(DECODER_CHAIN).toEqual(['opus-decoder', '@wasm-audio-decoders/common', 'simple-yenc', '@eshaz/web-worker']);
+  });
+
+  it('the committed libopus licence is the BSD-3 text with the patent paragraph', () => {
+    const lic = readFileSync(LIBOPUS_LICENSE_PATH, 'utf8');
+    expect(lic).toContain('Neither the name of Internet Society, IETF or IETF Trust');
+    expect(lic).toContain(NOTICE_ANCHORS_V2.libopusPatent);
   });
 });

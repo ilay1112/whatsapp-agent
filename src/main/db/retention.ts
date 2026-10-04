@@ -11,6 +11,17 @@ import type { EpochMs } from '../../shared/types';
 
 export const CLOSED_ITEM_MAX_AGE_MS = 90 * 24 * 3600_000;
 export const LOG_MAX_AGE_MS = 180 * 24 * 3600_000;
+/**
+ * [V2, V2-W1-01] ARCHITECTURE-v2 9.3 / C2 16.1: the directories `data:purgeNow` wipes in addition to the rows, RELATIVE to userData
+ * (the job has no paths; the handler joins them onto `paths.userData` and empties each). Their content is derived data only:
+ * normalised pictures, voice decode scratch, CLI run folders and Antigravity run workspaces.
+ */
+export const PURGE_NOW_DIRS: readonly string[] = [
+  'media-cache',
+  path.join('voice', 'tmp'),
+  'cli-runs',
+  path.join('agy-workspace', 'runs'),
+];
 
 /** The slice of node:fs the job uses, so a test never touches a real directory (S-FS). */
 export interface RetentionFs {
@@ -39,6 +50,10 @@ export interface RetentionRun {
   itemsDeleted: number;
   /** [W1-04] additive: the fresh backup taken by 'purgeNow' (null for the daily run). */
   backupPath?: string | null;
+  /** [V2] bare file names under `<userData>\media-cache\` whose media_cache rows were purged - the CALLER unlinks them. */
+  mediaFiles: string[];
+  /** [V2] 'purgeNow' only (else []): PURGE_NOW_DIRS, relative to userData - the CALLER empties them. */
+  wipeDirs: string[];
 }
 
 /** before = now - retentionDays ; closedBefore = now - 90 d ; audits 'purge'. Used by the daily timer and data:purgeNow. */
@@ -86,5 +101,12 @@ export function runRetention(deps: RetentionDeps): RetentionRun {
     },
     now,
   );
-  return { ...result, backupPath };
+  return {
+    textRows: result.textRows,
+    actionRows: result.actionRows,
+    itemsDeleted: result.itemsDeleted,
+    backupPath,
+    mediaFiles: result.mediaFiles ?? [],
+    wipeDirs: purgeNow ? [...PURGE_NOW_DIRS] : [],
+  };
 }

@@ -554,7 +554,16 @@ describe('status, disconnect, listCalendars and change events', () => {
     const h = await harness();
     await expect(h.auth.listCalendars()).resolves.toEqual({
       ok: true,
-      value: [{ id: 'primary', name: 'Personal', primary: true, timeZone: 'Asia/Jerusalem', writable: true }],
+      value: [
+        {
+          id: 'primary',
+          name: 'Personal',
+          primary: true,
+          timeZone: 'Asia/Jerusalem',
+          writable: true,
+          accessRole: 'owner',
+        },
+      ], // [V2]
     });
     await h.stop();
 

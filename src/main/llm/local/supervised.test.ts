@@ -279,3 +279,45 @@ describe('createSupervisedLlama', () => {
     await h.supervisor.stop('llama');
   });
 });
+
+// [V2, V2-W1-08-vision] B19 / C2 9.1: toggling picture reading restarts the child exactly like an acceleration change, and the
+// restart goes through the Supervisor (pid file + backoff stay authoritative) - never a direct respawn.
+describe('vision flags went stale => supervisor.restart', () => {
+  function doubles(stale: boolean, withRestart: boolean) {
+    const calls: string[] = [];
+    const runtime = {
+      ensureStarted: async () => {
+        calls.push('raw.ensureStarted');
+        return { port: 1, apiKey: 'k' };
+      },
+      stop: async () => undefined,
+      childSpec: () => ({ name: 'llama' }),
+      status: () => ({ state: 'ready' as const, code: null, device: 'cpu' as const }),
+      vision: () => ({ requested: false, ready: false, stale }),
+    } as unknown as LlamaRuntime;
+    const supervisor = {
+      start: async (n: string) => void calls.push(`start:${n}`),
+      state: () => 'running' as const,
+      ...(withRestart ? { restart: async (n: string) => void calls.push(`restart:${n}`) } : {}),
+    };
+    return { calls, supervised: createSupervisedLlama({ supervisor, runtime }) };
+  }
+
+  it('a stale child is restarted through the supervisor, then the raw runtime answers', async () => {
+    const d = doubles(true, true);
+    await d.supervised.ensureStarted();
+    expect(d.calls).toEqual(['restart:llama', 'raw.ensureStarted']);
+  });
+
+  it('a current child is only (idempotently) started', async () => {
+    const d = doubles(false, true);
+    await d.supervised.ensureStarted();
+    expect(d.calls).toEqual(['start:llama', 'raw.ensureStarted']);
+  });
+
+  it('without a restart member (v1 wiring) the stale flag set waits for the next ordinary start', async () => {
+    const d = doubles(true, false);
+    await d.supervised.ensureStarted();
+    expect(d.calls).toEqual(['start:llama', 'raw.ensureStarted']);
+  });
+});

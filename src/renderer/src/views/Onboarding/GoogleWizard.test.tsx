@@ -202,6 +202,9 @@ describe('GoogleWizard - sign-in', () => {
     await userEvent.click(await screen.findByTestId('google-signin'));
 
     await waitFor(() => expect(screen.getByTestId('google-connected')).toBeInTheDocument());
+    // [V2] UX2 6 step 3: one closing sentence; automatic mode itself is never offered in onboarding
+    expect(screen.getByTestId('google-auto-later')).toHaveTextContent('Later, in Settings, you can let the agent');
+    expect(document.querySelector('[data-testid^="auto-"]')).toBeNull();
     const select = await screen.findByTestId('google-calendar-select');
     await userEvent.selectOptions(select, 'primary');
     await userEvent.click(screen.getByTestId('google-continue'));

@@ -190,5 +190,5 @@ describe('item states', () => {
     const after = await h.invoke('item:get', { itemId: card.itemId });
     if (!after.ok) throw new Error('no item');
     expect(after.value.closedReason).toBe('expired');
-  });
+  }, 60_000); // [V2-W2-01] 8 virtual days drive ~23k timer ticks through the real compose(): allow for a loaded parallel run
 });

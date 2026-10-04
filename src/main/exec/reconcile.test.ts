@@ -84,7 +84,7 @@ function seedUnknown(r: Rig, payload: ActionPayload, finalJson?: string): Approv
     payload,
     now: NOW_0 as EpochMs,
   });
-  r.repos.actions.markApprovedExecuting(a.id, finalJson ?? a.canonicalJson, NOW_0 as EpochMs);
+  r.repos.actions.markApprovedExecuting(a.id, finalJson ?? a.canonicalJson, NOW_0 as EpochMs, 'user');
   r.repos.actions.markUnknownOutcome(a.id, NOW_0 as EpochMs);
   return r.repos.actions.byId(a.id)!;
 }
@@ -278,7 +278,7 @@ describe('reconcileUnknown: create_event', () => {
       now: NOW_0 as EpochMs,
       retryOf: root.id,
     });
-    r.repos.actions.markApprovedExecuting(clone.id, clone.canonicalJson, NOW_0 as EpochMs);
+    r.repos.actions.markApprovedExecuting(clone.id, clone.canonicalJson, NOW_0 as EpochMs, 'user');
     r.repos.actions.markUnknownOutcome(clone.id, NOW_0 as EpochMs);
 
     const seen: string[] = [];

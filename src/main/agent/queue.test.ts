@@ -114,11 +114,11 @@ describe('createTriageQueue', () => {
     await clock.advance(LIMITS.debounceMs);
     await tick(3);
     expect(runs).toHaveLength(1);
-    expect(queue.stats()).toEqual({ pending: 2, running: 1 });
+    expect(queue.stats()).toEqual({ pending: 2, running: 1, transcribing: null });
     releasers.shift()!();
     await tick(3);
     expect(runs).toHaveLength(2);
-    expect(queue.stats()).toEqual({ pending: 1, running: 1 });
+    expect(queue.stats()).toEqual({ pending: 1, running: 1, transcribing: null });
   });
 
   it('defers an edit-locked chat instead of running it, and runs it once the lock expires', async () => {
@@ -296,7 +296,7 @@ describe('createTriageQueue', () => {
     const seen: Array<{ pending: number; running: number }> = [];
     const off = queue.onStats((s) => void seen.push({ ...s }));
     queue.start();
-    expect(seen).toEqual([{ pending: 0, running: 0 }]);
+    expect(seen).toEqual([{ pending: 0, running: 0, transcribing: null }]); // [V2] + transcribing (queue:changed)
     await tick(3);
     expect(seen).toHaveLength(1); // nothing changed
 
@@ -310,6 +310,21 @@ describe('createTriageQueue', () => {
     await clock.advance(LIMITS.debounceMs);
     await tick(2);
     expect(seen).toHaveLength(before);
+  });
+
+  it('[V2] reports the V0 transcription line through queue:changed stats, numbers only', async () => {
+    const seen: Array<{ transcribing?: { seconds: number } | null }> = [];
+    queue.onStats((st) => void seen.push({ transcribing: st.transcribing ?? null }));
+    queue.start();
+    queue.setTranscribing!(42.4);
+    expect(queue.stats().transcribing).toEqual({ seconds: 42 });
+    queue.setTranscribing!(42);
+    queue.setTranscribing!(0);
+    queue.setTranscribing!(-3); // unknown => 0 (no change: not emitted twice)
+    queue.setTranscribing!(Number.NaN);
+    queue.setTranscribing!(null);
+    expect(queue.stats().transcribing).toBeNull();
+    expect(seen.map((x) => x.transcribing)).toEqual([null, { seconds: 42 }, { seconds: 0 }, null]);
   });
 
   it('honours the injected e2e scan interval', async () => {

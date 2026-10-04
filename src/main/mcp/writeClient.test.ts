@@ -146,6 +146,6 @@ describe('createMcpWriteClient', () => {
   it('exposes exactly one method - there is no read, no admin and no delete on the write facade', () => {
     const { call } = caller(okText('{}'));
     const client = createMcpWriteClient(call);
-    expect(Object.keys(client)).toEqual(['createEvent']);
+    expect(Object.keys(client)).toEqual(['createEvent', 'updateEvent']); // [V2] C2 11 (still no delete, no read, no admin)
   });
 });

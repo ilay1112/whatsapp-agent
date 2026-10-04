@@ -1,6 +1,14 @@
 // TESTS 4.1 unit-test matrix for readSeams(): packaged => null whatever the env says; mode != e2e => null; WCA_E2E unset => null.
 import { afterEach, describe, expect, it } from 'vitest';
-import { installTestHooks, readSeams, uninstallTestHooks, type WcaTestHooks } from './testSeams';
+import {
+  installTestHooks,
+  readSeams,
+  uninstallTestHooks,
+  type WcaTestFacade,
+  type WcaTestHooks,
+  type WcaTestHooksV2,
+} from './testSeams';
+import type { DialogRecord } from './app/autoDialog';
 
 const fullEnv = {
   WCA_E2E: '1',
@@ -127,18 +135,44 @@ describe('installTestHooks (globalThis.__wcaTest)', () => {
       childPids: () => ({ bridge: 4242 }),
     };
   };
-  const wca = (): WcaTestHooks | undefined => (globalThis as { __wcaTest?: WcaTestHooks }).__wcaTest;
+  const RECORD: DialogRecord = {
+    kind: 'auto_enable',
+    type: 'warning',
+    title: 'Turn on automatic mode?',
+    message: 'm',
+    detail: 'd',
+    buttons: ['Cancel', 'Start a 24-hour trial'],
+    defaultId: 0,
+    cancelId: 0,
+    checkboxLabel: 'I understand',
+    parentFocused: true,
+  };
+  const v2 = (): WcaTestHooksV2 & { autoPauses: number } => {
+    const state = {
+      autoPauses: 0,
+      dialogs: () => [RECORD],
+      consoles: () => [['C:/fake/claude.exe', 'auth', 'login', '--claudeai']],
+      jobPids: () => ({ cli: [11], voice: [] as number[] }),
+      trayClickAutoPause: () => {
+        state.autoPauses += 1;
+      },
+    };
+    return state;
+  };
+  const wca = (): WcaTestFacade | undefined => (globalThis as { __wcaTest?: WcaTestFacade }).__wcaTest;
 
   afterEach(() => uninstallTestHooks());
 
-  it('exposes exactly the eight hooks of TESTS 4.2 and nothing else', () => {
-    const h = hooks();
-    installTestHooks(h);
+  it('[V2] exposes exactly the eleven hooks of TESTS 4.2 (eight v1 + dialogs, consoles, jobPids) and nothing else', () => {
+    installTestHooks(hooks(), v2());
     expect(Object.keys(wca()!).sort()).toEqual(
       [
         'childPids',
+        'consoles',
+        'dialogs',
         'doorbellUrl',
         'health',
+        'jobPids',
         'notifications',
         'openedExternal',
         'trayClick',
@@ -147,28 +181,67 @@ describe('installTestHooks (globalThis.__wcaTest)', () => {
       ].sort(),
     );
     expect(Object.keys(wca()!)).not.toContain('clicks');
+    expect(Object.keys(wca()!)).not.toContain('trayClickAutoPause');
+    expect(Object.keys(wca()!)).not.toContain('autoPauses');
   });
 
   it('forwards every read hook to the implementation', () => {
-    installTestHooks(hooks());
+    installTestHooks(hooks(), v2());
     expect(wca()!.trayTemplate()).toEqual([{ id: 'open', label: 'Open' }]);
     expect(wca()!.trayState()).toEqual({ icon: 'tray', tooltip: 'WhatsApp Calendar Agent' });
     expect(wca()!.doorbellUrl()).toContain('127.0.0.1');
     expect(wca()!.health()).toEqual({ overall: 'ok' });
-    expect(wca()!.notifications()).toEqual([{ title: 't', body: 'b' }]);
+    expect(wca()!.notifications()).toEqual([{ title: 't', body: 'b', actions: [] }]);
     expect(wca()!.openedExternal()).toEqual(['https://example.com/']);
     expect(wca()!.childPids()).toEqual({ bridge: 4242 });
+    expect(wca()!.dialogs()).toEqual([RECORD]);
+    expect(wca()!.consoles()).toEqual([['C:/fake/claude.exe', 'auth', 'login', '--claudeai']]);
+    expect(wca()!.jobPids()).toEqual({ cli: [11], voice: [] });
   });
 
-  it('trayClick is the only state-changing hook and is forwarded', () => {
+  it('[V2] notifications carry the toast actions', () => {
     const h = hooks();
-    installTestHooks(h);
+    installTestHooks({ ...h, notifications: () => [{ title: 't', body: 'b', actions: ['Undo', 'Show'] }] });
+    expect(wca()!.notifications()).toEqual([{ title: 't', body: 'b', actions: ['Undo', 'Show'] }]);
+  });
+
+  it('[V2] the v2 reads default to empty values when the caller wires none (the v1 call site keeps working)', () => {
+    installTestHooks(hooks());
+    expect(wca()!.dialogs()).toEqual([]);
+    expect(wca()!.consoles()).toEqual([]);
+    expect(wca()!.jobPids()).toEqual({ cli: [], voice: [] });
+    expect(() => wca()!.trayClick('autoPause')).toThrow(/autoPause is not wired/);
+  });
+
+  it('[V2] every v2 read returns a copy: mutating it never reaches the recorder', () => {
+    const impl = v2();
+    const pids = { cli: [11], voice: [22] };
+    const consoles = [['a', 'b']];
+    const dialogs = [{ ...RECORD, buttons: ['x'] }];
+    installTestHooks(hooks(), { ...impl, jobPids: () => pids, consoles: () => consoles, dialogs: () => dialogs });
+    wca()!.jobPids().cli.push(99);
+    wca()!.consoles()[0]!.push('c');
+    wca()!.dialogs()[0]!.buttons.push('y');
+    expect(pids).toEqual({ cli: [11], voice: [22] });
+    expect(consoles).toEqual([['a', 'b']]);
+    expect(dialogs[0]!.buttons).toEqual(['x']);
+  });
+
+  it('trayClick is the only state-changing hook: v1 ids go to the tray, autoPause to the B11 item, anything else throws', () => {
+    const h = hooks();
+    const impl = v2();
+    installTestHooks(h, impl);
     wca()!.trayClick('pause');
+    expect(h.clicks).toEqual(['pause']);
+    wca()!.trayClick('autoPause');
+    expect(impl.autoPauses).toBe(1);
+    expect(h.clicks).toEqual(['pause']);
+    expect(() => wca()!.trayClick('approve' as never)).toThrow(/unknown id/);
     expect(h.clicks).toEqual(['pause']);
   });
 
   it('the facade is frozen: a test page cannot bolt an approve function onto it', () => {
-    installTestHooks(hooks());
+    installTestHooks(hooks(), v2());
     expect(Object.isFrozen(wca())).toBe(true);
     expect(() => {
       (wca() as unknown as Record<string, unknown>).approve = () => 'pwned';

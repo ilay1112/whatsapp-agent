@@ -247,6 +247,7 @@ describe('models repo', () => {
     const { repos } = memRepos();
     const record: T.ModelFileRecord = {
       id: 'small',
+      kind: 'llm', // [V2] ModelFileRecord.kind (C2 1.3)
       path: 'C:\\models\\small.gguf',
       size: 1_024,
       sha256: 'a'.repeat(64),

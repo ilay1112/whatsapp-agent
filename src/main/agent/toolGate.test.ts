@@ -8,8 +8,14 @@ import type { BusyBlock } from '../../shared/types';
 import { LIMITS } from '../../shared/types';
 import { DEFAULT_SETTINGS, type Settings } from '../../shared/settings';
 import type { McpReadClient, McpResult, PinnedWindow } from '../mcp/readClient';
-import { READ_TOOL_NAMES } from './toolDefs';
-import { createToolGate, constrainReadArgs, type RunCtx, type ToolGateDeps } from './toolGate';
+import { READ_TOOL_NAMES, READ_TOOLS, llmToolOf, type ToolSpec } from './toolDefs';
+import { BLOCKED_NAMES, createToolGate, constrainReadArgs, type RunCtx, type ToolGateDeps } from './toolGate';
+import { FakeWaReadClient, fakeWaMessage, type FakeWaReadScript } from '../../../tests/fakes/fake-wa-read-client';
+import { createHandleTable } from './handles';
+import type { WaReadClient } from '../bridge/waReadClient';
+
+/** [V2] C2 10: WhatsApp READ facade double - the v1 gate tests keep the WhatsApp tools unavailable (waAvailable false). */
+const NO_WA: WaReadClient = { recentChats: () => [], chatMessages: () => [], search: () => [], context: () => null };
 
 /** 2026-09-21 09:00 local in Asia/Jerusalem (UTC+3 in September). */
 const NOW_MS = Date.UTC(2026, 8, 21, 6, 0, 0);
@@ -59,6 +65,7 @@ function recordingRead(
       calls.push({ tool: 'list-events', args: {} });
       return Promise.resolve({ ok: true, value: null });
     },
+    getEvent: () => Promise.resolve({ ok: false as const, error: 'unavailable' as const }), // [V2] C2 11 (unused by v1)
   };
 }
 
@@ -70,6 +77,8 @@ function gate(over: Partial<ToolGateDeps> & { read?: RecordingRead } = {}) {
     settings: over.settings ?? ((): Settings => SETTINGS),
     calendarConnected: over.calendarConnected ?? ((): boolean => true),
     audit: over.audit ?? audit,
+    wa: over.wa ?? NO_WA, // [V2]
+    waAvailable: over.waAvailable ?? ((): boolean => false), // [V2]
   };
   return { gate: createToolGate(deps), read, audit, deps };
 }
@@ -86,6 +95,11 @@ function ctx(over: Partial<RunCtx> = {}): RunCtx {
     totalCalls: 0,
     blockedCalls: 0,
     signal: new AbortController().signal,
+    // [V2] C2 10 RunCtx additions (a Wave 0 stub handle table; the v1 gate never reads them)
+    handles: createHandleTable(3),
+    waRowsServed: 0,
+    crossChatRows: 0,
+    otherChatTexts: [],
     ...over,
   };
 }
@@ -97,7 +111,12 @@ describe('exposedTools', () => {
   it('offers exactly the two READ tools when the calendar is connected', () => {
     const { gate: g } = gate();
     expect(g.exposedTools().map((t) => t.name)).toEqual(['get_current_time', 'get_freebusy']);
-    expect(g.exposedTools().map((t) => t.name)).toEqual([...READ_TOOL_NAMES]);
+    // [V2] READ_TOOL_NAMES is the six-tool list (C2 10); with WhatsApp unavailable only the calendar tools are offered
+    expect(g.exposedTools()).toEqual([
+      llmToolOf(READ_TOOLS.get_current_time as unknown as ToolSpec),
+      llmToolOf(READ_TOOLS.get_freebusy as unknown as ToolSpec),
+    ]);
+    expect(READ_TOOL_NAMES).toHaveLength(6);
   });
 
   it('offers nothing when the calendar is not connected (triage still works, drafts only)', () => {
@@ -248,7 +267,10 @@ describe('step 2 - per-run budgets', () => {
     const c = ctx();
     await g.invoke(call('get_current_time'), c);
     for (let i = 0; i < 3; i += 1) await g.invoke(call('get_freebusy', WINDOW), c);
-    expect(c.totalCalls).toBe(LIMITS.draftToolCalls);
+    // [V2] LIMITS.draftToolCalls 4 -> 6 (B17): with the two calendar tools the per-tool budgets (1 + 3) cap first; the per-run total
+    // is exercised with the wa_* tools by V2-W1-05.
+    expect(c.totalCalls).toBe(4);
+    expect(c.totalCalls).toBeLessThanOrEqual(LIMITS.draftToolCalls);
     expect((await g.invoke(call('get_freebusy', WINDOW), c)).verdict).toBe('blocked_budget');
     expect(read.calls).toHaveLength(4);
   });
@@ -510,5 +532,354 @@ describe('prefetchFreeBusy (app-side, S2)', () => {
     const out = await g.prefetchFreeBusy(slot, prefetchCtx);
     expect(out).toEqual([]);
     expect(read.calls).toHaveLength(1);
+  });
+});
+
+// =====================================================================================================================================
+// [V2] T2 5 row `agent/toolDefs.ts, toolGate.ts, waTools.ts, handles.ts` - budgets / pinning / exposure with the recording
+// FakeWaReadClient (the SQL is irrelevant here; every safety property is proven over the REAL facade in waTools.test.ts and
+// tests/security/wa-tools.test.ts).
+// =====================================================================================================================================
+const TRIGGER = 3; // = ctx().chatId
+const OTHER = 9;
+const WA_ALL: Settings = {
+  ...SETTINGS,
+  whatsapp: { ...SETTINGS.whatsapp, readTools: { ...SETTINGS.whatsapp.readTools, scope: 'all_chats' } },
+};
+const unwrap = (content: string): unknown => {
+  const m = /^<<DATA-([0-9a-f]{16})>>\n([\s\S]*)\n<<END-DATA-\1>>$/.exec(content);
+  expect(m, 'result must be nonce-wrapped').not.toBeNull();
+  expect(m![1]).toBe(NONCE);
+  return JSON.parse(m![2]!);
+};
+function waGate(
+  opts: { script?: FakeWaReadScript; settings?: Settings; waAvailable?: boolean; calendarConnected?: boolean } = {},
+) {
+  const wa = new FakeWaReadClient(
+    opts.script ?? {
+      messages: [fakeWaMessage(10, 'coffee on wednesday?'), fakeWaMessage(11, 'sure', { fromMe: true })],
+    },
+  );
+  const g = gate({
+    wa,
+    waAvailable: () => opts.waAvailable ?? true,
+    settings: () => opts.settings ?? SETTINGS,
+    calendarConnected: () => opts.calendarConnected ?? true,
+  });
+  return { ...g, wa };
+}
+
+describe('[V2] exposedSpecs / exposedTools per scope and connectivity (B16, B17, B29)', () => {
+  const names = (g: ReturnType<typeof waGate>['gate']): string[] => g.exposedSpecs().map((s) => s.name);
+  it('calendar tools when connected; three wa_* when available; wa_list_chats only under all_chats', () => {
+    expect(names(waGate().gate)).toEqual([
+      'get_current_time',
+      'get_freebusy',
+      'wa_get_chat_messages',
+      'wa_search_messages',
+      'wa_get_message_context',
+    ]);
+    expect(names(waGate({ settings: WA_ALL }).gate)).toEqual([...READ_TOOL_NAMES]);
+    expect(names(waGate({ waAvailable: false, settings: WA_ALL }).gate)).toEqual(['get_current_time', 'get_freebusy']);
+    expect(names(waGate({ calendarConnected: false }).gate)).toEqual([
+      'wa_get_chat_messages',
+      'wa_search_messages',
+      'wa_get_message_context',
+    ]);
+    expect(names(waGate({ calendarConnected: false, waAvailable: false }).gate)).toEqual([]);
+  });
+  it('exposedTools() = exposedSpecs().map(llmToolOf) and the specs are the READ table objects themselves', () => {
+    const { gate: g } = waGate({ settings: WA_ALL });
+    expect(g.exposedTools()).toEqual(g.exposedSpecs().map(llmToolOf));
+    for (const s of g.exposedSpecs()) expect(s).toBe(READ_TOOLS[s.name]);
+  });
+  it('never reads the settings while WhatsApp is unavailable (a v1 settings object without readTools still works)', () => {
+    const { gate: g } = waGate({ waAvailable: false });
+    const settings = vi.fn(() => SETTINGS);
+    const g2 = gate({ settings, waAvailable: () => false });
+    expect(g2.gate.exposedTools().map((t) => t.name)).toEqual(['get_current_time', 'get_freebusy']);
+    expect(settings).not.toHaveBeenCalled();
+    expect(g.exposedSpecs()).toHaveLength(2);
+  });
+});
+
+describe('[V2] step 1 - BLOCKED_NAMES, case variants and unexposed WhatsApp names', () => {
+  it('every BLOCKED_NAMES entry, its upper-case form and every mcp__wca__ FQN => blocked_unknown_tool + strike, zero facade calls', async () => {
+    const { gate: g, wa, read, audit } = waGate({ settings: WA_ALL });
+    expect(BLOCKED_NAMES).toContain('mark_messages_read');
+    expect(BLOCKED_NAMES).toContain('view_media');
+    expect(BLOCKED_NAMES).toContain('mcp__wca__wa_search_messages');
+    for (const n of READ_TOOL_NAMES) expect(BLOCKED_NAMES).not.toContain(n);
+    for (const name of [...BLOCKED_NAMES, ...BLOCKED_NAMES.map((n) => n.toUpperCase())]) {
+      const c = ctx();
+      const out = await g.invoke(call(name, { chat: 'chat_1' }), c);
+      expect(out.verdict, name).toBe('blocked_unknown_tool');
+      expect(c.blockedCalls).toBe(1);
+      expect(out.result.content).toBe('{"error":"tool not available"}');
+    }
+    for (const name of ['WA_LIST_CHATS', 'wa_search_messages ', 'Wa_get_chat_messages', 'wa_list_chats​']) {
+      expect((await g.invoke(call(name), ctx())).verdict, name).toBe('blocked_unknown_tool');
+    }
+    expect(wa.calls).toEqual([]);
+    expect(read.calls).toEqual([]);
+    const details = audit.mock.calls.map((a) => a[2]);
+    for (const d of details) expect(Object.keys(d).sort()).toEqual(['nameLen', 'nameSha8', 'runId', 'verdict']);
+  });
+  it('wa_list_chats in trigger_chat scope and every wa_* while unavailable => blocked_not_exposed WITH a strike', async () => {
+    const { gate: g, wa } = waGate();
+    const c = ctx();
+    const out = await g.invoke(call('wa_list_chats'), c);
+    expect(out.verdict).toBe('blocked_not_exposed');
+    expect(c.blockedCalls).toBe(1);
+    const off = waGate({ waAvailable: false });
+    const c2 = ctx();
+    expect((await off.gate.invoke(call('wa_get_chat_messages', { chat: 'chat_1' }), c2)).verdict).toBe(
+      'blocked_not_exposed',
+    );
+    expect((await off.gate.invoke(call('wa_search_messages', { query: 'coffee' }), c2)).abortRun).toBe(true);
+    expect(wa.calls).toEqual([]);
+    expect(off.wa.calls).toEqual([]);
+  });
+  it('a non-string name never throws (hashed as its string form)', async () => {
+    const { gate: g, audit } = waGate();
+    const out = await g.invoke({ id: 'x', name: 42 as unknown as string, input: {} }, ctx());
+    expect(out.verdict).toBe('blocked_unknown_tool');
+    expect(audit.mock.calls[0]![2]).toMatchObject({ nameLen: 2 });
+  });
+});
+
+describe('[V2] pinning through the run handle table (I5)', () => {
+  it('wa_get_chat_messages: chat_1 is the trigger chat; an unknown or foreign handle is blocked_bad_args WITHOUT a strike', async () => {
+    const { gate: g, wa } = waGate();
+    const c = ctx();
+    const ok = await g.invoke(call('wa_get_chat_messages', { chat: 'chat_1' }), c);
+    expect(ok.verdict).toBe('executed');
+    expect(wa.calls[0]!.method).toBe('chatMessages');
+    expect(wa.calls[0]!.args.slice(0, 3)).toEqual([TRIGGER, null, 13]);
+    for (const chat of ['chat_2', 'chat_01', 'chat_1 ', 'chat_99999', 'CHAT_1', '']) {
+      const out = await g.invoke(call('wa_get_chat_messages', { chat }), c);
+      expect(out.verdict, chat).toBe('blocked_bad_args');
+    }
+    c.handles.chatHandle(OTHER); // chat_2 shown (e.g. under an earlier all_chats read) - still out of scope in trigger_chat
+    expect((await g.invoke(call('wa_get_chat_messages', { chat: 'chat_2' }), c)).verdict).toBe('blocked_bad_args');
+    expect(c.blockedCalls).toBe(0);
+    expect(c.calls.wa_get_chat_messages).toBe(1); // bad args give the budget back
+    expect(c.totalCalls).toBe(1);
+    expect(wa.calls).toHaveLength(1);
+  });
+  it('wa_search_messages without `chat` is PINNED to the trigger chat (not blocked); all_chats passes null', async () => {
+    const t = waGate();
+    const c = ctx();
+    expect((await t.gate.invoke(call('wa_search_messages', { query: 'coffee' }), c)).verdict).toBe('executed');
+    expect(t.wa.calls[0]!.method).toBe('search');
+    expect(t.wa.calls[0]!.args.slice(0, 3)).toEqual(['coffee', TRIGGER, 5]);
+    expect(t.wa.calls[0]!.args[4]).toBe('trigger_chat');
+    const a = waGate({ settings: WA_ALL, script: { messages: [fakeWaMessage(10, 'coffee')], chatOfRow: () => OTHER } });
+    const c2 = ctx();
+    const out = await a.gate.invoke(call('wa_search_messages', { query: 'coffee', limit: 99 }), c2);
+    expect(out.verdict).toBe('executed');
+    expect(a.wa.calls[0]!.method).toBe('search');
+    expect(a.wa.calls[0]!.args.slice(0, 3)).toEqual(['coffee', null, LIMITS.waSearchHits]);
+    expect(unwrap(out.result.content)).toMatchObject({ hits: [{ id: 'm_1', chat: 'chat_2' }], truncated: false });
+    expect(c2.crossChatRows).toBe(1);
+  });
+  it('query: NFKC + invisible-stripped + trimmed, 2..64 code points; never echoed in a result or an audit row', async () => {
+    const { gate: g, wa, audit } = waGate();
+    const c = ctx();
+    const hostile = '  ‮cof​fee\u{E0041}  ';
+    const out = await g.invoke(call('wa_search_messages', { query: hostile }), c);
+    expect(wa.calls[0]!.args[0]).toBe('coffee');
+    expect(out.result.content).not.toContain('‮');
+    const full = await g.invoke(call('wa_search_messages', { query: 'ｃｏｆｆｅｅ' }), c); // fullwidth
+    expect(full.verdict).toBe('executed');
+    expect(wa.calls[1]!.args[0]).toBe('coffee');
+    const secret = 'Z'.repeat(65);
+    for (const query of ['a', ' a ', '​​', secret]) {
+      expect((await g.invoke(call('wa_search_messages', { query }), c)).verdict, query.slice(0, 5)).toBe(
+        'blocked_bad_args',
+      );
+    }
+    expect((await g.invoke(call('wa_search_messages', { query: 'ab' }), c)).verdict).toBe('executed');
+    expect(JSON.stringify(audit.mock.calls)).not.toContain('ZZZZ');
+    expect(c.blockedCalls).toBe(0);
+  });
+  it('wa_get_message_context: only a handle shown in this run resolves; never a raw rowid', async () => {
+    const { gate: g, wa } = waGate();
+    const c = ctx();
+    const first = await g.invoke(call('wa_get_chat_messages', { chat: 'chat_1' }), c);
+    expect(unwrap(first.result.content)).toMatchObject({ chat: 'chat_1', messages: [{ id: 'm_1' }, { id: 'm_2' }] });
+    for (const message of ['m_3', 'm_10', '10', 'm_01', 'm_1 ']) {
+      expect((await g.invoke(call('wa_get_message_context', { message }), c)).verdict, message).toBe(
+        'blocked_bad_args',
+      );
+    }
+    const ctxOut = await g.invoke(call('wa_get_message_context', { message: 'm_2', before: 20, after: -3 }), c);
+    expect(ctxOut.verdict).toBe('executed');
+    expect(wa.calls.at(-1)!.method).toBe('context');
+    expect(wa.calls.at(-1)!.args.slice(0, 3)).toEqual([11, LIMITS.waContextSide, 0]);
+    expect(c.blockedCalls).toBe(0);
+  });
+});
+
+describe('[V2] budgets 2 / 3 / 2 / 1 and LIMITS.draftToolCalls across both backends', () => {
+  it('per-tool caps', async () => {
+    const { gate: g } = waGate({ settings: WA_ALL });
+    const c = ctx();
+    const verdicts = async (name: string, input: Record<string, unknown>, n: number): Promise<string[]> => {
+      const out: string[] = [];
+      for (let i = 0; i < n; i += 1) out.push((await g.invoke(call(name, input), c)).verdict);
+      return out;
+    };
+    expect(await verdicts('wa_get_chat_messages', { chat: 'chat_1' }, 3)).toEqual([
+      'executed',
+      'executed',
+      'blocked_budget',
+    ]);
+    expect(c.calls.wa_get_chat_messages).toBe(2);
+    expect(await verdicts('wa_list_chats', {}, 2)).toEqual(['executed', 'blocked_budget']);
+    expect(await verdicts('wa_search_messages', { query: 'coffee' }, 3)).toEqual(['executed', 'executed', 'executed']);
+    expect(c.totalCalls).toBe(LIMITS.draftToolCalls);
+    expect(await verdicts('wa_get_message_context', { message: 'm_1' }, 1)).toEqual(['blocked_budget']);
+    expect(c.blockedCalls).toBe(0);
+  });
+  it(`the run total (${LIMITS.draftToolCalls}) spans the calendar and WhatsApp tools`, async () => {
+    const { gate: g, read, wa } = waGate();
+    const c = ctx();
+    await g.invoke(call('get_current_time'), c);
+    for (let i = 0; i < 3; i += 1) await g.invoke(call('get_freebusy', WINDOW), c);
+    await g.invoke(call('wa_get_chat_messages', { chat: 'chat_1' }), c);
+    await g.invoke(call('wa_search_messages', { query: 'coffee' }), c);
+    expect(c.totalCalls).toBe(6);
+    expect((await g.invoke(call('wa_search_messages', { query: 'coffee' }), c)).verdict).toBe('blocked_budget');
+    expect(read.calls).toHaveLength(4);
+    expect(wa.calls).toHaveLength(2);
+  });
+  it('bad zod shapes are blocked_bad_args without a facade call; a facade outage is unavailable and spends the budget', async () => {
+    const { gate: g, wa } = waGate();
+    const c = ctx();
+    for (const input of [{}, { chat: 1 }, { chat: 'chat_1', limit: 2.5 }, { chat: 'chat_1', extra: true }]) {
+      expect((await g.invoke(call('wa_get_chat_messages', input), c)).verdict).toBe('blocked_bad_args');
+    }
+    expect(wa.calls).toEqual([]);
+    const down = waGate({ script: { throws: new Error('SQLITE_IOERR') } });
+    const c2 = ctx();
+    const out = await down.gate.invoke(call('wa_get_chat_messages', { chat: 'chat_1' }), c2);
+    expect(out).toMatchObject({
+      verdict: 'unavailable',
+      result: { content: '{"error":"unavailable"}', isError: true },
+    });
+    expect(c2.calls.wa_get_chat_messages).toBe(1);
+    const aborted = new AbortController();
+    aborted.abort();
+    expect(
+      (await g.invoke(call('wa_search_messages', { query: 'coffee' }), ctx({ signal: aborted.signal }))).verdict,
+    ).toBe('unavailable');
+  });
+  it('never throws: an unreadable settings object answers unavailable', async () => {
+    const g = gate({
+      wa: new FakeWaReadClient(),
+      waAvailable: () => true,
+      settings: () => {
+        throw new Error('settings unreadable');
+      },
+    });
+    const out = await g.gate.invoke(call('wa_get_chat_messages', { chat: 'chat_1' }), ctx());
+    expect(out.verdict).toBe('unavailable');
+  });
+});
+
+describe('[V2] results: projection counters, nonce wrap', () => {
+  it('counts rows served and cross-chat rows; other-chat texts stay in memory for the S4 leak guard', async () => {
+    const script: FakeWaReadScript = {
+      messages: [fakeWaMessage(10, 'mine'), fakeWaMessage(20, 'from the other chat SENTINEL_OTHER_CHAT')],
+      chatOfRow: (rowid) => (rowid === 20 ? OTHER : TRIGGER),
+      recentChats: [
+        { chatId: OTHER, lastTs: Date.UTC(2026, 8, 21, 5, 0, 0), lastRole: 'contact', lastText: 'hello from other' },
+        { chatId: TRIGGER, lastTs: null, lastRole: 'me', lastText: 'mine' },
+      ],
+    };
+    const { gate: g } = waGate({ settings: WA_ALL, script });
+    const c = ctx();
+    const out = await g.invoke(call('wa_get_chat_messages', { chat: 'chat_1' }), c);
+    expect(unwrap(out.result.content)).toMatchObject({
+      chat: 'chat_1',
+      messages: [{ id: 'm_1', text: 'mine' }],
+      more: false,
+    });
+    expect([c.waRowsServed, c.crossChatRows]).toEqual([1, 0]);
+    const listed = unwrap((await g.invoke(call('wa_list_chats', {}), c)).result.content) as {
+      chats: Array<{ chat: string }>;
+    };
+    expect(listed.chats.map((x) => x.chat)).toEqual(['chat_2', 'chat_1']);
+    expect(listed).toMatchObject({ chats: [{ last_from: 'contact', last_ago: '1 h ago' }, { last_ago: 'unknown' }] });
+    const other = await g.invoke(call('wa_get_chat_messages', { chat: 'chat_2' }), c);
+    expect(unwrap(other.result.content)).toMatchObject({ chat: 'chat_2', messages: [{ id: 'm_2' }] });
+    expect(c.crossChatRows).toBe(2);
+    expect(c.otherChatTexts).toEqual(['hello from other', 'from the other chat SENTINEL_OTHER_CHAT']);
+    expect(c.waRowsServed).toBe(4);
+  });
+});
+
+describe('[V2] prefetchWaContext (antigravity_cli prefetch loop, B14)', () => {
+  it('runs wa_get_chat_messages on chat_1 through the same projection, budget-free, nonce-wrapped', async () => {
+    const { gate: g, wa } = waGate({ settings: WA_ALL });
+    const c = ctx();
+    const block = await g.prefetchWaContext(c);
+    expect(unwrap(block!)).toMatchObject({ chat: 'chat_1', messages: [{ id: 'm_1' }, { id: 'm_2' }] });
+    expect(wa.calls[0]!.method).toBe('chatMessages');
+    expect(wa.calls[0]!.args.slice(0, 3)).toEqual([TRIGGER, null, LIMITS.waRowsPerCall + 1]);
+    expect(c.calls).toEqual({});
+    expect(c.totalCalls).toBe(0);
+  });
+  it('null when WhatsApp is unavailable, the run is aborted or the facade fails', async () => {
+    expect(await waGate({ waAvailable: false }).gate.prefetchWaContext(ctx())).toBeNull();
+    const aborted = new AbortController();
+    aborted.abort();
+    expect(await waGate().gate.prefetchWaContext(ctx({ signal: aborted.signal }))).toBeNull();
+    expect(await waGate({ script: { throws: new Error('down') } }).gate.prefetchWaContext(ctx())).toBeNull();
+    // a trigger chat the facade does not know yields an empty (not null) page
+    expect(unwrap((await waGate({ script: {} }).gate.prefetchWaContext(ctx()))!)).toEqual({
+      chat: 'chat_1',
+      messages: [],
+      more: false,
+    });
+  });
+  it('null when the handle table does not resolve chat_1 (defence: bad args are never surfaced as data)', async () => {
+    const c = ctx({ handles: { ...createHandleTable(TRIGGER), chatIdOf: () => null } });
+    expect(await waGate().gate.prefetchWaContext(c)).toBeNull();
+  });
+});
+
+describe('[V2] prefetchFreeBusy excludeSelf (P2 7.3)', () => {
+  it('removes exactly the existing event own slot before the conflict badge', async () => {
+    const busy: BusyBlock[] = [
+      { startLocal: '2026-09-22T15:00:00', endLocal: '2026-09-22T16:00:00' },
+      { startLocal: '2026-09-22T16:00:00', endLocal: '2026-09-22T17:00:00' },
+    ];
+    const { gate: g } = gate({ read: recordingRead({ busy }) });
+    const pc = {
+      nowMs: NOW_MS,
+      timeZone: 'Asia/Jerusalem',
+      signal: new AbortController().signal,
+      itemId: 1,
+      chatId: 3,
+    };
+    const slot = { startLocal: '2026-09-22T16:00:00', endLocal: '2026-09-22T17:00:00' };
+    expect(await g.prefetchFreeBusy(slot, pc)).toEqual(busy);
+    expect(
+      await g.prefetchFreeBusy(slot, pc, { startLocal: '2026-09-22T15:00', endLocal: '2026-09-22T16:00:00' }),
+    ).toEqual([busy[1]]);
+    expect(await g.prefetchFreeBusy(slot, pc, { startLocal: '2026-09-22T15:00:00', endLocal: 'bad' })).toEqual(busy);
+    const weird = gate({ read: recordingRead({ busy: [{ startLocal: 'x', endLocal: 'y' }] }) });
+    expect(await weird.gate.prefetchFreeBusy(slot, pc, slot)).toEqual([{ startLocal: 'x', endLocal: 'y' }]);
+  });
+});
+
+describe('[V2] constrainReadArgs keeps its own strict parse (callers other than the gate)', () => {
+  it('rejects a non-string or smuggled argument object directly', () => {
+    const c = { nowMs: NOW_MS, timeZone: 'Asia/Jerusalem' };
+    expect(constrainReadArgs({ timeMin: 1, timeMax: 2 }, c, SETTINGS)).toBeNull();
+    expect(constrainReadArgs({ ...WINDOW, calendarId: 'x' }, c, SETTINGS)).toBeNull();
+    expect(constrainReadArgs(WINDOW, c, SETTINGS)).not.toBeNull();
   });
 });

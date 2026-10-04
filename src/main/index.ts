@@ -1,6 +1,6 @@
 // src/main/index.ts - Electron main entry (owner W2-01). Thin by design: every capability is wired in compose.ts.
 // ESM main: protocol.registerSchemesAsPrivileged and requestSingleInstanceLock run at module top level BEFORE any top-level await.
-import { app, clipboard, dialog, ipcMain, Notification, safeStorage, shell } from 'electron';
+import { app, clipboard, dialog, ipcMain, nativeImage, Notification, safeStorage, shell } from 'electron';
 import type { BrowserWindow } from 'electron';
 import electronLog from 'electron-log/main';
 import nodeFs from 'node:fs';
@@ -25,8 +25,16 @@ import { compose, type AppRuntimeEvent, type AppRuntimeHandle } from './compose'
 import { registerIpc } from './ipc/register';
 import { createIpcSender } from './ipc/sender';
 import { trayIconFor } from './app/tray';
-import type { Clock, ClockTimer, ElectronFacade, RandomSource } from './deps';
-import type { Seams, WcaTestHooks } from './testSeams';
+import type {
+  Clock,
+  ClockTimer,
+  ElectronFacade,
+  ImageFacade,
+  ImageHandle,
+  RandomSource,
+  ShowMessageBoxFn,
+} from './deps';
+import type { Seams, WcaTestHooks, WcaTestHooksV2 } from './testSeams';
 import type { LlmProvider } from './llm/types';
 import type { IpcEvent, IpcEventMap } from '../shared/ipc';
 import type { ProviderId } from '../shared/types';
@@ -39,7 +47,7 @@ app.setAppUserModelId('com.ilay.whatsapp-calendar-agent');
 
 // Build-time lock (TESTS 4.1): a production build constant-folds this whole branch away, so out/main contains no seam code.
 let seams: Seams | null = null;
-let installTestHooks: ((hooks: WcaTestHooks) => void) | null = null;
+let installTestHooks: ((hooks: WcaTestHooks, v2?: Partial<WcaTestHooksV2>) => void) | null = null;
 /** TESTS 4.2 `WCA_LLM` / `WCA_LLM_SCRIPT`, reaching the real ProviderFactory through `ComposeDeps.providerOverride`. */
 let providerOverride: ((id: ProviderId) => LlmProvider | null) | undefined;
 if (import.meta.env.MODE === 'e2e') {
@@ -49,6 +57,7 @@ if (import.meta.env.MODE === 'e2e') {
     argv: process.argv,
     isPackaged: app.isPackaged,
     mode: import.meta.env.MODE,
+    appPath: app.getAppPath(), // [V2] T2 4.1: WCA_CLI_CMD / WCA_WHISPER_CMD must point into <appPath>\tests\fakes\
   });
   installTestHooks = testSeams.installTestHooks;
   if (seams?.userDataDir) app.setPath('userData', seams.userDataDir);
@@ -77,6 +86,25 @@ const EVENT_CHANNEL: Readonly<Record<AppRuntimeEvent, IpcEvent>> = {
   model: 'model:progress',
   language: 'ui:languageChanged',
   navigate: 'ui:navigate',
+  // [V2] C2 8 push events
+  'auto:changed': 'auto:changed',
+  'cli:changed': 'cli:changed',
+  'queue:changed': 'queue:changed',
+  'voice:progress': 'voice:progress',
+};
+
+/** [V2] S-IMAGE: Electron's nativeImage behind the injected facade (media/normalizeImage.ts never imports electron). */
+function imageHandleOf(img: Electron.NativeImage): ImageHandle {
+  return {
+    isEmpty: () => img.isEmpty(),
+    getSize: () => img.getSize(),
+    resize: (o) => imageHandleOf(img.resize(o)),
+    toJPEG: (quality) => new Uint8Array(img.toJPEG(quality)),
+  };
+}
+const nativeImageFacade: ImageFacade = {
+  fromBuffer: (bytes) =>
+    imageHandleOf(nativeImage.createFromBuffer(Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength))),
 };
 
 // TESTS 4.2 `WCA_NOW`: the injected clock is BASED at the given instant and advances in real time from there, so a
@@ -143,7 +171,7 @@ if (!gotLock) {
     // whole branch is constant-folded away in a production build.
     const recordSideEffects = import.meta.env.MODE === 'e2e' && seams !== null;
     const openedExternal: string[] = [];
-    const notifications: Array<{ title: string; body: string }> = [];
+    const notifications: Array<{ title: string; body: string; actions?: string[] }> = [];
 
     const electronFacade: ElectronFacade = {
       safeStorage: {
@@ -193,6 +221,48 @@ if (!gotLock) {
       preferredLanguages: () => app.getPreferredSystemLanguages(),
     };
 
+    // [V2] S-DIALOG: the main-owned native message box, parented to the focused main window (autoDialog checks focus first).
+    const showMessageBox: ShowMessageBoxFn = async (parent, options) => {
+      const owner = parent as BrowserWindow | null;
+      const res =
+        owner !== null && typeof owner === 'object' && !owner.isDestroyed()
+          ? await dialog.showMessageBox(owner, { ...options, buttons: [...options.buttons] })
+          : await dialog.showMessageBox({ ...options, buttons: [...options.buttons] });
+      return { response: res.response, checkboxChecked: res.checkboxChecked };
+    };
+    // [V2] automatic-mode toasts with action buttons (Undo / Show); e2e records them (never a real toast during a test run).
+    const notifyWithActions = (
+      toast: { title: string; body: string; actions: string[] },
+      onAction: (index: number) => void,
+      onClick: () => void,
+    ): void => {
+      if (recordSideEffects) {
+        notifications.push({ title: toast.title, body: toast.body, actions: [...toast.actions] });
+        return;
+      }
+      if (!Notification.isSupported()) return;
+      const n = new Notification({
+        title: toast.title,
+        body: toast.body,
+        actions: toast.actions.map((text) => ({ type: 'button' as const, text })),
+      });
+      n.on('action', (_e, index) => onAction(index));
+      n.on('click', () => onClick());
+      n.show();
+    };
+    // [V2] cli:pickExe: the main-owned OPEN dialog returning the chosen PATH (never file text, never a renderer value)
+    const pickExePath = async (opts: {
+      title: string;
+      filters: Array<{ name: string; extensions: string[] }>;
+    }): Promise<string | null> => {
+      const res = await dialog.showOpenDialog({
+        title: opts.title,
+        filters: [...opts.filters],
+        properties: ['openFile'],
+      });
+      return res.canceled ? null : (res.filePaths[0] ?? null);
+    };
+
     runtime = await compose({
       paths,
       clock: realClock,
@@ -208,6 +278,10 @@ if (!gotLock) {
       version: app.getVersion(),
       execPath: process.execPath,
       preferredLanguages: () => app.getPreferredSystemLanguages(),
+      image: nativeImageFacade,
+      dialog: showMessageBox,
+      notifyWithActions,
+      pickExePath,
     });
     const rt = runtime;
 
@@ -258,6 +332,7 @@ if (!gotLock) {
         },
       });
       rt.attachWindow(created);
+      created.on('focus', () => rt.noteFocus()); // [V2] B7 unattended pause
       return created;
     };
 
@@ -280,7 +355,7 @@ if (!gotLock) {
         // [REPAIR] 'language' too: compose() rebuilds its i18next instance and emits, but the tray menu, its status
         // line and its tooltip are built from `rt.t()` - without a rebuild they stayed in the OLD language after a
         // switch, which is a direct miss of the multilanguage requirement (UX 12.1).
-        if (key === 'health' || key === 'pairing' || key === 'language') tray?.rebuild();
+        if (key === 'health' || key === 'pairing' || key === 'language' || key === 'auto:changed') tray?.rebuild();
       });
     }
 
@@ -306,6 +381,10 @@ if (!gotLock) {
         app.quit();
       },
       log,
+      onAuto: (action) => {
+        rt.trayAuto(action); // [V2] B11
+        tray?.rebuild();
+      },
     });
 
     onToastClick = () => {
@@ -339,16 +418,24 @@ if (!gotLock) {
         }
         return out;
       };
-      installTestHooks({
-        trayTemplate: () => tray?.template() ?? [],
-        trayClick: (id) => tray?.click(id),
-        trayState: () => trayIconFor(rt.trayState(), rt.t()),
-        doorbellUrl: () => rt.doorbellUrl() ?? '',
-        health: () => rt.health(),
-        notifications: () => notifications.map((n) => ({ ...n })),
-        openedExternal: () => [...openedExternal],
-        childPids,
-      });
+      installTestHooks(
+        {
+          trayTemplate: () => tray?.template() ?? [],
+          trayClick: (id) => tray?.click(id),
+          trayState: () => trayIconFor(rt.trayState(), rt.t()),
+          doorbellUrl: () => rt.doorbellUrl() ?? '',
+          health: () => rt.health(),
+          notifications: () => notifications.map((n) => ({ ...n })),
+          openedExternal: () => [...openedExternal],
+          childPids,
+        },
+        {
+          dialogs: () => rt.dialogs(),
+          consoles: () => rt.consoles(),
+          jobPids: () => rt.jobPids(),
+          trayClickAutoPause: () => tray?.click('autoPause'),
+        },
+      );
     }
   });
 

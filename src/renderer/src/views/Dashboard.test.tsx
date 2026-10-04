@@ -191,7 +191,9 @@ describe('Dashboard - queue, loading and empty states (UX 6.3, 11.1, 11.2)', () 
     rerender(<Dashboard />);
     expect(screen.getByTestId('empty-needs_reply')).toHaveTextContent('Link WhatsApp to get started.');
 
-    useHealthStore.setState({ health: health({ calendar: { state: 'not_configured', since: 0 } }) });
+    useHealthStore.setState({
+      health: health({ calendar: { state: 'not_configured', since: 0, updatesAvailable: true } }),
+    });
     rerender(<Dashboard />);
     expect(screen.getByTestId('empty-in_calendar')).toHaveTextContent('Connect Google Calendar to add events.');
   });

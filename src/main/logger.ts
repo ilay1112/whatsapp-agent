@@ -22,7 +22,14 @@ const PATTERNS: ReadonlyArray<readonly [RegExp, string]> = [
   [/\b[0-9a-f]{64}\b/g, '[REDACTED-HEX64]'],
   // Query-string parameters only: a bare `code=` is how this logger renders an ErrorCode, which MUST stay readable.
   [/([?&])(code|state|token|client_id)=[^&\s"'<>]+/gi, '$1$2=[REDACTED]'],
-  [/\b(access_token|refresh_token|client_secret|api_key|apikey)=[^&\s"'<>]+/gi, '$1=[REDACTED]'],
+  // [V2] + the per-run MCP token env name and the vendor OAuth env names (a mis-logged env pair never shows its value).
+  [
+    /\b(access_token|refresh_token|client_secret|api_key|apikey|wca_mcp_token|claude_code_oauth_token|anthropic_auth_token)=[^&\s"'<>]+/gi,
+    '$1=[REDACTED]',
+  ],
+  // [V2] The per-run MCP bearer token of the loopback tool server (B16): base64url of 32 random bytes = exactly 43 chars.
+  // Standalone runs only (no neighbouring token character), so a longer id or a 64-hex value is not cut in half.
+  [/(?<![A-Za-z0-9_-])[A-Za-z0-9_-]{43}(?![A-Za-z0-9_-])/g, '[REDACTED-TOKEN43]'],
   [/\b\d{5,20}(?=@(?:s\.whatsapp\.net|lid|c\.us|g\.us))/g, '[PHONE]'],
   [/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g, '[EMAIL]'],
   [/(?<![\w.+])\+\d{7,15}\b/g, '[PHONE]'],
@@ -49,6 +56,38 @@ export function toolMeta(name: string): LogMeta {
     : { toolSha8: sha8(name), toolLen: name.length };
 }
 
+/**
+ * [V2] B27: every byte a vendor CLI or whisper prints is untrusted. Job STDOUT is never logged in any form (it carries the
+ * model's answer / the transcript); job STDERR is reduced to its size, a hash and a closed set of markers the app itself
+ * recognises - never a character of the text.
+ */
+export const JOB_STDERR_MARKERS = [
+  'rate_limit',
+  'auth',
+  'not_found',
+  'timeout',
+  'out_of_memory',
+  'dll_missing',
+  'permission',
+] as const;
+export type JobStderrMarker = (typeof JOB_STDERR_MARKERS)[number];
+const STDERR_MARKER_RES: ReadonlyArray<readonly [JobStderrMarker, RegExp]> = [
+  ['rate_limit', /rate.?limit|usage limit|429/i],
+  ['auth', /unauthori[sz]ed|not (?:logged|signed) in|log ?in required|401|403|oauth/i],
+  ['not_found', /not found|no such file|ENOENT/i],
+  ['timeout', /timed? ?out|ETIMEDOUT/i],
+  ['out_of_memory', /out of memory|bad_alloc|ENOMEM/i],
+  ['dll_missing', /\.dll\b|0xc0000135|-1073741515/i],
+  ['permission', /access is denied|EACCES|EPERM|permission denied/i],
+];
+export function jobStderrMeta(stderr: string): LogMeta {
+  const markers = STDERR_MARKER_RES.filter(([, re]) => re.test(stderr)).map(([m]) => m);
+  return { stderrBytes: Buffer.byteLength(stderr, 'utf8'), stderrSha8: sha8(stderr), stderrMarkers: markers.join(',') };
+}
+/** Meta keys whose value is job output: `stdout` is dropped entirely, `stderr` is expanded by jobStderrMeta(). */
+export const JOB_STDOUT_KEYS: ReadonlySet<string> = new Set(['stdout', 'jobStdout']);
+export const JOB_STDERR_KEYS: ReadonlySet<string> = new Set(['stderr', 'jobStderr']);
+
 const ERROR_CODE_SET: ReadonlySet<string> = new Set(ERROR_CODES);
 
 /** Metadata for a caught error: its ErrorCode (or INTERNAL) - NEVER `err.message`, which may echo prompt or message text. */
@@ -74,8 +113,16 @@ function formatLine(ts: number, level: LogLevel, scope: string, event: string, m
   if (meta) {
     for (const [key, raw] of Object.entries(meta)) {
       if (raw === undefined) continue;
-      // toolMeta() expands a model-chosen tool name into a hash + length; every other key is rendered as it is.
-      const entries = key === 'tool' && typeof raw === 'string' ? Object.entries(toolMeta(raw)) : [[key, raw] as const];
+      // [V2] job stdout never reaches a sink, not even its length (B27).
+      if (JOB_STDOUT_KEYS.has(key)) continue;
+      // toolMeta() expands a model-chosen tool name into a hash + length; jobStderrMeta() reduces job stderr to markers;
+      // every other key is rendered as it is.
+      const entries =
+        key === 'tool' && typeof raw === 'string'
+          ? Object.entries(toolMeta(raw))
+          : JOB_STDERR_KEYS.has(key)
+            ? Object.entries(jobStderrMeta(String(raw)))
+            : [[key, raw] as const];
       for (const [k, v] of entries) {
         parts.push(`${k}=${typeof v === 'string' ? JSON.stringify(v) : String(v)}`);
       }

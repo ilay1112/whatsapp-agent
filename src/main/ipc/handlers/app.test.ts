@@ -1,9 +1,9 @@
 // TESTS 5.3 `ipc/*`: app/bootstrap/consent/clipboard/external channels. The external:open rows are the [R2] ones -
 // only enum targets, and `calendarEvent` opens a URL BUILT IN MAIN, never the stored htmlLink.
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import links from '../../../../resources/links.json';
 import { EXTERNAL_TARGETS, type ExternalTarget } from '../../../shared/ipc';
-import { CONSENT_VERSIONS, LIMITS } from '../../../shared/types';
+import { ANTIGRAVITY_TERMS_READ_ON, CONSENT_KINDS, CONSENT_VERSIONS, LIMITS } from '../../../shared/types';
 import { fixtureItem, makeFixture, NOW_0 } from '../register.fixtures';
 import { calendarDayUrl, CALENDAR_DAY_URL_PREFIX, createAppHandlers } from './app';
 
@@ -246,7 +246,9 @@ describe('consent:get / consent:accept', () => {
     );
     expect(res.ok && res.value.acceptedVersion).toBe(CONSENT_VERSIONS.cloud_claude);
     expect(res.ok && res.value.acceptedAt).toBe(NOW_0);
-    expect(f.rec.audits).toEqual([{ kind: 'consent', ref: 'cloud_claude', detail: { version: 1 }, now: NOW_0 }]);
+    expect(f.rec.audits).toEqual([
+      { kind: 'consent', ref: 'cloud_claude', detail: { version: CONSENT_VERSIONS.cloud_claude }, now: NOW_0 },
+    ]);
   });
 
   it('[R2] rejects any version other than the current one with BAD_REQUEST + audit ipc_rejected', async () => {
@@ -254,16 +256,89 @@ describe('consent:get / consent:accept', () => {
       const f = makeFixture();
       const res = await createAppHandlers(f.deps)['consent:accept']({ kind: 'cloud_gemini', version }, CTX);
       expect(res.ok, String(version)).toBe(false);
-      expect(res).toEqual({ ok: false, error: { code: 'BAD_REQUEST', params: { kind: 'cloud_gemini', version: 1 } } });
+      expect(res).toEqual({
+        ok: false,
+        error: { code: 'BAD_REQUEST', params: { kind: 'cloud_gemini', version: CONSENT_VERSIONS.cloud_gemini } },
+      });
       expect(f.state.consents.size).toBe(0);
       expect(f.rec.audits).toEqual([
         {
           kind: 'ipc_rejected',
           ref: 'consent:accept',
-          detail: { kind: 'cloud_gemini', sent: version, current: 1 },
+          detail: { kind: 'cloud_gemini', sent: version, current: CONSENT_VERSIONS.cloud_gemini },
           now: NOW_0,
         },
       ]);
     }
+  });
+});
+
+// ---------------------------------------------------------------------------------------------------------------------
+// [V2] B21 consent kinds + versions, B14 terms date, the five new external targets (C2 8, C2 19 item 31).
+// ---------------------------------------------------------------------------------------------------------------------
+describe('[V2] consent:* for the five kinds', () => {
+  it('each kind accepts exactly its current version and nothing else', async () => {
+    for (const kind of CONSENT_KINDS) {
+      const f = makeFixture();
+      const h = createAppHandlers(f.deps);
+      for (const bad of [CONSENT_VERSIONS[kind] - 1, CONSENT_VERSIONS[kind] + 1]) {
+        const res = await h['consent:accept']({ kind, version: bad }, CTX);
+        expect(res.ok, `${kind} v${bad}`).toBe(false);
+      }
+      const res = await h['consent:accept']({ kind, version: CONSENT_VERSIONS[kind] }, CTX);
+      expect(res.ok && res.value.acceptedVersion, kind).toBe(CONSENT_VERSIONS[kind]);
+      const got = await h['consent:get']({ kind }, CTX);
+      expect(got.ok && got.value.currentVersion).toBe(CONSENT_VERSIONS[kind]);
+    }
+  });
+
+  it('the bumped cloud kinds are at version 2 and the two CLI kinds at version 1 (B21)', () => {
+    expect(CONSENT_VERSIONS).toMatchObject({
+      cloud_claude: 2,
+      cloud_gemini: 2,
+      cloud_claude_cli: 1,
+      cloud_antigravity_cli: 1,
+    });
+  });
+
+  it('the Antigravity consent stores the Terms read date; no other kind passes one', async () => {
+    const f = makeFixture();
+    const accept = vi.spyOn(f.deps.repos.consents, 'accept');
+    const h = createAppHandlers(f.deps);
+    await h['consent:accept']({ kind: 'cloud_antigravity_cli', version: CONSENT_VERSIONS.cloud_antigravity_cli }, CTX);
+    expect(accept).toHaveBeenLastCalledWith(
+      'cloud_antigravity_cli',
+      CONSENT_VERSIONS.cloud_antigravity_cli,
+      NOW_0,
+      ANTIGRAVITY_TERMS_READ_ON,
+    );
+    await h['consent:accept']({ kind: 'cloud_claude_cli', version: CONSENT_VERSIONS.cloud_claude_cli }, CTX);
+    expect(accept).toHaveBeenLastCalledWith('cloud_claude_cli', CONSENT_VERSIONS.cloud_claude_cli, NOW_0);
+  });
+});
+
+describe('[V2] external:open - the five new targets', () => {
+  const NEW_TARGETS = [
+    'claude_install',
+    'claude_usage',
+    'antigravity_install',
+    'antigravity_terms',
+    'whisper_licence',
+  ] as const;
+
+  it('are EXTERNAL_TARGETS members and resources/links.json keys with https URLs', () => {
+    const table = links as Record<string, string>;
+    for (const t of NEW_TARGETS) {
+      expect(EXTERNAL_TARGETS).toContain(t);
+      expect(table[t], t).toMatch(/^https:\/\/[a-z0-9.-]+\//);
+    }
+  });
+
+  it('open exactly the table URL, and only by enum target', async () => {
+    const f = makeFixture({ links: links as Record<string, string> });
+    const h = createAppHandlers(f.deps);
+    for (const target of NEW_TARGETS)
+      expect(await h['external:open']({ target }, CTX)).toEqual({ ok: true, value: null });
+    expect(f.rec.opened).toEqual(NEW_TARGETS.map((t) => (links as Record<string, string>)[t]));
   });
 });

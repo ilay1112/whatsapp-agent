@@ -117,8 +117,13 @@ describe('pipeline failures', () => {
     const card = (await cards(h))[0]!;
     expect(card.draft?.text).toBe('Thursday 17:00 works');
     expect(card.actions.map((a) => a.kind)).toEqual(['send_reply']);
-    // I2: with no calendar there is nothing to offer, so the model is handed an empty tool list.
-    for (const call of h.llm.calls) expect(call.tools).toEqual([]);
+    // I2: with no calendar there is no CALENDAR tool to offer. [V2-W2-01, B17] the WhatsApp read tools (wa_*) do not depend on the
+    // calendar and may still be offered to the S3 draft; S1 (extract) never gets any tool.
+    for (const call of h.llm.calls) {
+      const names = call.tools.map((t) => t.name);
+      if (call.purpose === 'extract') expect(names).toEqual([]);
+      expect(names.filter((n) => !n.startsWith('wa_'))).toEqual([]);
+    }
     expect(h.calendar.calls).toHaveLength(0);
     expect(h.health().calendar.state).toBe('not_configured');
   });

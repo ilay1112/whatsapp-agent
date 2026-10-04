@@ -8,6 +8,7 @@ release/
 # ── test & coverage output ──────────────────────────────────────────
 coverage/
 test-results/
+test-results/golden-*
 playwright-report/
 blob-report/
 
@@ -27,11 +28,17 @@ gcp-oauth.keys.json
 tokens.json
 
 # ── runtime data: WhatsApp session, messages, tokens, models, caches ─
-store/
+# [V2-W2-01] anchored: the bare `store/` also hid src/renderer/src/store/ (W1-12 finding); a WhatsApp bridge session store
+# (messages + keys) must still never be committed from any place it could appear
+/store/
+**/whatsapp-bridge/store/
+vendor/**/store/
 *.db
 *.db-wal
 *.db-shm
 *.db-journal
+# [V2] the committed synthetic v3 fixture of the v3 -> v4 round-trip (V2-W1-01, scripts/gen-v3-fixture.mjs)
+!src/main/db/__fixtures__/v3.db
 .bridge-token
 *.gguf
 *.pid.json
@@ -50,3 +57,6 @@ desktop.ini
 .DS_Store
 .idea/
 *.swp
+
+# ── raw machine-readable test dumps in agent notes (the .txt logs are the kept record) ──
+ops/agent-notes/**/*.json

@@ -8,6 +8,8 @@ import type { Repos } from '../db/index';
 export interface QueueStats {
   pending: number;
   running: number;
+  /** [V2, C2 8 `queue:changed`] the header line "Transcribing a voice note (0:42)..." while V0 runs; null otherwise. */
+  transcribing?: { seconds: number } | null;
 }
 export interface TriageQueue {
   start(): void;
@@ -18,6 +20,8 @@ export interface TriageQueue {
   abortInFlight(): void;
   stats(): QueueStats;
   onStats(cb: (s: QueueStats) => void): () => void;
+  /** [V2] OrchestratorDepsV2.onTranscribing (compose.ts wires it): seconds of audio being transcribed, or null when V0 is done. */
+  setTranscribing?(seconds: number | null): void; // optional: a v1-shaped double stays assignable
 }
 export interface TriageQueueDeps {
   repos: Pick<Repos, 'queue' | 'items'>;
@@ -58,12 +62,18 @@ export function createTriageQueue(deps: TriageQueueDeps): TriageQueue {
   let scanTimer: ClockTimer | null = null;
   let pokeTimer: ClockTimer | null = null;
   const listeners = new Set<(s: QueueStats) => void>();
-  let lastStats: QueueStats = { pending: 0, running: 0 };
+  let lastStats: QueueStats = { pending: 0, running: 0, transcribing: null };
+  let transcribing: { seconds: number } | null = null;
 
-  const stats = (): QueueStats => ({ pending: repos.queue.size(), running: running ? 1 : 0 });
+  const stats = (): QueueStats => ({ pending: repos.queue.size(), running: running ? 1 : 0, transcribing });
   const emit = (): void => {
     const s = stats();
-    if (s.pending === lastStats.pending && s.running === lastStats.running) return;
+    if (
+      s.pending === lastStats.pending &&
+      s.running === lastStats.running &&
+      (s.transcribing?.seconds ?? null) === (lastStats.transcribing?.seconds ?? null)
+    )
+      return;
     lastStats = s;
     for (const cb of listeners) cb(s);
   };
@@ -146,7 +156,7 @@ export function createTriageQueue(deps: TriageQueueDeps): TriageQueue {
       // ARCHITECTURE 6.6 recovery: a crash left items mid-run; they go back to `queued` and are picked up again.
       const recovered = repos.items.recoverRunning(clock.now());
       if (recovered > 0) log.info('triage_recovered', { items: recovered });
-      lastStats = { pending: -1, running: -1 }; // force the first emit
+      lastStats = { pending: -1, running: -1, transcribing: null }; // force the first emit
       emit();
       scheduleScan();
     },
@@ -186,6 +196,13 @@ export function createTriageQueue(deps: TriageQueueDeps): TriageQueue {
     },
 
     stats,
+
+    setTranscribing(seconds: number | null): void {
+      // numbers only (P2 3.3: nothing about the note itself reaches the header); a non-finite / negative value is "unknown" = 0
+      transcribing =
+        seconds === null ? null : { seconds: Number.isFinite(seconds) && seconds > 0 ? Math.round(seconds) : 0 };
+      emit();
+    },
 
     onStats(cb: (s: QueueStats) => void): () => void {
       listeners.add(cb);

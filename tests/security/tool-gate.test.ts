@@ -18,7 +18,12 @@ import { createHash } from 'node:crypto';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { createToolGate, type RunCtx, type ToolGate } from '../../src/main/agent/toolGate.ts';
-import { READ_TOOL_NAMES } from '../../src/main/agent/toolDefs.ts';
+import { createHandleTable } from '../../src/main/agent/handles.ts';
+// [V2] READ_TOOL_NAMES is the six-tool v2 list (C2 10); the gate under test is the v1 gate (Wave-0 remnant) with the two calendar tools.
+import {
+  V1_READ_TOOL_NAMES as READ_TOOL_NAMES,
+  READ_TOOL_NAMES as V2_READ_TOOL_NAMES,
+} from '../../src/main/agent/toolDefs.ts';
 import { createMcpReadClient, McpCapabilityError, type McpReadClient } from '../../src/main/mcp/readClient.ts';
 import { createMcpHost, type McpHostWithChildSpec } from '../../src/main/mcp/host.ts';
 import { createRepos, openDb, MEMORY_DB, type Db } from '../../src/main/db/index.ts';
@@ -29,6 +34,7 @@ import type { LlmToolCall } from '../../src/main/llm/types.ts';
 import { ALL_REAL_TOOLS, createFakeMcpCalendar, type FakeMcpCalendar } from '../fakes/fake-mcp-calendar.ts';
 import { createHarness, extraction, type Harness } from '../helpers/harness.ts';
 import type { StubRule } from '../fakes/stub-llm.ts';
+import { createWaToolRig, type WaToolRig } from '../helpers/waWorld.ts';
 
 const NOW_MS = Date.UTC(2026, 8, 21, 6, 0, 0) as EpochMs; // 2026-09-21 09:00 Asia/Jerusalem
 const NONCE = 'a1b2c3d4e5f60789';
@@ -58,6 +64,11 @@ function ctx(over: Partial<RunCtx> = {}): RunCtx {
     totalCalls: 0,
     blockedCalls: 0,
     signal: new AbortController().signal,
+    // [V2] C2 10 RunCtx additions (a Wave 0 stub handle table; the v1 gate never reads them)
+    handles: createHandleTable(1 as RunCtx['chatId']),
+    waRowsServed: 0,
+    crossChatRows: 0,
+    otherChatTexts: [],
     ...over,
   };
 }
@@ -177,6 +188,8 @@ async function rig(opts: { connected?: boolean } = {}): Promise<Rig> {
     settings: () => SETTINGS,
     calendarConnected: () => connected,
     audit: (kind, ref, detail) => repos.audit.append(kind, ref, detail, NOW_MS),
+    wa: { recentChats: () => [], chatMessages: () => [], search: () => [], context: () => null }, // [V2] C2 10
+    waAvailable: () => false, // [V2]
   });
 
   return {
@@ -359,7 +372,8 @@ describe('I2 - capability narrowing below the gate', () => {
     for (let o: object | null = r!.read; o !== null && o !== Object.prototype; o = Object.getPrototypeOf(o) as object) {
       for (const k of Object.getOwnPropertyNames(o)) surface.add(k);
     }
-    expect([...surface].sort()).toEqual(['findAppEvent', 'getCurrentTime', 'getFreeBusy']);
+    // [V2] + getEvent (C2 11: owned-event read, still no write method)
+    expect([...surface].sort()).toEqual(['findAppEvent', 'getCurrentTime', 'getEvent', 'getFreeBusy']);
     for (const forbidden of ['createEvent', 'call', 'caller', 'client', 'write']) {
       expect(surface.has(forbidden), forbidden).toBe(false);
     }
@@ -550,5 +564,183 @@ describe('I2 - two strikes abort the run and badge the item (end to end)', () =>
     expect(text).not.toContain('create-event');
     expect(text).not.toContain('delete-event');
     expect(text).toContain(sha8('create-event'));
+  });
+});
+
+// ---------------------------------------------------------------------------------------------------------------------
+// [V2] (owner V2-W2-02) T2 8.2 group 1 extensions over the v2 gate: the v2 calendar names (`update-event`, `get-event`,
+// `delete-event`, dash AND underscore, every casing / whitespace / homoglyph / FQN variant) and the `wa_*` variants. The rig is
+// the REAL v2 gate -> real McpReadClient -> real McpHost caller -> fake calendar, and -> real WaReadClient -> real read-only
+// BridgeDb (tests/helpers/waWorld.ts). Every name below is attacker DATA (T6).
+// ---------------------------------------------------------------------------------------------------------------------
+
+/** The v2 calendar write / owned-event names the model must never reach (C2 10 BLOCKED_NAMES + their variants). */
+const V2_CALENDAR_NAMES: readonly string[] = [
+  'update-event',
+  'update_event',
+  'get-event',
+  'get_event',
+  'delete-event',
+  'delete_event',
+  'UPDATE-EVENT',
+  'Update_Event',
+  'GET_EVENT',
+  'gEt-EvEnT',
+  'DELETE_EVENT',
+  'Delete-Event',
+  ' update_event',
+  'update_event ',
+  'get_event\n',
+  '\tdelete-event',
+  'updаte_event', // Cyrillic a
+  'gеt_event', // Cyrillic e
+  'delete​_event', // ZWSP
+  'delete_events',
+  'update-events',
+  'patch_event',
+  'cancel_event',
+  'mcp__wca__update_event',
+  'mcp__wca__delete-event',
+  'mcp__calendar__update-event',
+  'mcp__google-calendar__delete-event',
+];
+/** `wa_*` look-alikes: casing, whitespace, homoglyphs, dash spelling, FQNs and invented write verbs. */
+const WA_VARIANTS: readonly string[] = [
+  'WA_GET_CHAT_MESSAGES',
+  'Wa_Search_Messages',
+  'wa_get_message_context ',
+  ' wa_list_chats',
+  'wa_get_chat_messages​',
+  'wa_sеarch_messages', // Cyrillic e
+  'wa-get-chat-messages',
+  'wa-search-messages',
+  'mcp__wca__wa_get_chat_messages',
+  'mcp__wca__wa_list_chats',
+  'mcp__whatsapp__send_message',
+  'wa_send_message',
+  'wa_send_reply',
+  'wa_get_media',
+  'wa_download_media',
+  'wa_mark_read',
+  'wa_list_contacts',
+];
+
+describe('[V2] group 1 - update-event / get-event / delete-event and wa_* variants on the v2 gate', () => {
+  let w: WaToolRig | null = null;
+  afterEach(async () => {
+    await w?.dispose();
+    w = null;
+  });
+
+  it('every v2 calendar name and variant: blocked_unknown_tool + strike, zero calendar / WhatsApp calls, sha8-only audit', async () => {
+    w = await createWaToolRig({ scope: 'all_chats' });
+    const names = [...new Set([...V2_CALENDAR_NAMES, ...WA_VARIANTS])];
+    for (const n of names) expect((V2_READ_TOOL_NAMES as readonly string[]).includes(n), n).toBe(false);
+    const before = w.calendar.calls.length;
+    for (const name of names) {
+      const c = w.ctx();
+      const out = await w.gate.invoke(
+        call(name, {
+          eventId: 'evt_1',
+          calendarId: 'primary',
+          summary: 'x',
+          start: '2026-09-22T10:00:00',
+          chat: 'chat_1',
+          query: 'x',
+          message: 'm_1',
+        }),
+        c,
+      );
+      expect(out.verdict, `name ${sha8(name)} len ${name.length}`).toBe('blocked_unknown_tool');
+      expect(out.result.isError).toBe(true);
+      expect(out.result.content).toBe(NOT_AVAILABLE);
+      expect(c.blockedCalls, `strike for ${sha8(name)}`).toBe(1);
+      expect(c.totalCalls).toBe(0);
+    }
+    // zero MCP traffic of any kind (not even a read), zero WhatsApp facade calls
+    expect(w.calendar.calls.length).toBe(before);
+    expect(w.calendar.violations).toEqual([]);
+    expect(w.waCalls).toEqual([]);
+    // the audit: one hash-only row per name, the name itself nowhere (audit or log)
+    const audit = w.blockedAudit();
+    expect(audit).toHaveLength(names.length);
+    for (const d of audit) expect(Object.keys(d).sort()).toEqual(['nameLen', 'nameSha8', 'runId', 'verdict']);
+    const auditText = JSON.stringify(audit);
+    const logText = w.logs.join('\n');
+    for (const name of names) {
+      expect(auditText).toContain(sha8(name));
+      expect(auditText, sha8(name)).not.toContain(JSON.stringify(name.trim()).slice(1, -1));
+      expect(logText, sha8(name)).not.toContain(name.trim());
+    }
+  });
+
+  it('two v2 strikes (update_event then delete-event) abort the run', async () => {
+    w = await createWaToolRig();
+    const c = w.ctx();
+    expect((await w.gate.invoke(call('update_event', { eventId: 'e' }), c)).abortRun).toBe(false);
+    const second = await w.gate.invoke(call('delete-event', { eventId: 'e' }), c);
+    expect(second.abortRun).toBe(true);
+    expect(c.blockedCalls).toBe(LIMITS.blockedCallsAbort);
+  });
+
+  it('wa_list_chats in trigger_chat scope is not exposed: blocked_not_exposed WITH a strike, zero WhatsApp calls', async () => {
+    w = await createWaToolRig({ scope: 'trigger_chat' });
+    const c = w.ctx();
+    const out = await w.gate.invoke(call('wa_list_chats', {}), c);
+    expect(out.verdict).toBe('blocked_not_exposed');
+    expect(out.result.content).toBe(NOT_AVAILABLE);
+    expect(c.blockedCalls).toBe(1);
+    expect(w.waCalls).toEqual([]);
+  });
+
+  it('the v2 READ table: exactly six names, none a write / owned-event / reference-server name; exposure per scope', async () => {
+    expect([...V2_READ_TOOL_NAMES].sort()).toEqual(
+      [
+        'get_current_time',
+        'get_freebusy',
+        'wa_get_chat_messages',
+        'wa_get_message_context',
+        'wa_list_chats',
+        'wa_search_messages',
+      ].sort(),
+    );
+    w = await createWaToolRig({ scope: 'all_chats' });
+    expect(
+      w.gate
+        .exposedTools()
+        .map((t) => t.name)
+        .sort(),
+    ).toEqual([...V2_READ_TOOL_NAMES].sort());
+    await w.dispose();
+    w = await createWaToolRig({ scope: 'trigger_chat' });
+    expect(w.gate.exposedTools().map((t) => t.name)).not.toContain('wa_list_chats');
+    expect(w.gate.exposedTools()).toHaveLength(5);
+    await w.dispose();
+    w = await createWaToolRig({ calendarConnected: false, waAvailable: false });
+    expect(w.gate.exposedTools()).toEqual([]);
+  });
+
+  it('exercising every exposed READ tool reaches only get-current-time / get-freebusy - never get-event or list-events', async () => {
+    w = await createWaToolRig({ scope: 'all_chats' });
+    const c = w.ctx();
+    const args: Record<string, Record<string, unknown>> = {
+      get_current_time: {},
+      get_freebusy: { timeMin: '2026-09-22T10:00:00', timeMax: '2026-09-22T18:00:00' },
+      wa_get_chat_messages: { chat: 'chat_1' },
+      wa_search_messages: { query: 'address' },
+      wa_get_message_context: { message: 'm_1' },
+      wa_list_chats: {},
+    };
+    const before = w.calendar.calls.length;
+    const verdicts: string[] = [];
+    for (const t of w.gate.exposedTools())
+      verdicts.push((await w.gate.invoke(call(t.name, args[t.name] ?? {}), c)).verdict);
+    expect(c.blockedCalls).toBe(0);
+    expect(verdicts.filter((v) => v === 'executed').length).toBeGreaterThanOrEqual(4);
+    const tools = new Set(w.calendar.calls.slice(before).map((x) => x.tool));
+    for (const t of tools) expect(['get-current-time', 'get-freebusy']).toContain(t);
+    expect(tools.has('get-freebusy')).toBe(true);
+    expect(w.nonReadCalendarCalls()).toEqual([]);
+    expect(w.calendar.violations).toEqual([]);
   });
 });

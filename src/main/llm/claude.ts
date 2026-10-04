@@ -10,10 +10,11 @@ import {
   type LlmResponse,
   type LlmTool,
   type LlmToolCall,
+  type LlmUserContent,
   type ProviderErrorCode,
 } from './types';
 import type { Logger } from '../deps';
-import type { JsonSchemaLcd, ModelOption } from '../../shared/types';
+import { PROVIDER_LOOP, type JsonSchemaLcd, type ModelOption } from '../../shared/types';
 
 /** CONTRACTS section 9: new Anthropic({ apiKey, baseURL: ANTHROPIC_BASE_URL, maxRetries: 2, timeout: 60_000 }) - never pass undefined for baseURL. */
 export const ANTHROPIC_BASE_URL = 'https://api.anthropic.com';
@@ -99,13 +100,29 @@ function systemBlocks(messages: readonly LlmMessage[]): Json[] | undefined {
   return [{ type: 'text', text, cache_control: { type: 'ephemeral' } }];
 }
 
+/** [V2] C2 9 binding wire mapping: an LlmImagePart becomes the native base64 image block, in the caller's order (image FIRST). */
+export function toClaudeContent(parts: Exclude<LlmUserContent, string>): Json[] {
+  return parts.map((part) =>
+    part.type === 'image'
+      ? { type: 'image', source: { type: 'base64', media_type: part.mime, data: part.base64 } }
+      : { type: 'text', text: part.text },
+  );
+}
+
+/** [V2] true when any user turn carries a picture (V1 read_image only). */
+export function hasImagePart(messages: readonly LlmMessage[]): boolean {
+  return messages.some(
+    (m) => m.role === 'user' && typeof m.content !== 'string' && m.content.some((p) => p.type === 'image'),
+  );
+}
+
 /** Neutral history -> Anthropic `messages`. Assistant turns are replayed from `providerData` verbatim (thinking signatures, tool_use ids). */
 export function toClaudeMessages(messages: readonly LlmMessage[]): Json[] {
   const out: Json[] = [];
   for (const m of messages) {
     if (m.role === 'system') continue;
     if (m.role === 'user') {
-      out.push({ role: 'user', content: m.content });
+      out.push({ role: 'user', content: typeof m.content === 'string' ? m.content : toClaudeContent(m.content) });
       continue;
     }
     if (m.role === 'assistant') {
@@ -310,8 +327,12 @@ export function createClaudeProvider(input: ClaudeProviderInput): LlmProvider {
   return {
     id: 'claude',
     model,
+    loop: PROVIDER_LOOP.claude, // [V2 ADD]
+    capabilities: { images: true }, // [V2 ADD] C2 9: native image block (V1 read_image), no tools on that request
 
     async structured<T>(messages: LlmMessage[], schema: JsonSchemaLcd, opts: CallOpts): Promise<T> {
+      // [V2] a picture only on the V1 purpose (C2 9.1); the structured request never carries `tools` (I12).
+      if (opts.purpose !== 'read_image' && hasImagePart(messages)) throw new LlmError('unsupported');
       const res = await call(buildStructuredRequest(model, messages, schema, opts.maxOutputTokens), opts.signal);
       reportUsage(res, opts);
       const stop = mapStopReason(res.stop_reason);
@@ -329,6 +350,7 @@ export function createClaudeProvider(input: ClaudeProviderInput): LlmProvider {
     },
 
     async chat(messages: LlmMessage[], tools: LlmTool[], opts: CallOpts): Promise<LlmResponse> {
+      if (hasImagePart(messages)) throw new LlmError('unsupported'); // [V2] C2 9.1: chat() never receives a picture
       const res = await call(buildChatRequest(model, messages, tools, opts.maxOutputTokens), opts.signal);
       const usage = reportUsage(res, opts);
       const blocks = res.content ?? [];

@@ -22,6 +22,12 @@ import { LIMITS } from '../../src/shared/types.ts';
 import type { InjectionCase } from '../fakes/obedient-attacker-llm.ts';
 import type { StubRule } from '../fakes/stub-llm.ts';
 import { createHarness, extraction, type Harness } from '../helpers/harness.ts';
+import { randomBytes } from 'node:crypto';
+import { DEFAULT_AUTO_SCOPE } from '../../src/shared/schemas.ts';
+import { startToolServer } from '../../src/main/mcp/toolServer.ts';
+import { freePort } from '../../src/main/proc/freePort.ts';
+import { connect as connectMcp } from '../fakes/fake-mcp-client.ts';
+import { WA_WORLD_JIDS, WA_WORLD_NAMES, createWaToolRig } from '../helpers/waWorld.ts';
 
 const SEED = 0x5eed_2202; // fixed: a failure is reproducible from this line
 const ITERATIONS = 500;
@@ -254,5 +260,256 @@ describe('I4 edge shapes', () => {
     });
     await h.settle();
     assertPure(h, [tag], [], 'lone surrogate');
+  }, 60_000);
+});
+
+// ---------------------------------------------------------------------------------------------------------------------
+// [V2] (owner V2-W2-02) T2 8.2 group 23 (I4', I5', B29): "the model is never told". Through the REAL compose():
+//   - every automatic-mode policy state (none / shadow / on / paused / expired / disabled) x two scope variants x the chat's own
+//     auto policy (inherit / never) leaves the system prompt bytes (per-run nonce + clock normalised) and the offered tool array
+//     identical, and no tool definition / prompt names an automatic-mode, approval, undo or settings capability;
+//   - the MCP `tools/list` of the per-run tool server (real listener + fake MCP client) is identical with and without a live policy;
+//   - the provider payload (incl. WhatsApp tool results) carries no fixture name, phone number, JID, message id or file name, and the
+//     tool results no clock time.
+// ---------------------------------------------------------------------------------------------------------------------
+
+const normSystemV2 = (system: string): string =>
+  system
+    .replace(/current time: [^\n]*/g, 'current time: <NOW>')
+    .replace(/<<(END-)?DATA-[0-9a-f]{16}>>/g, '<<$1DATA-<NONCE>>>');
+/** The T2 group 23 words (A18 / B29): auto, approve, undo, settings - never a capability the model or a CLI can see. */
+const CAPABILITY_WORDS = /\b(auto|automatic|approve|approval|undo|settings?|policy)\b/i;
+/**
+ * Parent-spec text that legitimately contains one of those words (the parent wins over T2, build plan header):
+ *  - C2 10 pins the wa_search_messages `chat` description verbatim: "... (only when allowed by the user's settings)." - it names no
+ *    capability, it tells the model a cross-chat search may be refused;
+ *  - P2 pins the S1 / S3 / V1 constants, which quote "approve" as an EXAMPLE of an injected instruction the model must not obey.
+ * Exactly these occurrences are removed before the word scan; any other occurrence fails.
+ */
+const C2_PINNED_SETTINGS_PHRASE = "only when allowed by the user's settings";
+const withoutPinnedText = (text: string): string =>
+  text
+    .split(C2_PINNED_SETTINGS_PHRASE)
+    .join('<C2-PINNED>')
+    .split('"approve"')
+    .join('<P2-EXAMPLE>')
+    .split('\\"approve\\"')
+    .join('<P2-EXAMPLE>');
+/** IPC / capability names that must never appear in a prompt or tool definition. */
+const CHANNEL_NAMES = /auto:|action:approve|item:undoChange|settings:set|auto_policies|autoGate/;
+
+describe('[V2] group 23 - policy state purity (B29) through the real pipeline', () => {
+  it('none / shadow / on / paused / expired / disabled x scope x chat auto policy: identical prompts and tools', async () => {
+    h = await createHarness({ rules: BENIGN_RULES, waWorld: true });
+    const harness = h;
+    let n = 40;
+    let mark = 0;
+    let previousLive: string | null = null;
+    const runOnce = async (label: string, chatNever: boolean): Promise<{ systems: string[]; tools: string[] }> => {
+      n += 1;
+      const jid = `9725500000${String(n)}@s.whatsapp.net`;
+      harness.repos.chats.upsertFromBridge(jid, 'Contact', true, harness.clock.now() as never);
+      const chat = harness.repos.chats.byJid(jid)!;
+      if (chatNever) {
+        const r = await harness.invoke('chat:setPolicy', { chatRef: chat.id as number, autoPolicy: 'never' });
+        expect(r.ok, `${label}: chat:setPolicy`).toBe(true);
+      }
+      await harness.bridge.outboundFromPhone({ chatJid: jid, text: 'hi', ts: new Date(harness.clock.now() - HOUR) });
+      await harness.bridge.inbound({ chatJid: jid, text: 'coffee tomorrow at 17:00?' });
+      await harness.settle();
+      const calls = harness.llm.calls.slice(mark);
+      mark = harness.llm.calls.length;
+      expect(calls.length, `${label}: the model was never called`).toBeGreaterThan(0);
+      return {
+        systems: calls.map((c) => `${c.purpose}|${normSystemV2(systemOf(c.messages))}`),
+        tools: calls.map((c) => `${c.purpose}|${JSON.stringify(c.tools)}`),
+      };
+    };
+    const base = await runOnce('no policy', false);
+    expect(
+      base.tools.some((t) => t.includes('wa_get_chat_messages')),
+      'the WhatsApp tools are offered',
+    ).toBe(true);
+    for (const t of base.tools) {
+      expect(withoutPinnedText(t), 'a tool definition names a capability the model must not know').not.toMatch(
+        CAPABILITY_WORDS,
+      );
+      for (const name of (JSON.parse(t.slice(t.indexOf('|') + 1)) as Array<{ name: string }>).map((x) => x.name))
+        expect(name).not.toMatch(/auto|approv|undo|setting|policy|write|send|create|update|delete/i);
+      expect(t).not.toMatch(CHANNEL_NAMES);
+    }
+    for (const s of base.systems) {
+      expect(s).not.toMatch(CHANNEL_NAMES);
+      expect(s).not.toMatch(/\b(automatic mode|auto-?approve|policy|settings)\b/i);
+      expect(withoutPinnedText(s), 'a system prompt names auto / approve / undo / settings').not.toMatch(
+        CAPABILITY_WORDS,
+      );
+    }
+    const same = (got: { systems: string[]; tools: string[] }, label: string): void => {
+      expect(new Set(got.systems), `${label}: the system prompt moved`).toEqual(new Set(base.systems));
+      expect(new Set(got.tools), `${label}: the tool array moved`).toEqual(new Set(base.tools));
+    };
+    same(await runOnce('no policy, chat never', true), 'no policy, chat never');
+
+    const SCOPES = [DEFAULT_AUTO_SCOPE, { ...DEFAULT_AUTO_SCOPE, edits: false, cancels: true, perChatPerDay: 1 }];
+    let counter = 0;
+    for (const state of ['shadow', 'on', 'paused', 'expired', 'disabled'] as const) {
+      for (const [si, scope] of SCOPES.entries()) {
+        for (const chatNever of [false, true]) {
+          // one live row at most: end the previous one first
+          if (previousLive !== null) {
+            harness.repos.autoPolicies.setState(previousLive, {
+              state: 'disabled',
+              at: harness.clock.now() as never,
+              reason: 'user',
+            });
+            previousLive = null;
+          }
+          counter += 1;
+          const now = harness.clock.now();
+          const row = harness.repos.autoPolicies.insert({
+            id: `44444444-4444-4444-8444-${String(counter).padStart(12, '0')}`,
+            state: state === 'shadow' ? 'shadow' : 'on',
+            enabledAt: now as never,
+            expiresAt: (now + 30 * 24 * HOUR) as never,
+            shadowUntil: (state === 'shadow' ? now + 24 * HOUR : now) as never,
+            confirmedBy: 'native_dialog',
+            confirm: {
+              dialogResponse: 1,
+              checkboxChecked: true,
+              windowFocused: true,
+              trial: state === 'shadow',
+              appVersion: '2.0.0',
+              electronVersion: '44.4.3',
+              approvedCreates: 3,
+            },
+            scope,
+            snapshotSha: 'a'.repeat(64),
+          });
+          if (state === 'paused') harness.repos.autoPolicies.setState(row.id, { state: 'paused', reason: 'user' });
+          if (state === 'expired') harness.repos.autoPolicies.setState(row.id, { state: 'expired' });
+          if (state === 'disabled')
+            harness.repos.autoPolicies.setState(row.id, { state: 'disabled', at: now as never, reason: 'user' });
+          if (state === 'shadow' || state === 'on' || state === 'paused') previousLive = row.id;
+          const label = `policy ${state}, scope ${si}, chat ${chatNever ? 'never' : 'inherit'}`;
+          same(await runOnce(label, chatNever), label);
+        }
+      }
+    }
+    // the matrix really ran with live policies (non-vacuous): rows exist in every state
+    const states = harness.repos.db.prepare<{ state: string }>('SELECT DISTINCT state FROM auto_policies').all();
+    expect(states.map((s) => s.state).sort()).toEqual(['disabled', 'expired']);
+    expect(counter).toBe(20);
+  }, 180_000);
+
+  it('the MCP tools/list of the per-run tool server is identical with and without a live policy, and names no capability', async () => {
+    const lists: string[] = [];
+    for (const withPolicy of [false, true]) {
+      const rig = await createWaToolRig({ scope: 'all_chats' });
+      try {
+        if (withPolicy) {
+          rig.repos.autoPolicies.insert({
+            id: '55555555-5555-4555-8555-000000000001',
+            state: 'on',
+            enabledAt: rig.nowMs as never,
+            expiresAt: (rig.nowMs + 30 * 24 * HOUR) as never,
+            shadowUntil: rig.nowMs as never,
+            confirmedBy: 'native_dialog',
+            confirm: {
+              dialogResponse: 1,
+              checkboxChecked: true,
+              windowFocused: true,
+              trial: false,
+              appVersion: '2.0.0',
+              electronVersion: '44.4.3',
+              approvedCreates: 3,
+            },
+            scope: DEFAULT_AUTO_SCOPE,
+            snapshotSha: 'a'.repeat(64),
+          });
+        }
+        const server = await startToolServer({
+          gate: rig.gate,
+          ctx: rig.ctx(),
+          specs: rig.gate.exposedSpecs(),
+          randomBytes: (k) => randomBytes(k),
+          freePort: () => freePort(),
+          appVersion: '0.0.0-test',
+        });
+        try {
+          const client = await connectMcp({ url: server.url, token: server.token });
+          try {
+            lists.push(JSON.stringify(await client.listTools()));
+          } finally {
+            await client.close();
+          }
+        } finally {
+          await server.close();
+        }
+      } finally {
+        await rig.dispose();
+      }
+    }
+    expect(lists[0]!.length).toBeGreaterThan(100);
+    expect(lists[1]).toBe(lists[0]);
+    expect(withoutPinnedText(lists[0]!)).not.toMatch(CAPABILITY_WORDS);
+    // the pinned C2 sentence is the ONLY occurrence (one wa_search_messages argument description)
+    expect(lists[0]!.split(C2_PINNED_SETTINGS_PHRASE)).toHaveLength(2);
+    expect(lists[0]).not.toMatch(CHANNEL_NAMES);
+    for (const forbidden of ['create', 'update', 'delete', 'send', 'write', 'patch'])
+      expect(lists[0]!.toLowerCase(), forbidden).not.toMatch(new RegExp(`"name":"[^"]*${forbidden}`));
+  }, 60_000);
+});
+
+describe('[V2] group 23 - the provider payload carries no identity (WhatsApp tool results included)', () => {
+  it('no fixture name / phone number / JID / message id / file name anywhere; no clock time in a tool result', async () => {
+    h = await createHarness({
+      waWorld: true,
+      settings: (s) => {
+        s.whatsapp.readTools = { ...s.whatsapp.readTools, enabled: true, scope: 'all_chats' };
+      },
+      rules: [
+        BENIGN_RULES[0]!,
+        {
+          when: { purpose: 'draft', turn: 0 },
+          respond: {
+            toolCalls: [
+              { name: 'wa_get_chat_messages', input: { chat: 'chat_1' } },
+              { name: 'wa_search_messages', input: { query: 'address' } },
+              { name: 'wa_list_chats', input: {} },
+            ],
+            stopReason: 'tool_use',
+          },
+        },
+        { when: { purpose: 'draft' }, respond: { text: 'Sounds good.', stopReason: 'end' } },
+      ],
+    });
+    await h.bridge.inbound({ chatJid: WA_WORLD_JIDS.trigger, text: 'coffee tomorrow at five pm?' });
+    await h.settle();
+    const toolResults = h.llm.calls.flatMap((c) =>
+      c.messages.flatMap((m) =>
+        m.role === 'tool' ? (m as { results: Array<{ name: string; content: string }> }).results : [],
+      ),
+    );
+    expect(toolResults.length, 'the WhatsApp tools were never called (non-vacuous)').toBeGreaterThanOrEqual(3);
+    expect(
+      toolResults.some((r) => r.content.includes('SENTINEL_WA_ROW_')),
+      'no row was served',
+    ).toBe(true);
+    const payload = JSON.stringify(h.llm.calls.map((c) => c.messages));
+    const identities = [
+      ...Object.values(WA_WORLD_JIDS),
+      ...Object.values(WA_WORLD_JIDS).map((j) => j.split('@')[0]!),
+      ...Object.values(WA_WORLD_NAMES),
+      's.whatsapp.net',
+      '@lid',
+      '@g.us',
+    ];
+    for (const id of identities) expect(payload.includes(id), `the provider payload carries ${id}`).toBe(false);
+    expect(payload).not.toMatch(/\b9725500000\d{2}\b/);
+    expect(payload).not.toMatch(/\bWAW[A-Z0-9]{3,}\b/); // bridge message ids of the read world
+    expect(payload).not.toMatch(/\.(?:jpe?g|png|ogg|opus|pdf|mp4|webp)\b/i); // media file names
+    for (const r of toolResults)
+      expect(r.content, `${r.name}: a clock time in a tool result`).not.toMatch(/\b\d{1,2}:\d{2}\b/);
   }, 60_000);
 });

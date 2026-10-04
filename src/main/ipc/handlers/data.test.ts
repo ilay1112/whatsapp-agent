@@ -4,13 +4,14 @@
 // chosen path never crosses IPC and the bundle is metadata only.
 import fs from 'node:fs';
 import path from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { IPC_REQUEST_SCHEMAS } from '../../../shared/ipc';
 import { backupNow } from '../../db/backup';
 import { cleanup, fileRepos, JID_A, seedChat, seedOpenItem, T0, tempDir } from '../../db/__fixtures__/testDb';
 import { makeFixture, NOW_0 } from '../register.fixtures';
 import type { HandlerDeps } from '../register';
-import { createDataHandlers } from './data';
+import { createDataHandlers, purgeDirsOf, wipeDirContents } from './data';
+import type { AutoPolicyRecord } from '../../../shared/types';
 
 const CTX = { windowFocused: true, windowVisible: true, shownByNotificationAt: null };
 const DAY_MS = 24 * 3600_000;
@@ -42,7 +43,16 @@ function purgeFixture(over: Partial<HandlerDeps> = {}): {
   ]);
   const f = makeFixture({
     repos,
-    paths: { userData: dir, appDb: path.join(dir, 'app.db'), backupsDir } as HandlerDeps['paths'],
+    paths: {
+      userData: dir,
+      appDb: path.join(dir, 'app.db'),
+      backupsDir,
+      // [V2] the four dirs data:purgeNow wipes (C2 16.1)
+      mediaCacheDir: path.join(dir, 'media-cache'),
+      voiceTmpDir: path.join(dir, 'voice', 'tmp'),
+      cliRunsDir: path.join(dir, 'cli-runs'),
+      agyWorkspaceDir: path.join(dir, 'agy-workspace'),
+    } as HandlerDeps['paths'],
     ...over,
   });
   return { f, db, repos, backupsDir, itemId: item.id, text };
@@ -137,7 +147,14 @@ describe('data:purgeNow', () => {
     const { repos } = fileRepos(dir);
     const f = makeFixture({
       repos,
-      paths: { userData: dir, backupsDir: path.join(dir, 'backups') } as HandlerDeps['paths'],
+      paths: {
+        userData: dir,
+        backupsDir: path.join(dir, 'backups'),
+        mediaCacheDir: path.join(dir, 'media-cache'),
+        voiceTmpDir: path.join(dir, 'voice', 'tmp'),
+        cliRunsDir: path.join(dir, 'cli-runs'),
+        agyWorkspaceDir: path.join(dir, 'agy-workspace'),
+      } as HandlerDeps['paths'],
     });
     expect(await createDataHandlers(f.deps)['data:purgeNow']({ confirm: true }, CTX)).toEqual({
       ok: true,
@@ -168,5 +185,128 @@ describe('diagnostics:export', () => {
     expect(calls).toBe(1);
     expect(f.rec.saveDialogs).toEqual([]);
     expect(f.rec.audits).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------------------------------------------------
+// [V2] C2 16.1 / T2 5: purgeNow also wipes media-cache/, voice/tmp/, cli-runs/, agy-workspace/runs/ and disables a live policy.
+// ---------------------------------------------------------------------------------------------------------------------
+describe('[V2] data:purgeNow - job / media dirs and the automatic policy', () => {
+  const plant = (dir: string, name: string, body = 'SENTINEL_TRANSCRIPT'): void => {
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, name), body);
+  };
+
+  it('wipes the CONTENTS of the four dirs (nested run dirs included) and keeps everything else', async () => {
+    const { f } = purgeFixture();
+    const p = f.deps.paths;
+    plant(p.mediaCacheDir, 'abc.jpg');
+    plant(p.mediaCacheDir, 'abc.thumb.jpg');
+    plant(p.voiceTmpDir, 'job.wav');
+    plant(path.join(p.cliRunsDir, 'run-1'), 'prompt.txt');
+    plant(path.join(p.agyWorkspaceDir, 'runs', 'run-2', '.agents'), 'wca-extract.md');
+    plant(path.join(p.agyWorkspaceDir, 'keep'), 'trusted.json', '{}'); // outside runs: not ours to wipe
+    plant(path.join(p.userData, 'models'), 'tiny.gguf', 'GGUF');
+
+    await createDataHandlers(f.deps)['data:purgeNow']({ confirm: true }, CTX);
+
+    for (const dir of purgeDirsOf(p)) expect(fs.readdirSync(dir), dir).toEqual([]);
+    expect(fs.existsSync(path.join(p.agyWorkspaceDir, 'keep', 'trusted.json'))).toBe(true);
+    expect(fs.existsSync(path.join(p.userData, 'models', 'tiny.gguf'))).toBe(true);
+  });
+
+  it('purgeDirsOf names exactly the four C2 16.1 dirs', () => {
+    const { f } = purgeFixture();
+    const p = f.deps.paths;
+    expect(purgeDirsOf(p)).toEqual([
+      p.mediaCacheDir,
+      p.voiceTmpDir,
+      p.cliRunsDir,
+      path.win32.join(p.agyWorkspaceDir, 'runs'),
+    ]);
+  });
+
+  it('wipeDirContents: a missing dir is empty; one busy entry is skipped and counted, the rest still go', () => {
+    expect(
+      wipeDirContents('C:/no/such/dir', {
+        readdirSync: () => {
+          throw new Error('ENOENT');
+        },
+        rmSync: () => {},
+      }),
+    ).toEqual({
+      removed: 0,
+      failed: 0,
+    });
+    const removed: string[] = [];
+    const res = wipeDirContents('C:/x', {
+      readdirSync: () => ['a', 'busy', 'b'],
+      rmSync: (p) => {
+        if (p.endsWith('busy')) throw new Error('EBUSY');
+        removed.push(p);
+      },
+    });
+    expect(res).toEqual({ removed: 2, failed: 1 });
+    expect(removed).toEqual(['C:\\x\\a', 'C:\\x\\b']);
+  });
+
+  it('a kept entry is logged by COUNT only, never by name', async () => {
+    const { f } = purgeFixture();
+    const handlers = createDataHandlers(f.deps, undefined, {
+      readdirSync: (d) => (d === f.deps.paths.voiceTmpDir ? ['SENTINEL_NAME.wav'] : []),
+      rmSync: () => {
+        throw new Error('EBUSY SENTINEL_NAME.wav');
+      },
+    });
+    await handlers['data:purgeNow']({ confirm: true }, CTX);
+    expect(f.rec.logs).toContainEqual({ level: 'warn', event: 'purge_dir_entries_kept', meta: { count: 1 } });
+    expect(JSON.stringify(f.rec.logs)).not.toContain('SENTINEL_NAME');
+  });
+
+  it('disables a live policy through the policy service with reason purge', async () => {
+    const { f, repos } = purgeFixture();
+    const live = { id: '44444444-4444-4444-8444-444444444444', state: 'on' } as AutoPolicyRecord;
+    const liveSpy = vi.spyOn(repos.autoPolicies, 'live').mockReturnValue(live);
+    const setState = vi.spyOn(repos.autoPolicies, 'setState');
+    const disable = vi.fn(() => ({ ok: true as const, value: {} as never }));
+    await createDataHandlers(f.deps, { autoPolicy: { disable } })['data:purgeNow']({ confirm: true }, CTX);
+    expect(disable).toHaveBeenCalledWith('purge');
+    expect(setState).not.toHaveBeenCalled();
+    liveSpy.mockRestore();
+  });
+
+  it('falls back to a direct disabled write + audit when the service is not wired, refuses or throws; no live policy => nothing', async () => {
+    const live = { id: '44444444-4444-4444-8444-444444444444', state: 'on' } as AutoPolicyRecord;
+    const variants: Array<Parameters<typeof createDataHandlers>[1]> = [
+      undefined,
+      { autoPolicy: { disable: () => ({ ok: false as const, error: { code: 'INTERNAL' as const } }) } },
+      {
+        autoPolicy: {
+          disable: () => {
+            throw new Error('boom');
+          },
+        },
+      },
+    ];
+    for (const v2 of variants) {
+      const { f, repos } = purgeFixture();
+      vi.spyOn(repos.autoPolicies, 'live').mockReturnValue(live);
+      const setState = vi.spyOn(repos.autoPolicies, 'setState').mockReturnValue(live);
+      await createDataHandlers(f.deps, v2)['data:purgeNow']({ confirm: true }, CTX);
+      expect(setState).toHaveBeenCalledWith(live.id, { state: 'disabled', reason: 'purge', at: NOW_0 });
+      expect(f.rec.audits).toContainEqual({
+        kind: 'auto_policy_disabled',
+        ref: live.id,
+        detail: { reason: 'purge' },
+        now: NOW_0,
+      });
+      vi.restoreAllMocks();
+    }
+    const { f, repos } = purgeFixture();
+    const setState = vi.spyOn(repos.autoPolicies, 'setState');
+    const disable = vi.fn();
+    await createDataHandlers(f.deps, { autoPolicy: { disable } })['data:purgeNow']({ confirm: true }, CTX);
+    expect(disable).not.toHaveBeenCalled();
+    expect(setState).not.toHaveBeenCalled();
   });
 });

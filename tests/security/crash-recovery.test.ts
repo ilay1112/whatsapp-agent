@@ -113,7 +113,7 @@ async function crashMid(userData: string, kind: 'send_reply' | 'create_event'): 
             ...eventContent,
           });
     const approvedAt = h.clock.now();
-    expect(h.repos.actions.markApprovedExecuting(action.actionId, payload, approvedAt)).toBe('ok');
+    expect(h.repos.actions.markApprovedExecuting(action.actionId, payload, approvedAt, 'user')).toBe('ok');
     expect(h.bridge.sends).toHaveLength(0);
     expect(h.calendar.calls.filter((c) => c.tool === 'create-event')).toHaveLength(0);
     return {

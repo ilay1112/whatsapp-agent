@@ -6,9 +6,15 @@
 //
 // `analysis IN ('held','failed')` => `card: 'raw'` (CONTRACTS) => RawCard; everything else is a full ItemCard.
 // Queued / running items are never rendered as cards (ARCH 6.1) - they only feed the "Analysing N chats..." line.
+//
+// [V2] (owner V2-W1-11): the "In calendar" list is keyed by the opaque per-event key (`calendar.eventKey`, B20 / C2 1.5):
+// one event is never drawn twice, whatever number of items point at it. While a whisper job runs, the Needs-reply queue
+// line reads "Transcribing a voice note (0:42)..." (UX2 2.5) - numbers only, never a chat name.
 import type { JSX, ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { ItemCard as ItemVM } from '@shared/types';
+import { formatClockDuration } from '@shared/i18n/format';
+import { SENTINEL, renderBdiTemplate } from './ItemCard.bdi';
 import { ItemCard } from './ItemCard';
 import { RawCard } from './RawCard';
 
@@ -19,6 +25,8 @@ export interface ItemListProps {
   count: number;
   items: ItemVM[];
   queueCount?: number;
+  /** [V2] Seconds of the voice note being transcribed (`queue:changed`); replaces the queue line while set. */
+  transcribingSeconds?: number | null;
   collapsible: boolean;
   open: boolean;
   onToggle(): void;
@@ -55,11 +63,30 @@ function QueueSpinner(): JSX.Element {
   );
 }
 
+/** [V2] B20: the first card of every calendar event wins (lists arrive newest first); cards without an event stay. */
+export function dedupeByEvent(items: readonly ItemVM[]): ItemVM[] {
+  const seen = new Set<string>();
+  return items.filter((item) => {
+    const key = item.calendar?.eventKey;
+    if (key === undefined || key === '') return true;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+/** React key of a card: the event key in "In calendar" (B20), the item id elsewhere. */
+function keyOf(list: ListKey, item: ItemVM): string {
+  return list === 'in_calendar' && item.calendar ? `event-${item.calendar.eventKey}` : `item-${item.itemId}`;
+}
+
 export function ItemList(props: ItemListProps) {
   const { t } = useTranslation();
   const headingId = `list-title-${props.list}`;
   const bodyId = `list-body-${props.list}`;
   const queueCount = props.queueCount ?? 0;
+  const transcribing = props.transcribingSeconds ?? null;
+  const items = props.list === 'in_calendar' ? dedupeByEvent(props.items) : props.items;
   const hiddenExtra = props.count - props.items.length;
 
   const headingContent = (
@@ -100,7 +127,18 @@ export function ItemList(props: ItemListProps) {
       </h2>
 
       {/* UX 6.3: the queue line belongs to the column header and stays visible while the section is collapsed. */}
-      {queueCount > 0 ? (
+      {transcribing !== null ? (
+        <p className="m-0 flex items-center gap-1 ps-1 text-xs text-text-muted" data-testid="queue-transcribing">
+          <QueueSpinner />
+          <span>
+            {renderBdiTemplate(t('voice.transcribing', { duration: SENTINEL(0) }), [
+              <span key="d" className="tnum">
+                {formatClockDuration(transcribing)}
+              </span>,
+            ])}
+          </span>
+        </p>
+      ) : queueCount > 0 ? (
         <p className="m-0 flex items-center gap-1 ps-1 text-xs text-text-muted" data-testid={`analysing-${props.list}`}>
           <QueueSpinner />
           {t('list.analysing', { count: queueCount })}
@@ -109,14 +147,14 @@ export function ItemList(props: ItemListProps) {
 
       {props.open ? (
         <div id={bodyId} role="list" className="mt-2 flex min-h-0 flex-col gap-3 overflow-y-auto">
-          {props.items.length === 0 ? (
+          {items.length === 0 ? (
             <div className="max-w-[36ch] ps-1 text-sm text-text-muted" data-testid={`empty-${props.list}`}>
               {props.emptyState}
             </div>
           ) : null}
 
-          {props.items.map((item) => (
-            <div role="listitem" key={item.itemId}>
+          {items.map((item) => (
+            <div role="listitem" key={keyOf(props.list, item)}>
               {item.card === 'raw' ? (
                 <RawCard item={item} onOpen={() => props.onOpenItem(item.itemId)} />
               ) : (

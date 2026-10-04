@@ -24,6 +24,11 @@ const EXTRACTION: Extraction = {
   location: '',
   missing: [],
   suspicious: false,
+  // [V2] C2 5: the four B20 fields S1 v2 always returns (null-event defaults of the S1 v2 few-shots)
+  refersToExisting: false,
+  change: 'no_change',
+  changeConfidence: 'high',
+  confidence: 'high',
 };
 const extraction = (over: Partial<Extraction> = {}): Extraction => ({ ...EXTRACTION, ...over });
 
@@ -281,7 +286,7 @@ describe('validateAndPersist', () => {
     expect(out.actionsCreated).toEqual(['send_reply']);
   });
 
-  it('adds change_in_google for reschedule and cancel and never proposes an event', () => {
+  it('[V2] no longer adds the retired change_in_google for reschedule / cancel without an app event (B20), and never proposes an event', () => {
     for (const intent of ['reschedule', 'cancel'] as const) {
       const other = seedChat(env.repos, {
         jid: intent === 'cancel' ? '972550000005@s.whatsapp.net' : '972550000006@s.whatsapp.net',
@@ -293,7 +298,7 @@ describe('validateAndPersist', () => {
         inputFor({ item: it2, chat: { id: other.id, sendable: true, lang: null }, extraction: x, slot: slotOf(x) }),
         { calendarConnected: true },
       );
-      expect(out.badges).toContain('change_in_google');
+      expect(out.badges).not.toContain('change_in_google');
       expect(out.actionsCreated).toEqual(['send_reply']);
     }
   });

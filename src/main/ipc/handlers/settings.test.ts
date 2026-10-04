@@ -9,8 +9,15 @@ import { calendarIdsIn, createSettingsHandlers } from './settings';
 const CTX = { windowFocused: true, windowVisible: true, shownByNotificationAt: null };
 
 const CALENDARS: CalendarInfo[] = [
-  { id: 'primary', name: 'Personal', primary: true, timeZone: 'Asia/Jerusalem', writable: true },
-  { id: 'work@group.calendar.google.com', name: 'Work', primary: false, timeZone: 'Asia/Jerusalem', writable: true },
+  { id: 'primary', name: 'Personal', primary: true, timeZone: 'Asia/Jerusalem', writable: true, accessRole: 'owner' },
+  {
+    id: 'work@group.calendar.google.com',
+    name: 'Work',
+    primary: false,
+    timeZone: 'Asia/Jerusalem',
+    writable: true,
+    accessRole: 'owner',
+  },
 ];
 
 function fixtureWithCalendars(

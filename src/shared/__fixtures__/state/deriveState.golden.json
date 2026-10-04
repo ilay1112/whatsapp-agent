@@ -50,23 +50,7 @@
   {
     "analysis": "queued",
     "replyState": "none",
-    "eventState": "created",
-    "closedReason": null,
-    "state": "in_calendar",
-    "status": "in_calendar"
-  },
-  {
-    "analysis": "queued",
-    "replyState": "none",
-    "eventState": "created",
-    "closedReason": "dismissed",
-    "state": "ignored",
-    "status": "dismissed"
-  },
-  {
-    "analysis": "queued",
-    "replyState": "none",
-    "eventState": "declined",
+    "eventState": "change_proposed",
     "closedReason": null,
     "state": "needs_reply",
     "status": "needs_reply"
@@ -74,381 +58,13 @@
   {
     "analysis": "queued",
     "replyState": "none",
-    "eventState": "declined",
+    "eventState": "change_proposed",
     "closedReason": "dismissed",
     "state": "ignored",
     "status": "dismissed"
   },
   {
     "analysis": "queued",
-    "replyState": "draft",
-    "eventState": "none",
-    "closedReason": null,
-    "state": "needs_reply",
-    "status": "needs_reply"
-  },
-  {
-    "analysis": "queued",
-    "replyState": "draft",
-    "eventState": "none",
-    "closedReason": "dismissed",
-    "state": "ignored",
-    "status": "dismissed"
-  },
-  {
-    "analysis": "queued",
-    "replyState": "draft",
-    "eventState": "incomplete",
-    "closedReason": null,
-    "state": "needs_reply",
-    "status": "needs_reply"
-  },
-  {
-    "analysis": "queued",
-    "replyState": "draft",
-    "eventState": "incomplete",
-    "closedReason": "dismissed",
-    "state": "ignored",
-    "status": "dismissed"
-  },
-  {
-    "analysis": "queued",
-    "replyState": "draft",
-    "eventState": "proposed",
-    "closedReason": null,
-    "state": "needs_reply",
-    "status": "needs_reply"
-  },
-  {
-    "analysis": "queued",
-    "replyState": "draft",
-    "eventState": "proposed",
-    "closedReason": "dismissed",
-    "state": "ignored",
-    "status": "dismissed"
-  },
-  {
-    "analysis": "queued",
-    "replyState": "draft",
-    "eventState": "created",
-    "closedReason": null,
-    "state": "in_calendar",
-    "status": "in_calendar"
-  },
-  {
-    "analysis": "queued",
-    "replyState": "draft",
-    "eventState": "created",
-    "closedReason": "dismissed",
-    "state": "ignored",
-    "status": "dismissed"
-  },
-  {
-    "analysis": "queued",
-    "replyState": "draft",
-    "eventState": "declined",
-    "closedReason": null,
-    "state": "needs_reply",
-    "status": "needs_reply"
-  },
-  {
-    "analysis": "queued",
-    "replyState": "draft",
-    "eventState": "declined",
-    "closedReason": "dismissed",
-    "state": "ignored",
-    "status": "dismissed"
-  },
-  {
-    "analysis": "queued",
-    "replyState": "sent",
-    "eventState": "none",
-    "closedReason": null,
-    "state": "needs_reply",
-    "status": "needs_reply"
-  },
-  {
-    "analysis": "queued",
-    "replyState": "sent",
-    "eventState": "none",
-    "closedReason": "dismissed",
-    "state": "ignored",
-    "status": "dismissed"
-  },
-  {
-    "analysis": "queued",
-    "replyState": "sent",
-    "eventState": "incomplete",
-    "closedReason": null,
-    "state": "needs_reply",
-    "status": "needs_reply"
-  },
-  {
-    "analysis": "queued",
-    "replyState": "sent",
-    "eventState": "incomplete",
-    "closedReason": "dismissed",
-    "state": "ignored",
-    "status": "dismissed"
-  },
-  {
-    "analysis": "queued",
-    "replyState": "sent",
-    "eventState": "proposed",
-    "closedReason": null,
-    "state": "needs_reply",
-    "status": "needs_reply"
-  },
-  {
-    "analysis": "queued",
-    "replyState": "sent",
-    "eventState": "proposed",
-    "closedReason": "dismissed",
-    "state": "ignored",
-    "status": "dismissed"
-  },
-  {
-    "analysis": "queued",
-    "replyState": "sent",
-    "eventState": "created",
-    "closedReason": null,
-    "state": "in_calendar",
-    "status": "in_calendar"
-  },
-  {
-    "analysis": "queued",
-    "replyState": "sent",
-    "eventState": "created",
-    "closedReason": "dismissed",
-    "state": "ignored",
-    "status": "dismissed"
-  },
-  {
-    "analysis": "queued",
-    "replyState": "sent",
-    "eventState": "declined",
-    "closedReason": null,
-    "state": "needs_reply",
-    "status": "needs_reply"
-  },
-  {
-    "analysis": "queued",
-    "replyState": "sent",
-    "eventState": "declined",
-    "closedReason": "dismissed",
-    "state": "ignored",
-    "status": "dismissed"
-  },
-  {
-    "analysis": "queued",
-    "replyState": "answered_elsewhere",
-    "eventState": "none",
-    "closedReason": null,
-    "state": "needs_reply",
-    "status": "needs_reply"
-  },
-  {
-    "analysis": "queued",
-    "replyState": "answered_elsewhere",
-    "eventState": "none",
-    "closedReason": "dismissed",
-    "state": "ignored",
-    "status": "dismissed"
-  },
-  {
-    "analysis": "queued",
-    "replyState": "answered_elsewhere",
-    "eventState": "incomplete",
-    "closedReason": null,
-    "state": "needs_reply",
-    "status": "needs_reply"
-  },
-  {
-    "analysis": "queued",
-    "replyState": "answered_elsewhere",
-    "eventState": "incomplete",
-    "closedReason": "dismissed",
-    "state": "ignored",
-    "status": "dismissed"
-  },
-  {
-    "analysis": "queued",
-    "replyState": "answered_elsewhere",
-    "eventState": "proposed",
-    "closedReason": null,
-    "state": "needs_reply",
-    "status": "needs_reply"
-  },
-  {
-    "analysis": "queued",
-    "replyState": "answered_elsewhere",
-    "eventState": "proposed",
-    "closedReason": "dismissed",
-    "state": "ignored",
-    "status": "dismissed"
-  },
-  {
-    "analysis": "queued",
-    "replyState": "answered_elsewhere",
-    "eventState": "created",
-    "closedReason": null,
-    "state": "in_calendar",
-    "status": "in_calendar"
-  },
-  {
-    "analysis": "queued",
-    "replyState": "answered_elsewhere",
-    "eventState": "created",
-    "closedReason": "dismissed",
-    "state": "ignored",
-    "status": "dismissed"
-  },
-  {
-    "analysis": "queued",
-    "replyState": "answered_elsewhere",
-    "eventState": "declined",
-    "closedReason": null,
-    "state": "needs_reply",
-    "status": "needs_reply"
-  },
-  {
-    "analysis": "queued",
-    "replyState": "answered_elsewhere",
-    "eventState": "declined",
-    "closedReason": "dismissed",
-    "state": "ignored",
-    "status": "dismissed"
-  },
-  {
-    "analysis": "queued",
-    "replyState": "skipped",
-    "eventState": "none",
-    "closedReason": null,
-    "state": "needs_reply",
-    "status": "needs_reply"
-  },
-  {
-    "analysis": "queued",
-    "replyState": "skipped",
-    "eventState": "none",
-    "closedReason": "dismissed",
-    "state": "ignored",
-    "status": "dismissed"
-  },
-  {
-    "analysis": "queued",
-    "replyState": "skipped",
-    "eventState": "incomplete",
-    "closedReason": null,
-    "state": "needs_reply",
-    "status": "needs_reply"
-  },
-  {
-    "analysis": "queued",
-    "replyState": "skipped",
-    "eventState": "incomplete",
-    "closedReason": "dismissed",
-    "state": "ignored",
-    "status": "dismissed"
-  },
-  {
-    "analysis": "queued",
-    "replyState": "skipped",
-    "eventState": "proposed",
-    "closedReason": null,
-    "state": "needs_reply",
-    "status": "needs_reply"
-  },
-  {
-    "analysis": "queued",
-    "replyState": "skipped",
-    "eventState": "proposed",
-    "closedReason": "dismissed",
-    "state": "ignored",
-    "status": "dismissed"
-  },
-  {
-    "analysis": "queued",
-    "replyState": "skipped",
-    "eventState": "created",
-    "closedReason": null,
-    "state": "in_calendar",
-    "status": "in_calendar"
-  },
-  {
-    "analysis": "queued",
-    "replyState": "skipped",
-    "eventState": "created",
-    "closedReason": "dismissed",
-    "state": "ignored",
-    "status": "dismissed"
-  },
-  {
-    "analysis": "queued",
-    "replyState": "skipped",
-    "eventState": "declined",
-    "closedReason": null,
-    "state": "needs_reply",
-    "status": "needs_reply"
-  },
-  {
-    "analysis": "queued",
-    "replyState": "skipped",
-    "eventState": "declined",
-    "closedReason": "dismissed",
-    "state": "ignored",
-    "status": "dismissed"
-  },
-  {
-    "analysis": "running",
-    "replyState": "none",
-    "eventState": "none",
-    "closedReason": null,
-    "state": "needs_reply",
-    "status": "needs_reply"
-  },
-  {
-    "analysis": "running",
-    "replyState": "none",
-    "eventState": "none",
-    "closedReason": "dismissed",
-    "state": "ignored",
-    "status": "dismissed"
-  },
-  {
-    "analysis": "running",
-    "replyState": "none",
-    "eventState": "incomplete",
-    "closedReason": null,
-    "state": "needs_reply",
-    "status": "needs_reply"
-  },
-  {
-    "analysis": "running",
-    "replyState": "none",
-    "eventState": "incomplete",
-    "closedReason": "dismissed",
-    "state": "ignored",
-    "status": "dismissed"
-  },
-  {
-    "analysis": "running",
-    "replyState": "none",
-    "eventState": "proposed",
-    "closedReason": null,
-    "state": "needs_reply",
-    "status": "needs_reply"
-  },
-  {
-    "analysis": "running",
-    "replyState": "none",
-    "eventState": "proposed",
-    "closedReason": "dismissed",
-    "state": "ignored",
-    "status": "dismissed"
-  },
-  {
-    "analysis": "running",
     "replyState": "none",
     "eventState": "created",
     "closedReason": null,
@@ -456,6 +72,646 @@
     "status": "in_calendar"
   },
   {
+    "analysis": "queued",
+    "replyState": "none",
+    "eventState": "created",
+    "closedReason": "dismissed",
+    "state": "ignored",
+    "status": "dismissed"
+  },
+  {
+    "analysis": "queued",
+    "replyState": "none",
+    "eventState": "updated",
+    "closedReason": null,
+    "state": "in_calendar",
+    "status": "in_calendar"
+  },
+  {
+    "analysis": "queued",
+    "replyState": "none",
+    "eventState": "updated",
+    "closedReason": "dismissed",
+    "state": "ignored",
+    "status": "dismissed"
+  },
+  {
+    "analysis": "queued",
+    "replyState": "none",
+    "eventState": "cancelled",
+    "closedReason": null,
+    "state": "in_calendar",
+    "status": "in_calendar"
+  },
+  {
+    "analysis": "queued",
+    "replyState": "none",
+    "eventState": "cancelled",
+    "closedReason": "dismissed",
+    "state": "ignored",
+    "status": "dismissed"
+  },
+  {
+    "analysis": "queued",
+    "replyState": "none",
+    "eventState": "declined",
+    "closedReason": null,
+    "state": "needs_reply",
+    "status": "needs_reply"
+  },
+  {
+    "analysis": "queued",
+    "replyState": "none",
+    "eventState": "declined",
+    "closedReason": "dismissed",
+    "state": "ignored",
+    "status": "dismissed"
+  },
+  {
+    "analysis": "queued",
+    "replyState": "draft",
+    "eventState": "none",
+    "closedReason": null,
+    "state": "needs_reply",
+    "status": "needs_reply"
+  },
+  {
+    "analysis": "queued",
+    "replyState": "draft",
+    "eventState": "none",
+    "closedReason": "dismissed",
+    "state": "ignored",
+    "status": "dismissed"
+  },
+  {
+    "analysis": "queued",
+    "replyState": "draft",
+    "eventState": "incomplete",
+    "closedReason": null,
+    "state": "needs_reply",
+    "status": "needs_reply"
+  },
+  {
+    "analysis": "queued",
+    "replyState": "draft",
+    "eventState": "incomplete",
+    "closedReason": "dismissed",
+    "state": "ignored",
+    "status": "dismissed"
+  },
+  {
+    "analysis": "queued",
+    "replyState": "draft",
+    "eventState": "proposed",
+    "closedReason": null,
+    "state": "needs_reply",
+    "status": "needs_reply"
+  },
+  {
+    "analysis": "queued",
+    "replyState": "draft",
+    "eventState": "proposed",
+    "closedReason": "dismissed",
+    "state": "ignored",
+    "status": "dismissed"
+  },
+  {
+    "analysis": "queued",
+    "replyState": "draft",
+    "eventState": "change_proposed",
+    "closedReason": null,
+    "state": "needs_reply",
+    "status": "needs_reply"
+  },
+  {
+    "analysis": "queued",
+    "replyState": "draft",
+    "eventState": "change_proposed",
+    "closedReason": "dismissed",
+    "state": "ignored",
+    "status": "dismissed"
+  },
+  {
+    "analysis": "queued",
+    "replyState": "draft",
+    "eventState": "created",
+    "closedReason": null,
+    "state": "in_calendar",
+    "status": "in_calendar"
+  },
+  {
+    "analysis": "queued",
+    "replyState": "draft",
+    "eventState": "created",
+    "closedReason": "dismissed",
+    "state": "ignored",
+    "status": "dismissed"
+  },
+  {
+    "analysis": "queued",
+    "replyState": "draft",
+    "eventState": "updated",
+    "closedReason": null,
+    "state": "in_calendar",
+    "status": "in_calendar"
+  },
+  {
+    "analysis": "queued",
+    "replyState": "draft",
+    "eventState": "updated",
+    "closedReason": "dismissed",
+    "state": "ignored",
+    "status": "dismissed"
+  },
+  {
+    "analysis": "queued",
+    "replyState": "draft",
+    "eventState": "cancelled",
+    "closedReason": null,
+    "state": "in_calendar",
+    "status": "in_calendar"
+  },
+  {
+    "analysis": "queued",
+    "replyState": "draft",
+    "eventState": "cancelled",
+    "closedReason": "dismissed",
+    "state": "ignored",
+    "status": "dismissed"
+  },
+  {
+    "analysis": "queued",
+    "replyState": "draft",
+    "eventState": "declined",
+    "closedReason": null,
+    "state": "needs_reply",
+    "status": "needs_reply"
+  },
+  {
+    "analysis": "queued",
+    "replyState": "draft",
+    "eventState": "declined",
+    "closedReason": "dismissed",
+    "state": "ignored",
+    "status": "dismissed"
+  },
+  {
+    "analysis": "queued",
+    "replyState": "sent",
+    "eventState": "none",
+    "closedReason": null,
+    "state": "needs_reply",
+    "status": "needs_reply"
+  },
+  {
+    "analysis": "queued",
+    "replyState": "sent",
+    "eventState": "none",
+    "closedReason": "dismissed",
+    "state": "ignored",
+    "status": "dismissed"
+  },
+  {
+    "analysis": "queued",
+    "replyState": "sent",
+    "eventState": "incomplete",
+    "closedReason": null,
+    "state": "needs_reply",
+    "status": "needs_reply"
+  },
+  {
+    "analysis": "queued",
+    "replyState": "sent",
+    "eventState": "incomplete",
+    "closedReason": "dismissed",
+    "state": "ignored",
+    "status": "dismissed"
+  },
+  {
+    "analysis": "queued",
+    "replyState": "sent",
+    "eventState": "proposed",
+    "closedReason": null,
+    "state": "needs_reply",
+    "status": "needs_reply"
+  },
+  {
+    "analysis": "queued",
+    "replyState": "sent",
+    "eventState": "proposed",
+    "closedReason": "dismissed",
+    "state": "ignored",
+    "status": "dismissed"
+  },
+  {
+    "analysis": "queued",
+    "replyState": "sent",
+    "eventState": "change_proposed",
+    "closedReason": null,
+    "state": "needs_reply",
+    "status": "needs_reply"
+  },
+  {
+    "analysis": "queued",
+    "replyState": "sent",
+    "eventState": "change_proposed",
+    "closedReason": "dismissed",
+    "state": "ignored",
+    "status": "dismissed"
+  },
+  {
+    "analysis": "queued",
+    "replyState": "sent",
+    "eventState": "created",
+    "closedReason": null,
+    "state": "in_calendar",
+    "status": "in_calendar"
+  },
+  {
+    "analysis": "queued",
+    "replyState": "sent",
+    "eventState": "created",
+    "closedReason": "dismissed",
+    "state": "ignored",
+    "status": "dismissed"
+  },
+  {
+    "analysis": "queued",
+    "replyState": "sent",
+    "eventState": "updated",
+    "closedReason": null,
+    "state": "in_calendar",
+    "status": "in_calendar"
+  },
+  {
+    "analysis": "queued",
+    "replyState": "sent",
+    "eventState": "updated",
+    "closedReason": "dismissed",
+    "state": "ignored",
+    "status": "dismissed"
+  },
+  {
+    "analysis": "queued",
+    "replyState": "sent",
+    "eventState": "cancelled",
+    "closedReason": null,
+    "state": "in_calendar",
+    "status": "in_calendar"
+  },
+  {
+    "analysis": "queued",
+    "replyState": "sent",
+    "eventState": "cancelled",
+    "closedReason": "dismissed",
+    "state": "ignored",
+    "status": "dismissed"
+  },
+  {
+    "analysis": "queued",
+    "replyState": "sent",
+    "eventState": "declined",
+    "closedReason": null,
+    "state": "needs_reply",
+    "status": "needs_reply"
+  },
+  {
+    "analysis": "queued",
+    "replyState": "sent",
+    "eventState": "declined",
+    "closedReason": "dismissed",
+    "state": "ignored",
+    "status": "dismissed"
+  },
+  {
+    "analysis": "queued",
+    "replyState": "answered_elsewhere",
+    "eventState": "none",
+    "closedReason": null,
+    "state": "needs_reply",
+    "status": "needs_reply"
+  },
+  {
+    "analysis": "queued",
+    "replyState": "answered_elsewhere",
+    "eventState": "none",
+    "closedReason": "dismissed",
+    "state": "ignored",
+    "status": "dismissed"
+  },
+  {
+    "analysis": "queued",
+    "replyState": "answered_elsewhere",
+    "eventState": "incomplete",
+    "closedReason": null,
+    "state": "needs_reply",
+    "status": "needs_reply"
+  },
+  {
+    "analysis": "queued",
+    "replyState": "answered_elsewhere",
+    "eventState": "incomplete",
+    "closedReason": "dismissed",
+    "state": "ignored",
+    "status": "dismissed"
+  },
+  {
+    "analysis": "queued",
+    "replyState": "answered_elsewhere",
+    "eventState": "proposed",
+    "closedReason": null,
+    "state": "needs_reply",
+    "status": "needs_reply"
+  },
+  {
+    "analysis": "queued",
+    "replyState": "answered_elsewhere",
+    "eventState": "proposed",
+    "closedReason": "dismissed",
+    "state": "ignored",
+    "status": "dismissed"
+  },
+  {
+    "analysis": "queued",
+    "replyState": "answered_elsewhere",
+    "eventState": "change_proposed",
+    "closedReason": null,
+    "state": "needs_reply",
+    "status": "needs_reply"
+  },
+  {
+    "analysis": "queued",
+    "replyState": "answered_elsewhere",
+    "eventState": "change_proposed",
+    "closedReason": "dismissed",
+    "state": "ignored",
+    "status": "dismissed"
+  },
+  {
+    "analysis": "queued",
+    "replyState": "answered_elsewhere",
+    "eventState": "created",
+    "closedReason": null,
+    "state": "in_calendar",
+    "status": "in_calendar"
+  },
+  {
+    "analysis": "queued",
+    "replyState": "answered_elsewhere",
+    "eventState": "created",
+    "closedReason": "dismissed",
+    "state": "ignored",
+    "status": "dismissed"
+  },
+  {
+    "analysis": "queued",
+    "replyState": "answered_elsewhere",
+    "eventState": "updated",
+    "closedReason": null,
+    "state": "in_calendar",
+    "status": "in_calendar"
+  },
+  {
+    "analysis": "queued",
+    "replyState": "answered_elsewhere",
+    "eventState": "updated",
+    "closedReason": "dismissed",
+    "state": "ignored",
+    "status": "dismissed"
+  },
+  {
+    "analysis": "queued",
+    "replyState": "answered_elsewhere",
+    "eventState": "cancelled",
+    "closedReason": null,
+    "state": "in_calendar",
+    "status": "in_calendar"
+  },
+  {
+    "analysis": "queued",
+    "replyState": "answered_elsewhere",
+    "eventState": "cancelled",
+    "closedReason": "dismissed",
+    "state": "ignored",
+    "status": "dismissed"
+  },
+  {
+    "analysis": "queued",
+    "replyState": "answered_elsewhere",
+    "eventState": "declined",
+    "closedReason": null,
+    "state": "needs_reply",
+    "status": "needs_reply"
+  },
+  {
+    "analysis": "queued",
+    "replyState": "answered_elsewhere",
+    "eventState": "declined",
+    "closedReason": "dismissed",
+    "state": "ignored",
+    "status": "dismissed"
+  },
+  {
+    "analysis": "queued",
+    "replyState": "skipped",
+    "eventState": "none",
+    "closedReason": null,
+    "state": "needs_reply",
+    "status": "needs_reply"
+  },
+  {
+    "analysis": "queued",
+    "replyState": "skipped",
+    "eventState": "none",
+    "closedReason": "dismissed",
+    "state": "ignored",
+    "status": "dismissed"
+  },
+  {
+    "analysis": "queued",
+    "replyState": "skipped",
+    "eventState": "incomplete",
+    "closedReason": null,
+    "state": "needs_reply",
+    "status": "needs_reply"
+  },
+  {
+    "analysis": "queued",
+    "replyState": "skipped",
+    "eventState": "incomplete",
+    "closedReason": "dismissed",
+    "state": "ignored",
+    "status": "dismissed"
+  },
+  {
+    "analysis": "queued",
+    "replyState": "skipped",
+    "eventState": "proposed",
+    "closedReason": null,
+    "state": "needs_reply",
+    "status": "needs_reply"
+  },
+  {
+    "analysis": "queued",
+    "replyState": "skipped",
+    "eventState": "proposed",
+    "closedReason": "dismissed",
+    "state": "ignored",
+    "status": "dismissed"
+  },
+  {
+    "analysis": "queued",
+    "replyState": "skipped",
+    "eventState": "change_proposed",
+    "closedReason": null,
+    "state": "needs_reply",
+    "status": "needs_reply"
+  },
+  {
+    "analysis": "queued",
+    "replyState": "skipped",
+    "eventState": "change_proposed",
+    "closedReason": "dismissed",
+    "state": "ignored",
+    "status": "dismissed"
+  },
+  {
+    "analysis": "queued",
+    "replyState": "skipped",
+    "eventState": "created",
+    "closedReason": null,
+    "state": "in_calendar",
+    "status": "in_calendar"
+  },
+  {
+    "analysis": "queued",
+    "replyState": "skipped",
+    "eventState": "created",
+    "closedReason": "dismissed",
+    "state": "ignored",
+    "status": "dismissed"
+  },
+  {
+    "analysis": "queued",
+    "replyState": "skipped",
+    "eventState": "updated",
+    "closedReason": null,
+    "state": "in_calendar",
+    "status": "in_calendar"
+  },
+  {
+    "analysis": "queued",
+    "replyState": "skipped",
+    "eventState": "updated",
+    "closedReason": "dismissed",
+    "state": "ignored",
+    "status": "dismissed"
+  },
+  {
+    "analysis": "queued",
+    "replyState": "skipped",
+    "eventState": "cancelled",
+    "closedReason": null,
+    "state": "in_calendar",
+    "status": "in_calendar"
+  },
+  {
+    "analysis": "queued",
+    "replyState": "skipped",
+    "eventState": "cancelled",
+    "closedReason": "dismissed",
+    "state": "ignored",
+    "status": "dismissed"
+  },
+  {
+    "analysis": "queued",
+    "replyState": "skipped",
+    "eventState": "declined",
+    "closedReason": null,
+    "state": "needs_reply",
+    "status": "needs_reply"
+  },
+  {
+    "analysis": "queued",
+    "replyState": "skipped",
+    "eventState": "declined",
+    "closedReason": "dismissed",
+    "state": "ignored",
+    "status": "dismissed"
+  },
+  {
+    "analysis": "running",
+    "replyState": "none",
+    "eventState": "none",
+    "closedReason": null,
+    "state": "needs_reply",
+    "status": "needs_reply"
+  },
+  {
+    "analysis": "running",
+    "replyState": "none",
+    "eventState": "none",
+    "closedReason": "dismissed",
+    "state": "ignored",
+    "status": "dismissed"
+  },
+  {
+    "analysis": "running",
+    "replyState": "none",
+    "eventState": "incomplete",
+    "closedReason": null,
+    "state": "needs_reply",
+    "status": "needs_reply"
+  },
+  {
+    "analysis": "running",
+    "replyState": "none",
+    "eventState": "incomplete",
+    "closedReason": "dismissed",
+    "state": "ignored",
+    "status": "dismissed"
+  },
+  {
+    "analysis": "running",
+    "replyState": "none",
+    "eventState": "proposed",
+    "closedReason": null,
+    "state": "needs_reply",
+    "status": "needs_reply"
+  },
+  {
+    "analysis": "running",
+    "replyState": "none",
+    "eventState": "proposed",
+    "closedReason": "dismissed",
+    "state": "ignored",
+    "status": "dismissed"
+  },
+  {
+    "analysis": "running",
+    "replyState": "none",
+    "eventState": "change_proposed",
+    "closedReason": null,
+    "state": "needs_reply",
+    "status": "needs_reply"
+  },
+  {
+    "analysis": "running",
+    "replyState": "none",
+    "eventState": "change_proposed",
+    "closedReason": "dismissed",
+    "state": "ignored",
+    "status": "dismissed"
+  },
+  {
+    "analysis": "running",
+    "replyState": "none",
+    "eventState": "created",
+    "closedReason": null,
+    "state": "in_calendar",
+    "status": "in_calendar"
+  },
+  {
     "analysis": "running",
     "replyState": "none",
     "eventState": "created",
@@ -466,6 +722,38 @@
   {
     "analysis": "running",
     "replyState": "none",
+    "eventState": "updated",
+    "closedReason": null,
+    "state": "in_calendar",
+    "status": "in_calendar"
+  },
+  {
+    "analysis": "running",
+    "replyState": "none",
+    "eventState": "updated",
+    "closedReason": "dismissed",
+    "state": "ignored",
+    "status": "dismissed"
+  },
+  {
+    "analysis": "running",
+    "replyState": "none",
+    "eventState": "cancelled",
+    "closedReason": null,
+    "state": "in_calendar",
+    "status": "in_calendar"
+  },
+  {
+    "analysis": "running",
+    "replyState": "none",
+    "eventState": "cancelled",
+    "closedReason": "dismissed",
+    "state": "ignored",
+    "status": "dismissed"
+  },
+  {
+    "analysis": "running",
+    "replyState": "none",
     "eventState": "declined",
     "closedReason": null,
     "state": "needs_reply",
@@ -530,6 +818,22 @@
   {
     "analysis": "running",
     "replyState": "draft",
+    "eventState": "change_proposed",
+    "closedReason": null,
+    "state": "needs_reply",
+    "status": "needs_reply"
+  },
+  {
+    "analysis": "running",
+    "replyState": "draft",
+    "eventState": "change_proposed",
+    "closedReason": "dismissed",
+    "state": "ignored",
+    "status": "dismissed"
+  },
+  {
+    "analysis": "running",
+    "replyState": "draft",
     "eventState": "created",
     "closedReason": null,
     "state": "in_calendar",
@@ -546,6 +850,38 @@
   {
     "analysis": "running",
     "replyState": "draft",
+    "eventState": "updated",
+    "closedReason": null,
+    "state": "in_calendar",
+    "status": "in_calendar"
+  },
+  {
+    "analysis": "running",
+    "replyState": "draft",
+    "eventState": "updated",
+    "closedReason": "dismissed",
+    "state": "ignored",
+    "status": "dismissed"
+  },
+  {
+    "analysis": "running",
+    "replyState": "draft",
+    "eventState": "cancelled",
+    "closedReason": null,
+    "state": "in_calendar",
+    "status": "in_calendar"
+  },
+  {
+    "analysis": "running",
+    "replyState": "draft",
+    "eventState": "cancelled",
+    "closedReason": "dismissed",
+    "state": "ignored",
+    "status": "dismissed"
+  },
+  {
+    "analysis": "running",
+    "replyState": "draft",
     "eventState": "declined",
     "closedReason": null,
     "state": "needs_reply",
@@ -610,6 +946,22 @@
   {
     "analysis": "running",
     "replyState": "sent",
+    "eventState": "change_proposed",
+    "closedReason": null,
+    "state": "needs_reply",
+    "status": "needs_reply"
+  },
+  {
+    "analysis": "running",
+    "replyState": "sent",
+    "eventState": "change_proposed",
+    "closedReason": "dismissed",
+    "state": "ignored",
+    "status": "dismissed"
+  },
+  {
+    "analysis": "running",
+    "replyState": "sent",
     "eventState": "created",
     "closedReason": null,
     "state": "in_calendar",
@@ -626,6 +978,38 @@
   {
     "analysis": "running",
     "replyState": "sent",
+    "eventState": "updated",
+    "closedReason": null,
+    "state": "in_calendar",
+    "status": "in_calendar"
+  },
+  {
+    "analysis": "running",
+    "replyState": "sent",
+    "eventState": "updated",
+    "closedReason": "dismissed",
+    "state": "ignored",
+    "status": "dismissed"
+  },
+  {
+    "analysis": "running",
+    "replyState": "sent",
+    "eventState": "cancelled",
+    "closedReason": null,
+    "state": "in_calendar",
+    "status": "in_calendar"
+  },
+  {
+    "analysis": "running",
+    "replyState": "sent",
+    "eventState": "cancelled",
+    "closedReason": "dismissed",
+    "state": "ignored",
+    "status": "dismissed"
+  },
+  {
+    "analysis": "running",
+    "replyState": "sent",
     "eventState": "declined",
     "closedReason": null,
     "state": "needs_reply",
@@ -690,6 +1074,22 @@
   {
     "analysis": "running",
     "replyState": "answered_elsewhere",
+    "eventState": "change_proposed",
+    "closedReason": null,
+    "state": "needs_reply",
+    "status": "needs_reply"
+  },
+  {
+    "analysis": "running",
+    "replyState": "answered_elsewhere",
+    "eventState": "change_proposed",
+    "closedReason": "dismissed",
+    "state": "ignored",
+    "status": "dismissed"
+  },
+  {
+    "analysis": "running",
+    "replyState": "answered_elsewhere",
     "eventState": "created",
     "closedReason": null,
     "state": "in_calendar",
@@ -699,6 +1099,38 @@
     "analysis": "running",
     "replyState": "answered_elsewhere",
     "eventState": "created",
+    "closedReason": "dismissed",
+    "state": "ignored",
+    "status": "dismissed"
+  },
+  {
+    "analysis": "running",
+    "replyState": "answered_elsewhere",
+    "eventState": "updated",
+    "closedReason": null,
+    "state": "in_calendar",
+    "status": "in_calendar"
+  },
+  {
+    "analysis": "running",
+    "replyState": "answered_elsewhere",
+    "eventState": "updated",
+    "closedReason": "dismissed",
+    "state": "ignored",
+    "status": "dismissed"
+  },
+  {
+    "analysis": "running",
+    "replyState": "answered_elsewhere",
+    "eventState": "cancelled",
+    "closedReason": null,
+    "state": "in_calendar",
+    "status": "in_calendar"
+  },
+  {
+    "analysis": "running",
+    "replyState": "answered_elsewhere",
+    "eventState": "cancelled",
     "closedReason": "dismissed",
     "state": "ignored",
     "status": "dismissed"
@@ -770,6 +1202,22 @@
   {
     "analysis": "running",
     "replyState": "skipped",
+    "eventState": "change_proposed",
+    "closedReason": null,
+    "state": "needs_reply",
+    "status": "needs_reply"
+  },
+  {
+    "analysis": "running",
+    "replyState": "skipped",
+    "eventState": "change_proposed",
+    "closedReason": "dismissed",
+    "state": "ignored",
+    "status": "dismissed"
+  },
+  {
+    "analysis": "running",
+    "replyState": "skipped",
     "eventState": "created",
     "closedReason": null,
     "state": "in_calendar",
@@ -779,6 +1227,38 @@
     "analysis": "running",
     "replyState": "skipped",
     "eventState": "created",
+    "closedReason": "dismissed",
+    "state": "ignored",
+    "status": "dismissed"
+  },
+  {
+    "analysis": "running",
+    "replyState": "skipped",
+    "eventState": "updated",
+    "closedReason": null,
+    "state": "in_calendar",
+    "status": "in_calendar"
+  },
+  {
+    "analysis": "running",
+    "replyState": "skipped",
+    "eventState": "updated",
+    "closedReason": "dismissed",
+    "state": "ignored",
+    "status": "dismissed"
+  },
+  {
+    "analysis": "running",
+    "replyState": "skipped",
+    "eventState": "cancelled",
+    "closedReason": null,
+    "state": "in_calendar",
+    "status": "in_calendar"
+  },
+  {
+    "analysis": "running",
+    "replyState": "skipped",
+    "eventState": "cancelled",
     "closedReason": "dismissed",
     "state": "ignored",
     "status": "dismissed"
@@ -850,6 +1330,22 @@
   {
     "analysis": "done",
     "replyState": "none",
+    "eventState": "change_proposed",
+    "closedReason": null,
+    "state": "needs_reply",
+    "status": "needs_reply"
+  },
+  {
+    "analysis": "done",
+    "replyState": "none",
+    "eventState": "change_proposed",
+    "closedReason": "dismissed",
+    "state": "ignored",
+    "status": "dismissed"
+  },
+  {
+    "analysis": "done",
+    "replyState": "none",
     "eventState": "created",
     "closedReason": null,
     "state": "in_calendar",
@@ -859,6 +1355,38 @@
     "analysis": "done",
     "replyState": "none",
     "eventState": "created",
+    "closedReason": "dismissed",
+    "state": "ignored",
+    "status": "dismissed"
+  },
+  {
+    "analysis": "done",
+    "replyState": "none",
+    "eventState": "updated",
+    "closedReason": null,
+    "state": "in_calendar",
+    "status": "in_calendar"
+  },
+  {
+    "analysis": "done",
+    "replyState": "none",
+    "eventState": "updated",
+    "closedReason": "dismissed",
+    "state": "ignored",
+    "status": "dismissed"
+  },
+  {
+    "analysis": "done",
+    "replyState": "none",
+    "eventState": "cancelled",
+    "closedReason": null,
+    "state": "in_calendar",
+    "status": "in_calendar"
+  },
+  {
+    "analysis": "done",
+    "replyState": "none",
+    "eventState": "cancelled",
     "closedReason": "dismissed",
     "state": "ignored",
     "status": "dismissed"
@@ -930,6 +1458,22 @@
   {
     "analysis": "done",
     "replyState": "draft",
+    "eventState": "change_proposed",
+    "closedReason": null,
+    "state": "needs_reply",
+    "status": "needs_reply"
+  },
+  {
+    "analysis": "done",
+    "replyState": "draft",
+    "eventState": "change_proposed",
+    "closedReason": "dismissed",
+    "state": "ignored",
+    "status": "dismissed"
+  },
+  {
+    "analysis": "done",
+    "replyState": "draft",
     "eventState": "created",
     "closedReason": null,
     "state": "in_calendar",
@@ -939,6 +1483,38 @@
     "analysis": "done",
     "replyState": "draft",
     "eventState": "created",
+    "closedReason": "dismissed",
+    "state": "ignored",
+    "status": "dismissed"
+  },
+  {
+    "analysis": "done",
+    "replyState": "draft",
+    "eventState": "updated",
+    "closedReason": null,
+    "state": "in_calendar",
+    "status": "in_calendar"
+  },
+  {
+    "analysis": "done",
+    "replyState": "draft",
+    "eventState": "updated",
+    "closedReason": "dismissed",
+    "state": "ignored",
+    "status": "dismissed"
+  },
+  {
+    "analysis": "done",
+    "replyState": "draft",
+    "eventState": "cancelled",
+    "closedReason": null,
+    "state": "in_calendar",
+    "status": "in_calendar"
+  },
+  {
+    "analysis": "done",
+    "replyState": "draft",
+    "eventState": "cancelled",
     "closedReason": "dismissed",
     "state": "ignored",
     "status": "dismissed"
@@ -1010,6 +1586,22 @@
   {
     "analysis": "done",
     "replyState": "sent",
+    "eventState": "change_proposed",
+    "closedReason": null,
+    "state": "needs_reply",
+    "status": "needs_reply"
+  },
+  {
+    "analysis": "done",
+    "replyState": "sent",
+    "eventState": "change_proposed",
+    "closedReason": "dismissed",
+    "state": "ignored",
+    "status": "dismissed"
+  },
+  {
+    "analysis": "done",
+    "replyState": "sent",
     "eventState": "created",
     "closedReason": null,
     "state": "in_calendar",
@@ -1019,6 +1611,38 @@
     "analysis": "done",
     "replyState": "sent",
     "eventState": "created",
+    "closedReason": "dismissed",
+    "state": "ignored",
+    "status": "dismissed"
+  },
+  {
+    "analysis": "done",
+    "replyState": "sent",
+    "eventState": "updated",
+    "closedReason": null,
+    "state": "in_calendar",
+    "status": "in_calendar"
+  },
+  {
+    "analysis": "done",
+    "replyState": "sent",
+    "eventState": "updated",
+    "closedReason": "dismissed",
+    "state": "ignored",
+    "status": "dismissed"
+  },
+  {
+    "analysis": "done",
+    "replyState": "sent",
+    "eventState": "cancelled",
+    "closedReason": null,
+    "state": "in_calendar",
+    "status": "in_calendar"
+  },
+  {
+    "analysis": "done",
+    "replyState": "sent",
+    "eventState": "cancelled",
     "closedReason": "dismissed",
     "state": "ignored",
     "status": "dismissed"
@@ -1090,6 +1714,22 @@
   {
     "analysis": "done",
     "replyState": "answered_elsewhere",
+    "eventState": "change_proposed",
+    "closedReason": null,
+    "state": "needs_reply",
+    "status": "needs_reply"
+  },
+  {
+    "analysis": "done",
+    "replyState": "answered_elsewhere",
+    "eventState": "change_proposed",
+    "closedReason": "dismissed",
+    "state": "ignored",
+    "status": "dismissed"
+  },
+  {
+    "analysis": "done",
+    "replyState": "answered_elsewhere",
     "eventState": "created",
     "closedReason": null,
     "state": "in_calendar",
@@ -1099,6 +1739,38 @@
     "analysis": "done",
     "replyState": "answered_elsewhere",
     "eventState": "created",
+    "closedReason": "dismissed",
+    "state": "ignored",
+    "status": "dismissed"
+  },
+  {
+    "analysis": "done",
+    "replyState": "answered_elsewhere",
+    "eventState": "updated",
+    "closedReason": null,
+    "state": "in_calendar",
+    "status": "in_calendar"
+  },
+  {
+    "analysis": "done",
+    "replyState": "answered_elsewhere",
+    "eventState": "updated",
+    "closedReason": "dismissed",
+    "state": "ignored",
+    "status": "dismissed"
+  },
+  {
+    "analysis": "done",
+    "replyState": "answered_elsewhere",
+    "eventState": "cancelled",
+    "closedReason": null,
+    "state": "in_calendar",
+    "status": "in_calendar"
+  },
+  {
+    "analysis": "done",
+    "replyState": "answered_elsewhere",
+    "eventState": "cancelled",
     "closedReason": "dismissed",
     "state": "ignored",
     "status": "dismissed"
@@ -1170,6 +1842,22 @@
   {
     "analysis": "done",
     "replyState": "skipped",
+    "eventState": "change_proposed",
+    "closedReason": null,
+    "state": "needs_reply",
+    "status": "needs_reply"
+  },
+  {
+    "analysis": "done",
+    "replyState": "skipped",
+    "eventState": "change_proposed",
+    "closedReason": "dismissed",
+    "state": "ignored",
+    "status": "dismissed"
+  },
+  {
+    "analysis": "done",
+    "replyState": "skipped",
     "eventState": "created",
     "closedReason": null,
     "state": "in_calendar",
@@ -1179,6 +1867,38 @@
     "analysis": "done",
     "replyState": "skipped",
     "eventState": "created",
+    "closedReason": "dismissed",
+    "state": "ignored",
+    "status": "dismissed"
+  },
+  {
+    "analysis": "done",
+    "replyState": "skipped",
+    "eventState": "updated",
+    "closedReason": null,
+    "state": "in_calendar",
+    "status": "in_calendar"
+  },
+  {
+    "analysis": "done",
+    "replyState": "skipped",
+    "eventState": "updated",
+    "closedReason": "dismissed",
+    "state": "ignored",
+    "status": "dismissed"
+  },
+  {
+    "analysis": "done",
+    "replyState": "skipped",
+    "eventState": "cancelled",
+    "closedReason": null,
+    "state": "in_calendar",
+    "status": "in_calendar"
+  },
+  {
+    "analysis": "done",
+    "replyState": "skipped",
+    "eventState": "cancelled",
     "closedReason": "dismissed",
     "state": "ignored",
     "status": "dismissed"
@@ -1250,23 +1970,7 @@
   {
     "analysis": "failed",
     "replyState": "none",
-    "eventState": "created",
-    "closedReason": null,
-    "state": "in_calendar",
-    "status": "in_calendar"
-  },
-  {
-    "analysis": "failed",
-    "replyState": "none",
-    "eventState": "created",
-    "closedReason": "dismissed",
-    "state": "ignored",
-    "status": "dismissed"
-  },
-  {
-    "analysis": "failed",
-    "replyState": "none",
-    "eventState": "declined",
+    "eventState": "change_proposed",
     "closedReason": null,
     "state": "needs_reply",
     "status": "needs_reply"
@@ -1274,381 +1978,13 @@
   {
     "analysis": "failed",
     "replyState": "none",
-    "eventState": "declined",
+    "eventState": "change_proposed",
     "closedReason": "dismissed",
     "state": "ignored",
     "status": "dismissed"
   },
   {
     "analysis": "failed",
-    "replyState": "draft",
-    "eventState": "none",
-    "closedReason": null,
-    "state": "needs_reply",
-    "status": "needs_reply"
-  },
-  {
-    "analysis": "failed",
-    "replyState": "draft",
-    "eventState": "none",
-    "closedReason": "dismissed",
-    "state": "ignored",
-    "status": "dismissed"
-  },
-  {
-    "analysis": "failed",
-    "replyState": "draft",
-    "eventState": "incomplete",
-    "closedReason": null,
-    "state": "needs_reply",
-    "status": "needs_reply"
-  },
-  {
-    "analysis": "failed",
-    "replyState": "draft",
-    "eventState": "incomplete",
-    "closedReason": "dismissed",
-    "state": "ignored",
-    "status": "dismissed"
-  },
-  {
-    "analysis": "failed",
-    "replyState": "draft",
-    "eventState": "proposed",
-    "closedReason": null,
-    "state": "needs_reply",
-    "status": "needs_reply"
-  },
-  {
-    "analysis": "failed",
-    "replyState": "draft",
-    "eventState": "proposed",
-    "closedReason": "dismissed",
-    "state": "ignored",
-    "status": "dismissed"
-  },
-  {
-    "analysis": "failed",
-    "replyState": "draft",
-    "eventState": "created",
-    "closedReason": null,
-    "state": "in_calendar",
-    "status": "in_calendar"
-  },
-  {
-    "analysis": "failed",
-    "replyState": "draft",
-    "eventState": "created",
-    "closedReason": "dismissed",
-    "state": "ignored",
-    "status": "dismissed"
-  },
-  {
-    "analysis": "failed",
-    "replyState": "draft",
-    "eventState": "declined",
-    "closedReason": null,
-    "state": "needs_reply",
-    "status": "needs_reply"
-  },
-  {
-    "analysis": "failed",
-    "replyState": "draft",
-    "eventState": "declined",
-    "closedReason": "dismissed",
-    "state": "ignored",
-    "status": "dismissed"
-  },
-  {
-    "analysis": "failed",
-    "replyState": "sent",
-    "eventState": "none",
-    "closedReason": null,
-    "state": "needs_reply",
-    "status": "needs_reply"
-  },
-  {
-    "analysis": "failed",
-    "replyState": "sent",
-    "eventState": "none",
-    "closedReason": "dismissed",
-    "state": "ignored",
-    "status": "dismissed"
-  },
-  {
-    "analysis": "failed",
-    "replyState": "sent",
-    "eventState": "incomplete",
-    "closedReason": null,
-    "state": "needs_reply",
-    "status": "needs_reply"
-  },
-  {
-    "analysis": "failed",
-    "replyState": "sent",
-    "eventState": "incomplete",
-    "closedReason": "dismissed",
-    "state": "ignored",
-    "status": "dismissed"
-  },
-  {
-    "analysis": "failed",
-    "replyState": "sent",
-    "eventState": "proposed",
-    "closedReason": null,
-    "state": "needs_reply",
-    "status": "needs_reply"
-  },
-  {
-    "analysis": "failed",
-    "replyState": "sent",
-    "eventState": "proposed",
-    "closedReason": "dismissed",
-    "state": "ignored",
-    "status": "dismissed"
-  },
-  {
-    "analysis": "failed",
-    "replyState": "sent",
-    "eventState": "created",
-    "closedReason": null,
-    "state": "in_calendar",
-    "status": "in_calendar"
-  },
-  {
-    "analysis": "failed",
-    "replyState": "sent",
-    "eventState": "created",
-    "closedReason": "dismissed",
-    "state": "ignored",
-    "status": "dismissed"
-  },
-  {
-    "analysis": "failed",
-    "replyState": "sent",
-    "eventState": "declined",
-    "closedReason": null,
-    "state": "needs_reply",
-    "status": "needs_reply"
-  },
-  {
-    "analysis": "failed",
-    "replyState": "sent",
-    "eventState": "declined",
-    "closedReason": "dismissed",
-    "state": "ignored",
-    "status": "dismissed"
-  },
-  {
-    "analysis": "failed",
-    "replyState": "answered_elsewhere",
-    "eventState": "none",
-    "closedReason": null,
-    "state": "needs_reply",
-    "status": "needs_reply"
-  },
-  {
-    "analysis": "failed",
-    "replyState": "answered_elsewhere",
-    "eventState": "none",
-    "closedReason": "dismissed",
-    "state": "ignored",
-    "status": "dismissed"
-  },
-  {
-    "analysis": "failed",
-    "replyState": "answered_elsewhere",
-    "eventState": "incomplete",
-    "closedReason": null,
-    "state": "needs_reply",
-    "status": "needs_reply"
-  },
-  {
-    "analysis": "failed",
-    "replyState": "answered_elsewhere",
-    "eventState": "incomplete",
-    "closedReason": "dismissed",
-    "state": "ignored",
-    "status": "dismissed"
-  },
-  {
-    "analysis": "failed",
-    "replyState": "answered_elsewhere",
-    "eventState": "proposed",
-    "closedReason": null,
-    "state": "needs_reply",
-    "status": "needs_reply"
-  },
-  {
-    "analysis": "failed",
-    "replyState": "answered_elsewhere",
-    "eventState": "proposed",
-    "closedReason": "dismissed",
-    "state": "ignored",
-    "status": "dismissed"
-  },
-  {
-    "analysis": "failed",
-    "replyState": "answered_elsewhere",
-    "eventState": "created",
-    "closedReason": null,
-    "state": "in_calendar",
-    "status": "in_calendar"
-  },
-  {
-    "analysis": "failed",
-    "replyState": "answered_elsewhere",
-    "eventState": "created",
-    "closedReason": "dismissed",
-    "state": "ignored",
-    "status": "dismissed"
-  },
-  {
-    "analysis": "failed",
-    "replyState": "answered_elsewhere",
-    "eventState": "declined",
-    "closedReason": null,
-    "state": "needs_reply",
-    "status": "needs_reply"
-  },
-  {
-    "analysis": "failed",
-    "replyState": "answered_elsewhere",
-    "eventState": "declined",
-    "closedReason": "dismissed",
-    "state": "ignored",
-    "status": "dismissed"
-  },
-  {
-    "analysis": "failed",
-    "replyState": "skipped",
-    "eventState": "none",
-    "closedReason": null,
-    "state": "needs_reply",
-    "status": "needs_reply"
-  },
-  {
-    "analysis": "failed",
-    "replyState": "skipped",
-    "eventState": "none",
-    "closedReason": "dismissed",
-    "state": "ignored",
-    "status": "dismissed"
-  },
-  {
-    "analysis": "failed",
-    "replyState": "skipped",
-    "eventState": "incomplete",
-    "closedReason": null,
-    "state": "needs_reply",
-    "status": "needs_reply"
-  },
-  {
-    "analysis": "failed",
-    "replyState": "skipped",
-    "eventState": "incomplete",
-    "closedReason": "dismissed",
-    "state": "ignored",
-    "status": "dismissed"
-  },
-  {
-    "analysis": "failed",
-    "replyState": "skipped",
-    "eventState": "proposed",
-    "closedReason": null,
-    "state": "needs_reply",
-    "status": "needs_reply"
-  },
-  {
-    "analysis": "failed",
-    "replyState": "skipped",
-    "eventState": "proposed",
-    "closedReason": "dismissed",
-    "state": "ignored",
-    "status": "dismissed"
-  },
-  {
-    "analysis": "failed",
-    "replyState": "skipped",
-    "eventState": "created",
-    "closedReason": null,
-    "state": "in_calendar",
-    "status": "in_calendar"
-  },
-  {
-    "analysis": "failed",
-    "replyState": "skipped",
-    "eventState": "created",
-    "closedReason": "dismissed",
-    "state": "ignored",
-    "status": "dismissed"
-  },
-  {
-    "analysis": "failed",
-    "replyState": "skipped",
-    "eventState": "declined",
-    "closedReason": null,
-    "state": "needs_reply",
-    "status": "needs_reply"
-  },
-  {
-    "analysis": "failed",
-    "replyState": "skipped",
-    "eventState": "declined",
-    "closedReason": "dismissed",
-    "state": "ignored",
-    "status": "dismissed"
-  },
-  {
-    "analysis": "held",
-    "replyState": "none",
-    "eventState": "none",
-    "closedReason": null,
-    "state": "needs_reply",
-    "status": "needs_reply"
-  },
-  {
-    "analysis": "held",
-    "replyState": "none",
-    "eventState": "none",
-    "closedReason": "dismissed",
-    "state": "ignored",
-    "status": "dismissed"
-  },
-  {
-    "analysis": "held",
-    "replyState": "none",
-    "eventState": "incomplete",
-    "closedReason": null,
-    "state": "needs_reply",
-    "status": "needs_reply"
-  },
-  {
-    "analysis": "held",
-    "replyState": "none",
-    "eventState": "incomplete",
-    "closedReason": "dismissed",
-    "state": "ignored",
-    "status": "dismissed"
-  },
-  {
-    "analysis": "held",
-    "replyState": "none",
-    "eventState": "proposed",
-    "closedReason": null,
-    "state": "needs_reply",
-    "status": "needs_reply"
-  },
-  {
-    "analysis": "held",
-    "replyState": "none",
-    "eventState": "proposed",
-    "closedReason": "dismissed",
-    "state": "ignored",
-    "status": "dismissed"
-  },
-  {
-    "analysis": "held",
     "replyState": "none",
     "eventState": "created",
     "closedReason": null,
@@ -1656,6 +1992,646 @@
     "status": "in_calendar"
   },
   {
+    "analysis": "failed",
+    "replyState": "none",
+    "eventState": "created",
+    "closedReason": "dismissed",
+    "state": "ignored",
+    "status": "dismissed"
+  },
+  {
+    "analysis": "failed",
+    "replyState": "none",
+    "eventState": "updated",
+    "closedReason": null,
+    "state": "in_calendar",
+    "status": "in_calendar"
+  },
+  {
+    "analysis": "failed",
+    "replyState": "none",
+    "eventState": "updated",
+    "closedReason": "dismissed",
+    "state": "ignored",
+    "status": "dismissed"
+  },
+  {
+    "analysis": "failed",
+    "replyState": "none",
+    "eventState": "cancelled",
+    "closedReason": null,
+    "state": "in_calendar",
+    "status": "in_calendar"
+  },
+  {
+    "analysis": "failed",
+    "replyState": "none",
+    "eventState": "cancelled",
+    "closedReason": "dismissed",
+    "state": "ignored",
+    "status": "dismissed"
+  },
+  {
+    "analysis": "failed",
+    "replyState": "none",
+    "eventState": "declined",
+    "closedReason": null,
+    "state": "needs_reply",
+    "status": "needs_reply"
+  },
+  {
+    "analysis": "failed",
+    "replyState": "none",
+    "eventState": "declined",
+    "closedReason": "dismissed",
+    "state": "ignored",
+    "status": "dismissed"
+  },
+  {
+    "analysis": "failed",
+    "replyState": "draft",
+    "eventState": "none",
+    "closedReason": null,
+    "state": "needs_reply",
+    "status": "needs_reply"
+  },
+  {
+    "analysis": "failed",
+    "replyState": "draft",
+    "eventState": "none",
+    "closedReason": "dismissed",
+    "state": "ignored",
+    "status": "dismissed"
+  },
+  {
+    "analysis": "failed",
+    "replyState": "draft",
+    "eventState": "incomplete",
+    "closedReason": null,
+    "state": "needs_reply",
+    "status": "needs_reply"
+  },
+  {
+    "analysis": "failed",
+    "replyState": "draft",
+    "eventState": "incomplete",
+    "closedReason": "dismissed",
+    "state": "ignored",
+    "status": "dismissed"
+  },
+  {
+    "analysis": "failed",
+    "replyState": "draft",
+    "eventState": "proposed",
+    "closedReason": null,
+    "state": "needs_reply",
+    "status": "needs_reply"
+  },
+  {
+    "analysis": "failed",
+    "replyState": "draft",
+    "eventState": "proposed",
+    "closedReason": "dismissed",
+    "state": "ignored",
+    "status": "dismissed"
+  },
+  {
+    "analysis": "failed",
+    "replyState": "draft",
+    "eventState": "change_proposed",
+    "closedReason": null,
+    "state": "needs_reply",
+    "status": "needs_reply"
+  },
+  {
+    "analysis": "failed",
+    "replyState": "draft",
+    "eventState": "change_proposed",
+    "closedReason": "dismissed",
+    "state": "ignored",
+    "status": "dismissed"
+  },
+  {
+    "analysis": "failed",
+    "replyState": "draft",
+    "eventState": "created",
+    "closedReason": null,
+    "state": "in_calendar",
+    "status": "in_calendar"
+  },
+  {
+    "analysis": "failed",
+    "replyState": "draft",
+    "eventState": "created",
+    "closedReason": "dismissed",
+    "state": "ignored",
+    "status": "dismissed"
+  },
+  {
+    "analysis": "failed",
+    "replyState": "draft",
+    "eventState": "updated",
+    "closedReason": null,
+    "state": "in_calendar",
+    "status": "in_calendar"
+  },
+  {
+    "analysis": "failed",
+    "replyState": "draft",
+    "eventState": "updated",
+    "closedReason": "dismissed",
+    "state": "ignored",
+    "status": "dismissed"
+  },
+  {
+    "analysis": "failed",
+    "replyState": "draft",
+    "eventState": "cancelled",
+    "closedReason": null,
+    "state": "in_calendar",
+    "status": "in_calendar"
+  },
+  {
+    "analysis": "failed",
+    "replyState": "draft",
+    "eventState": "cancelled",
+    "closedReason": "dismissed",
+    "state": "ignored",
+    "status": "dismissed"
+  },
+  {
+    "analysis": "failed",
+    "replyState": "draft",
+    "eventState": "declined",
+    "closedReason": null,
+    "state": "needs_reply",
+    "status": "needs_reply"
+  },
+  {
+    "analysis": "failed",
+    "replyState": "draft",
+    "eventState": "declined",
+    "closedReason": "dismissed",
+    "state": "ignored",
+    "status": "dismissed"
+  },
+  {
+    "analysis": "failed",
+    "replyState": "sent",
+    "eventState": "none",
+    "closedReason": null,
+    "state": "needs_reply",
+    "status": "needs_reply"
+  },
+  {
+    "analysis": "failed",
+    "replyState": "sent",
+    "eventState": "none",
+    "closedReason": "dismissed",
+    "state": "ignored",
+    "status": "dismissed"
+  },
+  {
+    "analysis": "failed",
+    "replyState": "sent",
+    "eventState": "incomplete",
+    "closedReason": null,
+    "state": "needs_reply",
+    "status": "needs_reply"
+  },
+  {
+    "analysis": "failed",
+    "replyState": "sent",
+    "eventState": "incomplete",
+    "closedReason": "dismissed",
+    "state": "ignored",
+    "status": "dismissed"
+  },
+  {
+    "analysis": "failed",
+    "replyState": "sent",
+    "eventState": "proposed",
+    "closedReason": null,
+    "state": "needs_reply",
+    "status": "needs_reply"
+  },
+  {
+    "analysis": "failed",
+    "replyState": "sent",
+    "eventState": "proposed",
+    "closedReason": "dismissed",
+    "state": "ignored",
+    "status": "dismissed"
+  },
+  {
+    "analysis": "failed",
+    "replyState": "sent",
+    "eventState": "change_proposed",
+    "closedReason": null,
+    "state": "needs_reply",
+    "status": "needs_reply"
+  },
+  {
+    "analysis": "failed",
+    "replyState": "sent",
+    "eventState": "change_proposed",
+    "closedReason": "dismissed",
+    "state": "ignored",
+    "status": "dismissed"
+  },
+  {
+    "analysis": "failed",
+    "replyState": "sent",
+    "eventState": "created",
+    "closedReason": null,
+    "state": "in_calendar",
+    "status": "in_calendar"
+  },
+  {
+    "analysis": "failed",
+    "replyState": "sent",
+    "eventState": "created",
+    "closedReason": "dismissed",
+    "state": "ignored",
+    "status": "dismissed"
+  },
+  {
+    "analysis": "failed",
+    "replyState": "sent",
+    "eventState": "updated",
+    "closedReason": null,
+    "state": "in_calendar",
+    "status": "in_calendar"
+  },
+  {
+    "analysis": "failed",
+    "replyState": "sent",
+    "eventState": "updated",
+    "closedReason": "dismissed",
+    "state": "ignored",
+    "status": "dismissed"
+  },
+  {
+    "analysis": "failed",
+    "replyState": "sent",
+    "eventState": "cancelled",
+    "closedReason": null,
+    "state": "in_calendar",
+    "status": "in_calendar"
+  },
+  {
+    "analysis": "failed",
+    "replyState": "sent",
+    "eventState": "cancelled",
+    "closedReason": "dismissed",
+    "state": "ignored",
+    "status": "dismissed"
+  },
+  {
+    "analysis": "failed",
+    "replyState": "sent",
+    "eventState": "declined",
+    "closedReason": null,
+    "state": "needs_reply",
+    "status": "needs_reply"
+  },
+  {
+    "analysis": "failed",
+    "replyState": "sent",
+    "eventState": "declined",
+    "closedReason": "dismissed",
+    "state": "ignored",
+    "status": "dismissed"
+  },
+  {
+    "analysis": "failed",
+    "replyState": "answered_elsewhere",
+    "eventState": "none",
+    "closedReason": null,
+    "state": "needs_reply",
+    "status": "needs_reply"
+  },
+  {
+    "analysis": "failed",
+    "replyState": "answered_elsewhere",
+    "eventState": "none",
+    "closedReason": "dismissed",
+    "state": "ignored",
+    "status": "dismissed"
+  },
+  {
+    "analysis": "failed",
+    "replyState": "answered_elsewhere",
+    "eventState": "incomplete",
+    "closedReason": null,
+    "state": "needs_reply",
+    "status": "needs_reply"
+  },
+  {
+    "analysis": "failed",
+    "replyState": "answered_elsewhere",
+    "eventState": "incomplete",
+    "closedReason": "dismissed",
+    "state": "ignored",
+    "status": "dismissed"
+  },
+  {
+    "analysis": "failed",
+    "replyState": "answered_elsewhere",
+    "eventState": "proposed",
+    "closedReason": null,
+    "state": "needs_reply",
+    "status": "needs_reply"
+  },
+  {
+    "analysis": "failed",
+    "replyState": "answered_elsewhere",
+    "eventState": "proposed",
+    "closedReason": "dismissed",
+    "state": "ignored",
+    "status": "dismissed"
+  },
+  {
+    "analysis": "failed",
+    "replyState": "answered_elsewhere",
+    "eventState": "change_proposed",
+    "closedReason": null,
+    "state": "needs_reply",
+    "status": "needs_reply"
+  },
+  {
+    "analysis": "failed",
+    "replyState": "answered_elsewhere",
+    "eventState": "change_proposed",
+    "closedReason": "dismissed",
+    "state": "ignored",
+    "status": "dismissed"
+  },
+  {
+    "analysis": "failed",
+    "replyState": "answered_elsewhere",
+    "eventState": "created",
+    "closedReason": null,
+    "state": "in_calendar",
+    "status": "in_calendar"
+  },
+  {
+    "analysis": "failed",
+    "replyState": "answered_elsewhere",
+    "eventState": "created",
+    "closedReason": "dismissed",
+    "state": "ignored",
+    "status": "dismissed"
+  },
+  {
+    "analysis": "failed",
+    "replyState": "answered_elsewhere",
+    "eventState": "updated",
+    "closedReason": null,
+    "state": "in_calendar",
+    "status": "in_calendar"
+  },
+  {
+    "analysis": "failed",
+    "replyState": "answered_elsewhere",
+    "eventState": "updated",
+    "closedReason": "dismissed",
+    "state": "ignored",
+    "status": "dismissed"
+  },
+  {
+    "analysis": "failed",
+    "replyState": "answered_elsewhere",
+    "eventState": "cancelled",
+    "closedReason": null,
+    "state": "in_calendar",
+    "status": "in_calendar"
+  },
+  {
+    "analysis": "failed",
+    "replyState": "answered_elsewhere",
+    "eventState": "cancelled",
+    "closedReason": "dismissed",
+    "state": "ignored",
+    "status": "dismissed"
+  },
+  {
+    "analysis": "failed",
+    "replyState": "answered_elsewhere",
+    "eventState": "declined",
+    "closedReason": null,
+    "state": "needs_reply",
+    "status": "needs_reply"
+  },
+  {
+    "analysis": "failed",
+    "replyState": "answered_elsewhere",
+    "eventState": "declined",
+    "closedReason": "dismissed",
+    "state": "ignored",
+    "status": "dismissed"
+  },
+  {
+    "analysis": "failed",
+    "replyState": "skipped",
+    "eventState": "none",
+    "closedReason": null,
+    "state": "needs_reply",
+    "status": "needs_reply"
+  },
+  {
+    "analysis": "failed",
+    "replyState": "skipped",
+    "eventState": "none",
+    "closedReason": "dismissed",
+    "state": "ignored",
+    "status": "dismissed"
+  },
+  {
+    "analysis": "failed",
+    "replyState": "skipped",
+    "eventState": "incomplete",
+    "closedReason": null,
+    "state": "needs_reply",
+    "status": "needs_reply"
+  },
+  {
+    "analysis": "failed",
+    "replyState": "skipped",
+    "eventState": "incomplete",
+    "closedReason": "dismissed",
+    "state": "ignored",
+    "status": "dismissed"
+  },
+  {
+    "analysis": "failed",
+    "replyState": "skipped",
+    "eventState": "proposed",
+    "closedReason": null,
+    "state": "needs_reply",
+    "status": "needs_reply"
+  },
+  {
+    "analysis": "failed",
+    "replyState": "skipped",
+    "eventState": "proposed",
+    "closedReason": "dismissed",
+    "state": "ignored",
+    "status": "dismissed"
+  },
+  {
+    "analysis": "failed",
+    "replyState": "skipped",
+    "eventState": "change_proposed",
+    "closedReason": null,
+    "state": "needs_reply",
+    "status": "needs_reply"
+  },
+  {
+    "analysis": "failed",
+    "replyState": "skipped",
+    "eventState": "change_proposed",
+    "closedReason": "dismissed",
+    "state": "ignored",
+    "status": "dismissed"
+  },
+  {
+    "analysis": "failed",
+    "replyState": "skipped",
+    "eventState": "created",
+    "closedReason": null,
+    "state": "in_calendar",
+    "status": "in_calendar"
+  },
+  {
+    "analysis": "failed",
+    "replyState": "skipped",
+    "eventState": "created",
+    "closedReason": "dismissed",
+    "state": "ignored",
+    "status": "dismissed"
+  },
+  {
+    "analysis": "failed",
+    "replyState": "skipped",
+    "eventState": "updated",
+    "closedReason": null,
+    "state": "in_calendar",
+    "status": "in_calendar"
+  },
+  {
+    "analysis": "failed",
+    "replyState": "skipped",
+    "eventState": "updated",
+    "closedReason": "dismissed",
+    "state": "ignored",
+    "status": "dismissed"
+  },
+  {
+    "analysis": "failed",
+    "replyState": "skipped",
+    "eventState": "cancelled",
+    "closedReason": null,
+    "state": "in_calendar",
+    "status": "in_calendar"
+  },
+  {
+    "analysis": "failed",
+    "replyState": "skipped",
+    "eventState": "cancelled",
+    "closedReason": "dismissed",
+    "state": "ignored",
+    "status": "dismissed"
+  },
+  {
+    "analysis": "failed",
+    "replyState": "skipped",
+    "eventState": "declined",
+    "closedReason": null,
+    "state": "needs_reply",
+    "status": "needs_reply"
+  },
+  {
+    "analysis": "failed",
+    "replyState": "skipped",
+    "eventState": "declined",
+    "closedReason": "dismissed",
+    "state": "ignored",
+    "status": "dismissed"
+  },
+  {
+    "analysis": "held",
+    "replyState": "none",
+    "eventState": "none",
+    "closedReason": null,
+    "state": "needs_reply",
+    "status": "needs_reply"
+  },
+  {
+    "analysis": "held",
+    "replyState": "none",
+    "eventState": "none",
+    "closedReason": "dismissed",
+    "state": "ignored",
+    "status": "dismissed"
+  },
+  {
+    "analysis": "held",
+    "replyState": "none",
+    "eventState": "incomplete",
+    "closedReason": null,
+    "state": "needs_reply",
+    "status": "needs_reply"
+  },
+  {
+    "analysis": "held",
+    "replyState": "none",
+    "eventState": "incomplete",
+    "closedReason": "dismissed",
+    "state": "ignored",
+    "status": "dismissed"
+  },
+  {
+    "analysis": "held",
+    "replyState": "none",
+    "eventState": "proposed",
+    "closedReason": null,
+    "state": "needs_reply",
+    "status": "needs_reply"
+  },
+  {
+    "analysis": "held",
+    "replyState": "none",
+    "eventState": "proposed",
+    "closedReason": "dismissed",
+    "state": "ignored",
+    "status": "dismissed"
+  },
+  {
+    "analysis": "held",
+    "replyState": "none",
+    "eventState": "change_proposed",
+    "closedReason": null,
+    "state": "needs_reply",
+    "status": "needs_reply"
+  },
+  {
+    "analysis": "held",
+    "replyState": "none",
+    "eventState": "change_proposed",
+    "closedReason": "dismissed",
+    "state": "ignored",
+    "status": "dismissed"
+  },
+  {
+    "analysis": "held",
+    "replyState": "none",
+    "eventState": "created",
+    "closedReason": null,
+    "state": "in_calendar",
+    "status": "in_calendar"
+  },
+  {
     "analysis": "held",
     "replyState": "none",
     "eventState": "created",
@@ -1666,6 +2642,38 @@
   {
     "analysis": "held",
     "replyState": "none",
+    "eventState": "updated",
+    "closedReason": null,
+    "state": "in_calendar",
+    "status": "in_calendar"
+  },
+  {
+    "analysis": "held",
+    "replyState": "none",
+    "eventState": "updated",
+    "closedReason": "dismissed",
+    "state": "ignored",
+    "status": "dismissed"
+  },
+  {
+    "analysis": "held",
+    "replyState": "none",
+    "eventState": "cancelled",
+    "closedReason": null,
+    "state": "in_calendar",
+    "status": "in_calendar"
+  },
+  {
+    "analysis": "held",
+    "replyState": "none",
+    "eventState": "cancelled",
+    "closedReason": "dismissed",
+    "state": "ignored",
+    "status": "dismissed"
+  },
+  {
+    "analysis": "held",
+    "replyState": "none",
     "eventState": "declined",
     "closedReason": null,
     "state": "needs_reply",
@@ -1730,6 +2738,22 @@
   {
     "analysis": "held",
     "replyState": "draft",
+    "eventState": "change_proposed",
+    "closedReason": null,
+    "state": "needs_reply",
+    "status": "needs_reply"
+  },
+  {
+    "analysis": "held",
+    "replyState": "draft",
+    "eventState": "change_proposed",
+    "closedReason": "dismissed",
+    "state": "ignored",
+    "status": "dismissed"
+  },
+  {
+    "analysis": "held",
+    "replyState": "draft",
     "eventState": "created",
     "closedReason": null,
     "state": "in_calendar",
@@ -1746,6 +2770,38 @@
   {
     "analysis": "held",
     "replyState": "draft",
+    "eventState": "updated",
+    "closedReason": null,
+    "state": "in_calendar",
+    "status": "in_calendar"
+  },
+  {
+    "analysis": "held",
+    "replyState": "draft",
+    "eventState": "updated",
+    "closedReason": "dismissed",
+    "state": "ignored",
+    "status": "dismissed"
+  },
+  {
+    "analysis": "held",
+    "replyState": "draft",
+    "eventState": "cancelled",
+    "closedReason": null,
+    "state": "in_calendar",
+    "status": "in_calendar"
+  },
+  {
+    "analysis": "held",
+    "replyState": "draft",
+    "eventState": "cancelled",
+    "closedReason": "dismissed",
+    "state": "ignored",
+    "status": "dismissed"
+  },
+  {
+    "analysis": "held",
+    "replyState": "draft",
     "eventState": "declined",
     "closedReason": null,
     "state": "needs_reply",
@@ -1810,6 +2866,22 @@
   {
     "analysis": "held",
     "replyState": "sent",
+    "eventState": "change_proposed",
+    "closedReason": null,
+    "state": "needs_reply",
+    "status": "needs_reply"
+  },
+  {
+    "analysis": "held",
+    "replyState": "sent",
+    "eventState": "change_proposed",
+    "closedReason": "dismissed",
+    "state": "ignored",
+    "status": "dismissed"
+  },
+  {
+    "analysis": "held",
+    "replyState": "sent",
     "eventState": "created",
     "closedReason": null,
     "state": "in_calendar",
@@ -1826,6 +2898,38 @@
   {
     "analysis": "held",
     "replyState": "sent",
+    "eventState": "updated",
+    "closedReason": null,
+    "state": "in_calendar",
+    "status": "in_calendar"
+  },
+  {
+    "analysis": "held",
+    "replyState": "sent",
+    "eventState": "updated",
+    "closedReason": "dismissed",
+    "state": "ignored",
+    "status": "dismissed"
+  },
+  {
+    "analysis": "held",
+    "replyState": "sent",
+    "eventState": "cancelled",
+    "closedReason": null,
+    "state": "in_calendar",
+    "status": "in_calendar"
+  },
+  {
+    "analysis": "held",
+    "replyState": "sent",
+    "eventState": "cancelled",
+    "closedReason": "dismissed",
+    "state": "ignored",
+    "status": "dismissed"
+  },
+  {
+    "analysis": "held",
+    "replyState": "sent",
     "eventState": "declined",
     "closedReason": null,
     "state": "needs_reply",
@@ -1890,6 +2994,22 @@
   {
     "analysis": "held",
     "replyState": "answered_elsewhere",
+    "eventState": "change_proposed",
+    "closedReason": null,
+    "state": "needs_reply",
+    "status": "needs_reply"
+  },
+  {
+    "analysis": "held",
+    "replyState": "answered_elsewhere",
+    "eventState": "change_proposed",
+    "closedReason": "dismissed",
+    "state": "ignored",
+    "status": "dismissed"
+  },
+  {
+    "analysis": "held",
+    "replyState": "answered_elsewhere",
     "eventState": "created",
     "closedReason": null,
     "state": "in_calendar",
@@ -1899,6 +3019,38 @@
     "analysis": "held",
     "replyState": "answered_elsewhere",
     "eventState": "created",
+    "closedReason": "dismissed",
+    "state": "ignored",
+    "status": "dismissed"
+  },
+  {
+    "analysis": "held",
+    "replyState": "answered_elsewhere",
+    "eventState": "updated",
+    "closedReason": null,
+    "state": "in_calendar",
+    "status": "in_calendar"
+  },
+  {
+    "analysis": "held",
+    "replyState": "answered_elsewhere",
+    "eventState": "updated",
+    "closedReason": "dismissed",
+    "state": "ignored",
+    "status": "dismissed"
+  },
+  {
+    "analysis": "held",
+    "replyState": "answered_elsewhere",
+    "eventState": "cancelled",
+    "closedReason": null,
+    "state": "in_calendar",
+    "status": "in_calendar"
+  },
+  {
+    "analysis": "held",
+    "replyState": "answered_elsewhere",
+    "eventState": "cancelled",
     "closedReason": "dismissed",
     "state": "ignored",
     "status": "dismissed"
@@ -1970,6 +3122,22 @@
   {
     "analysis": "held",
     "replyState": "skipped",
+    "eventState": "change_proposed",
+    "closedReason": null,
+    "state": "needs_reply",
+    "status": "needs_reply"
+  },
+  {
+    "analysis": "held",
+    "replyState": "skipped",
+    "eventState": "change_proposed",
+    "closedReason": "dismissed",
+    "state": "ignored",
+    "status": "dismissed"
+  },
+  {
+    "analysis": "held",
+    "replyState": "skipped",
     "eventState": "created",
     "closedReason": null,
     "state": "in_calendar",
@@ -1979,6 +3147,38 @@
     "analysis": "held",
     "replyState": "skipped",
     "eventState": "created",
+    "closedReason": "dismissed",
+    "state": "ignored",
+    "status": "dismissed"
+  },
+  {
+    "analysis": "held",
+    "replyState": "skipped",
+    "eventState": "updated",
+    "closedReason": null,
+    "state": "in_calendar",
+    "status": "in_calendar"
+  },
+  {
+    "analysis": "held",
+    "replyState": "skipped",
+    "eventState": "updated",
+    "closedReason": "dismissed",
+    "state": "ignored",
+    "status": "dismissed"
+  },
+  {
+    "analysis": "held",
+    "replyState": "skipped",
+    "eventState": "cancelled",
+    "closedReason": null,
+    "state": "in_calendar",
+    "status": "in_calendar"
+  },
+  {
+    "analysis": "held",
+    "replyState": "skipped",
+    "eventState": "cancelled",
     "closedReason": "dismissed",
     "state": "ignored",
     "status": "dismissed"

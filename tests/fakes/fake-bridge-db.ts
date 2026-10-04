@@ -41,6 +41,58 @@ export interface FakeBridgeDb {
   setNow(date: Date): void;
   markDeleted(chatJid: string, id: string, at?: Date): void;
   close(): void;
+  // ---- [V2] T2 3.5 seeders (complete in Wave 0; the WhatsApp read world and the U-D1 bench need them on day one) ----
+  /** A media row (`content` = the caption, '' by default; `filename` UNTRUSTED like the bridge's). Returns the rowid. */
+  seedMediaRow(r: FakeMediaRowInput): number;
+  /** `rows` plain text rows in one transaction, timestamps `startTs + i * stepMs` (U-D1: 10^6 rows). Returns the last rowid. */
+  seedBulk(r: FakeBulkInput): number;
+  /** A row in a group chat (`...@g.us`); never listed, never searchable by the WhatsApp tools. */
+  seedGroupRow(r: FakeSpecialRowInput): number;
+  /** A `status@broadcast` row. */
+  seedStatusRow(r: Omit<FakeSpecialRowInput, 'chatJid'>): number;
+  /** A newsletter (`...@newsletter`) row. */
+  seedNewsletterRow(r: FakeSpecialRowInput): number;
+  /** A reaction row: media_type 'reaction', content = the emoji, filename = the reacted-to message id (bridge shape). */
+  seedReaction(r: FakeReactionInput): number;
+  /** A row whose deleted_at is set (content kept, as the bridge keeps it). */
+  seedDeleted(r: Omit<FakeBridgeMessageInput, 'deleted'>): number;
+}
+export type FakeMediaType = 'audio' | 'image' | 'video' | 'document' | 'sticker';
+export interface FakeMediaRowInput {
+  chatJid: string;
+  id: string;
+  mediaType: FakeMediaType;
+  filename?: string;
+  ts?: string | number | Date;
+  fromMe?: boolean;
+  sender?: string; // digits; default = the chat's user part (or '9725500000' + '00' for groups)
+  caption?: string;
+}
+export interface FakeBulkInput {
+  chatJid: string;
+  rows: number;
+  startTs: number; // epoch ms
+  stepMs: number;
+  idPrefix?: string; // default 'BULK'
+  fromMeEvery?: number; // every n-th row is from_me (default 0 = never)
+  text?: (i: number) => string; // default 'bulk row <i>'
+}
+export interface FakeSpecialRowInput {
+  chatJid: string;
+  id: string;
+  content: string;
+  ts?: string | number | Date;
+  sender?: string;
+  fromMe?: boolean;
+}
+export interface FakeReactionInput {
+  chatJid: string;
+  id: string;
+  targetId: string;
+  emoji: string;
+  ts?: string | number | Date;
+  fromMe?: boolean;
+  sender?: string;
 }
 export interface FakeBridgeDbOptions {
   path: string; // <storeDir>/messages.db ; ':memory:' allowed for pure unit tests
@@ -155,6 +207,23 @@ export function createFakeBridgeDb(opts: FakeBridgeDbOptions): FakeBridgeDb {
     'INSERT INTO whatsmeow_lid_map(lid, pn) VALUES (?, ?) ON CONFLICT(lid) DO UPDATE SET pn = excluded.pn',
   );
 
+  // [V2] seeder helpers
+  const tsOf = (ts: string | number | Date | undefined): string | number | undefined =>
+    ts instanceof Date ? formatTs(ts) : ts;
+  const userPart = (jid: string): string => {
+    const u = jid.split('@')[0] ?? '';
+    return /^\d+$/.test(u) ? u : '972550000000';
+  };
+  const special = (r: FakeSpecialRowInput): number =>
+    addMessage({
+      id: r.id,
+      chatJid: r.chatJid,
+      sender: r.sender ?? '972550000000',
+      content: r.content,
+      timestamp: tsOf(r.ts),
+      fromMe: r.fromMe ?? false,
+    });
+
   const addChat = (jid: string, name: string | null): void => {
     upsertChat.run(jid, name, formatTs(now));
   };
@@ -225,6 +294,67 @@ export function createFakeBridgeDb(opts: FakeBridgeDbOptions): FakeBridgeDb {
     close: () => {
       if (db.isOpen) db.close();
     },
+    // ---- [V2] seeders ----
+    seedMediaRow: (r) =>
+      addMessage({
+        id: r.id,
+        chatJid: r.chatJid,
+        sender: r.sender ?? userPart(r.chatJid),
+        content: r.caption ?? '',
+        timestamp: tsOf(r.ts),
+        fromMe: r.fromMe ?? false,
+        mediaType: r.mediaType,
+        filename: r.filename,
+      }),
+    seedBulk: (r) => {
+      const prefix = r.idPrefix ?? 'BULK';
+      const text = r.text ?? ((i: number) => `bulk row ${i}`);
+      if (!db.prepare('SELECT 1 FROM chats WHERE jid = ?').get(r.chatJid)) addChat(r.chatJid, null);
+      db.exec('BEGIN');
+      try {
+        for (let i = 0; i < r.rows; i += 1) {
+          const fromMe = r.fromMeEvery !== undefined && r.fromMeEvery > 0 && i % r.fromMeEvery === 0;
+          upsertMsg.run(
+            `${prefix}${i}`,
+            r.chatJid,
+            userPart(r.chatJid),
+            text(i),
+            formatTs(new Date(r.startTs + i * r.stepMs)),
+            fromMe ? 1 : 0,
+            '',
+            null,
+            null,
+            null,
+          );
+        }
+        db.exec('COMMIT');
+      } catch (e) {
+        db.exec('ROLLBACK');
+        throw e;
+      }
+      return Number((maxRowidStmt.get() as { m: number }).m);
+    },
+    seedGroupRow: (r) => {
+      if (!r.chatJid.endsWith('@g.us')) throw new Error('seedGroupRow: chatJid must be a group JID (...@g.us)');
+      return special(r);
+    },
+    seedStatusRow: (r) => special({ ...r, chatJid: 'status@broadcast' }),
+    seedNewsletterRow: (r) => {
+      if (!r.chatJid.endsWith('@newsletter')) throw new Error('seedNewsletterRow: chatJid must end in @newsletter');
+      return special(r);
+    },
+    seedReaction: (r) =>
+      addMessage({
+        id: r.id,
+        chatJid: r.chatJid,
+        sender: r.sender ?? userPart(r.chatJid),
+        content: r.emoji,
+        timestamp: tsOf(r.ts),
+        fromMe: r.fromMe ?? false,
+        mediaType: 'reaction',
+        filename: r.targetId,
+      }),
+    seedDeleted: (r) => addMessage({ ...r, deleted: true }),
   };
   return fake;
 }

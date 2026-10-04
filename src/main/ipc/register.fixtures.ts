@@ -5,7 +5,16 @@
 // is out of the report by configuration and needs no `v8 ignore` hint of its own.
 import { createHealthHub } from '../health/healthHub';
 import { applySettingsPatch, DEFAULT_SETTINGS, type Settings, type SettingsPatch } from '../../shared/settings';
-import type { AuditEntry, AuditKind, EpochMs, Item, OnboardingState, OnboardingStep } from '../../shared/types';
+import {
+  CONSENT_VERSIONS,
+  type AuditEntry,
+  type AuditKind,
+  type ConsentKind,
+  type EpochMs,
+  type Item,
+  type OnboardingState,
+  type OnboardingStep,
+} from '../../shared/types';
 import type { ClockTimer, ElectronFacade, LogMeta, Logger } from '../deps';
 import type { Repos } from '../db/index';
 import type { HandlerDeps } from './register';
@@ -130,7 +139,8 @@ export function makeFixture(over: Partial<HandlerDeps> = {}, stateOver: Partial<
         const version = state.consents.get(kind);
         return version === undefined ? null : { kind, version, acceptedAt: state.now };
       },
-      isCurrent: (kind: string) => state.consents.get(kind) === 1,
+      // [V2] current = the kind's CONSENT_VERSIONS entry (cloud_claude/cloud_gemini are 2 in v2, C2 1.1)
+      isCurrent: (kind: string) => state.consents.get(kind) === CONSENT_VERSIONS[kind as ConsentKind],
     },
     items: { byId: (id: number) => state.items.get(id) ?? null },
     retention: { purge: () => state.purge },
@@ -197,7 +207,14 @@ export function makeFixture(over: Partial<HandlerDeps> = {}, stateOver: Partial<
 
   const onboardingState: OnboardingState = {
     step: 'welcome',
-    checklist: { ai: 'pending', aiPercent: null, whatsapp: 'pending', calendar: 'pending' },
+    checklist: {
+      ai: 'pending',
+      aiPercent: null,
+      whatsapp: 'pending',
+      calendar: 'pending',
+      voice: 'off',
+      voicePercent: null,
+    }, // [V2] + voice
     userDataCloudSynced: false,
   };
 
@@ -213,6 +230,7 @@ export function makeFixture(over: Partial<HandlerDeps> = {}, stateOver: Partial<
       setEditing: unimplemented('items.setEditing'),
       completeEvent: unimplemented('items.completeEvent'),
       setChatPolicy: unimplemented('items.setChatPolicy'),
+      getImage: unimplemented('items.getImage'), // [V2]
       listPolicies: unimplemented('items.listPolicies'),
     },
     executor: {
@@ -343,6 +361,12 @@ export function fixtureItem(over: Partial<Item> = {}): Item {
     closedAt: null,
     createdAt: NOW_0,
     updatedAt: NOW_0,
+    // [V2 ADD] C2 1.3 Item fields (migration v4 backfill values for a v1 'created' item)
+    linkedItemId: null,
+    eventRevision: 1,
+    calendarUpdated: null,
+    triggerKind: 'text',
+    eventOriginItemId: 1,
     ...over,
   };
 }

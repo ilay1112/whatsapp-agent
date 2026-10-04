@@ -19,7 +19,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { INTENTS, MISSING_FIELDS, type Item, type ItemCard, type ItemState } from '../../src/shared/types.ts';
 import {
-  GOLDEN_FILES,
+  V1_GOLDEN_FILES, // [V2] GOLDEN_FILES gained edits|images|voice (T2 7.1); this runner covers the v1 files
   goldenTimeline,
   loadGoldenCases,
   stubExtractionOf,
@@ -62,7 +62,7 @@ describe('golden evaluation set (data contract)', () => {
   });
 
   it('loads a single file on request', () => {
-    for (const file of GOLDEN_FILES) expect(loadGoldenCases(file).length).toBeGreaterThan(0);
+    for (const file of V1_GOLDEN_FILES) expect(loadGoldenCases(file).length).toBeGreaterThan(0);
   });
 });
 

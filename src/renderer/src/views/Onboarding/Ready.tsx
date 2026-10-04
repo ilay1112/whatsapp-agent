@@ -80,7 +80,8 @@ export function Ready({ onDone }: ReadyProps) {
   const checklist = state?.checklist;
   const autostart = settings?.general.autostart ?? false;
 
-  const rows: { key: 'ai' | 'whatsapp' | 'calendar'; ready: boolean; text: string }[] = [
+  // [V2] V2-W1-12 (UX2 6 step 4): + the "Voice notes" row (`ready-voice`). Automatic mode is never offered here.
+  const rows: { key: 'ai' | 'whatsapp' | 'calendar' | 'voice'; ready: boolean; text: string }[] = [
     {
       key: 'ai',
       ready: checklist?.ai === 'ready',
@@ -106,6 +107,16 @@ export function Ready({ onDone }: ReadyProps) {
           : checklist?.calendar === 'skipped'
             ? t('onboarding.ready.calendarSkipped')
             : t('onboarding.ready.calendarPending'),
+    },
+    {
+      key: 'voice',
+      ready: checklist?.voice === 'ready',
+      text:
+        checklist?.voice === 'ready'
+          ? t('onboarding.ready.voiceReady')
+          : checklist?.voice === 'downloading'
+            ? t('onboarding.ready.voiceDownloading', { percent: num(checklist.voicePercent ?? 0, lang) })
+            : t('onboarding.ready.voiceOff'),
     },
   ];
 

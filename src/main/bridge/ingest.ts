@@ -4,8 +4,9 @@
 import type { Clock, ClockTimer, Logger } from '../deps';
 import type { Repos } from '../db/index';
 import type { Settings } from '../../shared/settings';
-import type { Stage0Fn } from '../agent/stage0';
-import type { BridgeDb, BridgeMessageRow } from './bridgeDb';
+import { isSelfTriggerCandidate, type Stage0Fn } from '../agent/stage0';
+import { findExistingEvent } from '../agent/existingEvent';
+import type { BridgeDb, BridgeMessageRow, BridgeMessageRowV2 } from './bridgeDb';
 import { DM_LID_JID_RE, DM_PHONE_JID_RE, LIMITS } from '../../shared/types';
 import type {
   Analysis,
@@ -18,6 +19,7 @@ import type {
   Item,
   ItemId,
   Message,
+  TriggerKind,
 } from '../../shared/types';
 import { parseBridgeTs } from './timestamps';
 
@@ -60,6 +62,10 @@ type Liveness = 'context' | 'live' | 'older';
 
 const BUSY_RE = /SQLITE_BUSY|database is locked|database table is locked/i;
 const LID_CHATS_SQL = `SELECT id, jid FROM chats WHERE jid LIKE '%@lid'`;
+/** [V2-W1-07, F28] Items of this chat holding a send_reply the app sent (or may have sent). Read-only; bounded. */
+const SENT_REPLY_ITEMS_SQL = `SELECT DISTINCT item_id AS itemId FROM actions
+  WHERE chat_id = ? AND kind = 'send_reply' AND state IN ('executing','done','unknown_outcome')
+  ORDER BY item_id DESC LIMIT 50`;
 
 function isBusyError(err: unknown): boolean {
   const e = err as { code?: unknown; message?: unknown } | null;
@@ -70,12 +76,30 @@ function isDmJid(jid: string): boolean {
   return DM_PHONE_JID_RE.test(jid) || DM_LID_JID_RE.test(jid);
 }
 
-/** ARCHITECTURE 4.6 step 3 / PIPELINE 1.3 item 1: these rows may be context, never a trigger. */
+/** [V2] P2 2: audio (voice note) and image rows carry no text yet are still part of the conversation - V0 / V1 turn them into text. */
+export function isVoiceOrImage(m: Message): boolean {
+  return m.mediaType === 'audio' || m.mediaType === 'image';
+}
+/** Rows of the conversation window: reactions, deleted rows and text-less rows are out, EXCEPT audio / image rows (P2 2, B18/B19). */
+export function isWindowRow(m: Message): boolean {
+  return m.mediaType !== 'reaction' && !m.deleted && (m.text.trim() !== '' || isVoiceOrImage(m));
+}
+/** ARCHITECTURE 4.6 step 3 / PIPELINE 1.3 item 1: these rows may be context, never a trigger. [V2] an INBOUND audio / image row
+ *  without text is a trigger candidate (S0 decides by settings.voice / settings.images); an own (from_me) text-less row never is. */
 function isNeverTrigger(m: Message): boolean {
-  return m.mediaType === 'reaction' || m.deleted || m.text.trim() === '';
+  if (!isWindowRow(m)) return true;
+  return m.text.trim() === '' && m.fromMe;
+}
+
+/** [V2] items.trigger_kind at item creation (P2 2): the media type of the row that created the item. */
+export function triggerKindOf(m: Message): TriggerKind {
+  if (m.mediaType === 'audio') return 'voice';
+  if (m.mediaType === 'image') return 'image';
+  return 'text';
 }
 
 export function toMessage(r: BridgeMessageRow): Message {
+  const filename = (r as Partial<BridgeMessageRowV2>).filename;
   return {
     rowid: r.rowid,
     waMsgId: r.id,
@@ -86,7 +110,27 @@ export function toMessage(r: BridgeMessageRow): Message {
     fromMe: r.is_from_me === true || Number(r.is_from_me ?? 0) === 1,
     mediaType: r.media_type ?? '',
     deleted: r.deleted_at !== null && r.deleted_at !== undefined && r.deleted_at !== '',
+    // [V2] B5: UNTRUSTED, diagnostics only - never a path, never sent to a model or the renderer
+    mediaFilename: typeof filename === 'string' ? filename : null,
   };
+}
+
+/** [V2-W1-07] The raw P1 section 2 window of one chat INCLUDING audio rows that have no transcript yet (the V0 source; W2-01 wires it
+ *  into VoiceServiceDeps.window). Oldest -> newest; nothing here is ever sent anywhere. */
+export function mediaWindowFor(
+  deps: { bridgeDb: BridgeDb; repos: Pick<Repos, 'chats'> },
+  chatId: ChatRef,
+  n: number,
+): Message[] {
+  const chat = deps.repos.chats.byId(chatId);
+  if (chat === null) return [];
+  if (!deps.bridgeDb.open()) return [];
+  const want = Math.max(1, Math.trunc(n));
+  return deps.bridgeDb
+    .lastMessages(chat.jid, want * 2)
+    .map(toMessage)
+    .filter(isWindowRow)
+    .slice(-want);
 }
 
 /** The text the user approved for an outbound action (post-edit wins), or null when the payload is gone (retention) or not a reply. */
@@ -188,12 +232,81 @@ export function createIngest(deps: IngestDeps): Ingest {
     return false;
   };
 
+  /** [V2-W1-07, F28] P2 2 item 5 "does not match an app send": the row's wa id is the recorded result of, or its text equals the approved
+   *  text of, ANY executing / done / unknown_outcome send_reply of the chat (no time window - a false match only keeps the v1 path). */
+  const isAppSendInChat = (chatId: ChatRef, m: Message): boolean => {
+    const ids = repos.db.prepare<{ itemId: number }>(SENT_REPLY_ITEMS_SQL).all(chatId);
+    for (const { itemId } of ids) {
+      for (const a of repos.actions.forItem(itemId as ItemId)) {
+        if (a.kind !== 'send_reply') continue;
+        if (a.state !== 'executing' && a.state !== 'done' && a.state !== 'unknown_outcome') continue;
+        if (a.result?.kind === 'send_reply' && a.result.waMsgId !== null && a.result.waMsgId === m.waMsgId) return true;
+        if (approvedSendText(a) === m.text) return true;
+      }
+    }
+    return false;
+  };
+
+  /**
+   * [V2-W1-07, F28 / P2 2 item 5] The ENQUEUE half of the self trigger. The user's own live text row that is not an app send, in a chat
+   * whose findExistingEvent() is non-null and whose S0 verdict (every gate after the from_me rule) is queued / deferred, re-arms the open
+   * item (or opens one, trigger = this row) and enqueues the chat; the orchestrator's selfTriggerRow() then runs it as a self run (only an
+   * update_event, no S3). The v1 bookkeeping is kept: reply_state 'answered_elsewhere' and the pending send_reply superseded. Returns false
+   * (=> the caller takes the unchanged v1 path) when any condition fails. An open item with a pending v1 event approval
+   * (event_state proposed / incomplete) keeps the v1 path: a self run inserts only an update_event and would close that card not_needed.
+   */
+  const trySelfTrigger = (chat: Chat, m: Message, open: Item | null, now: EpochMs, touched: ItemId[]): boolean => {
+    if (!isSelfTriggerCandidate(m)) return false;
+    if (open !== null && (open.eventState === 'proposed' || open.eventState === 'incomplete')) return false;
+    if (liveness(m.ts, now) !== 'live') return false; // backlog / history replay / older-than-7-d: never a run
+    if (findExistingEvent(repos, chat.id, now) === null) return false; // without an editable event: v1 exactly
+    if (isAppSendInChat(chat.id, m)) return false;
+    const verdict = classify({
+      chat,
+      message: m,
+      isLive: true,
+      isOlderLive: false,
+      hasOpenItem: open !== null,
+      nowMs: now,
+      selfTrigger: true,
+    });
+    if (verdict.kind !== 'queued' && verdict.kind !== 'deferred') return false;
+
+    const triggerTs = m.ts ?? now;
+    let item: Item;
+    if (open === null) {
+      item = repos.items.createOpen({
+        chatId: chat.id,
+        triggerMsgId: m.waMsgId,
+        triggerTs,
+        analysis: 'queued',
+        holdReason: null,
+        now,
+      });
+      // at most ONE approvable draft per chat (R2) - and the user just wrote in this chat themselves
+      repos.actions.supersedePendingRepliesOfChat(chat.id, item.id, now);
+    } else {
+      item = repos.items.update(
+        open.id,
+        { replyState: 'answered_elsewhere', analysis: 'queued', holdReason: null, triggerMsgId: m.waMsgId, triggerTs },
+        now,
+      );
+      repos.actions.supersedePendingOfKind(open.id, 'send_reply', now);
+    }
+    touched.push(item.id);
+    repos.queue.enqueue(chat.id, now);
+    if (verdict.kind === 'deferred') repos.queue.defer(chat.id, verdict.until);
+    log.info('ingest_self_trigger', { chatId: chat.id, itemId: item.id, opened: open === null });
+    return true;
+  };
+
   const handleOutbound = (chat: Chat, m: Message, now: EpochMs, touched: ItemId[]): void => {
     if (m.ts !== null) repos.chats.touch(chat.id, { lastOutboundTs: m.ts });
     const item = repos.items.openForChat(chat.id);
-    if (item === null) return;
     // our own approved send landing in messages.db is not "answered elsewhere"; exec/reconcile.ts records the wa_msg_id.
-    if (ownSendMatches(item.id, m, now)) return;
+    if (item !== null && ownSendMatches(item.id, m, now)) return;
+    if (trySelfTrigger(chat, m, item, now, touched)) return;
+    if (item === null) return;
     const eventPending = item.eventState === 'proposed' || item.eventState === 'incomplete';
     repos.items.update(
       item.id,
@@ -246,6 +359,9 @@ export function createIngest(deps: IngestDeps): Ingest {
     let item: Item;
     if (existing === null) {
       item = repos.items.createOpen({ chatId: chat.id, triggerMsgId: m.waMsgId, triggerTs, analysis, holdReason, now });
+      // [V2] trigger_kind is set at item creation from the row that created it (S4 rewrites it per proposal version, P2 2)
+      const kind = triggerKindOf(m);
+      if (kind !== 'text') item = repos.items.update(item.id, { triggerKind: kind }, now);
       if (older) item = repos.items.update(item.id, { badges: withOlderBadge([]) }, now);
       // [R2] at most ONE approvable draft per chat: a new open item supersedes pending send_reply actions of this chat's other items.
       repos.actions.supersedePendingRepliesOfChat(chat.id, item.id, now);
@@ -421,11 +537,20 @@ export function createIngest(deps: IngestDeps): Ingest {
     if (chat === null) return [];
     if (!bridgeDb.open()) return [];
     const want = Math.max(1, Math.trunc(n));
-    return bridgeDb
-      .lastMessages(chat.jid, want * 2)
-      .map(toMessage)
-      .filter((m) => !isNeverTrigger(m))
-      .slice(-want);
+    const out: Message[] = [];
+    for (const m of bridgeDb.lastMessages(chat.jid, want * 2).map(toMessage)) {
+      if (!isWindowRow(m)) continue;
+      if (m.mediaType === 'audio') {
+        // [V2] C2 12 / P2 3.3: an audio row enters the window only with a 'done' transcript (Message.voice); failed / aborted / empty /
+        // missing transcripts are omitted, never an empty-text row. The text stays UNTRUSTED (nonce block + inert VoiceBubble only).
+        const t = repos.transcripts.get(m.chatJid, m.waMsgId);
+        if (t === null || t.status !== 'done' || t.text === null || t.text === '') continue;
+        out.push({ ...m, voice: { transcript: t.text, language: t.language, seconds: t.seconds } });
+        continue;
+      }
+      out.push(m);
+    }
+    return out.slice(-want);
   };
 
   return { poke, scanNow, resolveLidChats, contextFor };

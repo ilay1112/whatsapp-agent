@@ -1,0 +1,391 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`ConnectCard - RTL > RTL snapshot: not_installed (the command field stays LTR) 1`] = `
+<section
+  class="flex flex-col gap-2"
+  data-selected="false"
+  data-size="full"
+  data-state="not_installed"
+  data-testid="connect-claude_cli"
+>
+  <div
+    class="flex flex-wrap items-center gap-2"
+  >
+    <span
+      aria-hidden="true"
+      class="icon icon-terminal text-warn"
+    />
+    <span
+      class="grow"
+      data-testid="connect-state-claude_cli"
+      role="status"
+    >
+      Claude Code לא מותקן במחשב הזה.
+    </span>
+  </div>
+  <p
+    class="m-0 text-sm"
+  >
+    הריצו את הפקודה ב-PowerShell וחזרו לכאן:
+  </p>
+  <div
+    class="flex flex-wrap items-center gap-2"
+  >
+    <input
+      aria-label="פקודת התקנה / פקודת עדכון"
+      class="field command-field min-w-0 grow basis-60"
+      data-testid="connect-command-claude_cli"
+      dir="ltr"
+      readonly=""
+      value="irm https://claude.ai/install.ps1 | iex"
+    />
+    <button
+      class="btn btn-primary"
+      data-testid="connect-copy-claude_cli"
+      type="button"
+    >
+      העתקת הפקודה
+    </button>
+  </div>
+  <div
+    class="flex flex-wrap items-center gap-2"
+  >
+    <span
+      class="grow text-sm text-text-muted"
+    >
+      האפליקציה אף פעם לא מתקינה דבר בעצמה.
+    </span>
+    <button
+      class="btn btn-quiet"
+      data-testid="connect-open-install-claude_cli"
+      type="button"
+    >
+      פתיחת דף ההתקנה
+    </button>
+    <button
+      class="btn btn-quiet"
+      data-testid="connect-check-claude_cli"
+      type="button"
+    >
+      בדיקה חוזרת
+    </button>
+  </div>
+  <div
+    class="flex flex-col items-start gap-1"
+  >
+    <button
+      aria-describedby="ai-use-why-claude_cli"
+      class="btn btn-outline"
+      data-testid="ai-use-claude_cli"
+      disabled=""
+      type="button"
+    >
+      שימוש ב-Claude - המנוי שלך
+    </button>
+    <span
+      class="text-xs text-text-muted"
+      id="ai-use-why-claude_cli"
+    >
+      קודם צריך להשלים את השלבים שלמעלה
+    </span>
+  </div>
+</section>
+`;
+
+exports[`ConnectCard - RTL > RTL snapshot: not_signed_in (the command field stays LTR) 1`] = `
+<section
+  class="flex flex-col gap-2"
+  data-selected="false"
+  data-size="full"
+  data-state="not_signed_in"
+  data-testid="connect-claude_cli"
+>
+  <div
+    class="flex flex-wrap items-center gap-2"
+  >
+    <span
+      aria-hidden="true"
+      class="icon icon-alert text-warn"
+    />
+    <span
+      class="grow"
+      data-testid="connect-state-claude_cli"
+      role="status"
+    >
+      Claude Code 2.1.258 מותקן אבל לא מחובר לחשבון.
+    </span>
+    <button
+      class="btn btn-primary"
+      data-testid="connect-signin-claude_cli"
+      type="button"
+    >
+      התחברות
+    </button>
+  </div>
+  <p
+    class="m-0 text-sm text-text-muted"
+  >
+    ההתחברות נפתחת בחלון של Anthropic עצמה. האפליקציה לא רואה את הסיסמה.
+  </p>
+  <div
+    class="flex flex-col items-start gap-1"
+  >
+    <button
+      aria-describedby="ai-use-why-claude_cli"
+      class="btn btn-outline"
+      data-testid="ai-use-claude_cli"
+      disabled=""
+      type="button"
+    >
+      שימוש ב-Claude - המנוי שלך
+    </button>
+    <span
+      class="text-xs text-text-muted"
+      id="ai-use-why-claude_cli"
+    >
+      קודם צריך להשלים את השלבים שלמעלה
+    </span>
+  </div>
+</section>
+`;
+
+exports[`ConnectCard - RTL > RTL snapshot: ready (the command field stays LTR) 1`] = `
+<section
+  class="flex flex-col gap-2"
+  data-selected="false"
+  data-size="full"
+  data-state="ready"
+  data-testid="connect-claude_cli"
+>
+  <div
+    class="flex flex-wrap items-center gap-2"
+  >
+    <span
+      class="grow"
+      data-testid="connect-state-claude_cli"
+      role="status"
+    >
+      מוכן - Claude Code 2.1.258, מחובר לחשבון.
+    </span>
+  </div>
+  <div
+    class="flex flex-wrap items-center gap-2"
+  >
+    <label
+      class="font-semibold"
+      for="connect-model-claude_cli"
+    >
+      מודל
+    </label>
+    <input
+      aria-invalid="false"
+      class="field w-52"
+      data-testid="connect-model-claude_cli"
+      dir="ltr"
+      id="connect-model-claude_cli"
+      list="connect-claude-presets"
+      spellcheck="false"
+      value="sonnet"
+    />
+    <datalist
+      id="connect-claude-presets"
+    >
+      <option
+        value="sonnet"
+      >
+        sonnet (מומלץ)
+      </option>
+      <option
+        value="haiku"
+      >
+        haiku
+      </option>
+      <option
+        value="opus"
+      >
+        opus
+      </option>
+    </datalist>
+    <span
+      class="text-sm text-text-muted"
+    >
+      לפי מה שזמין במנוי שלך
+    </span>
+  </div>
+  <div
+    class="flex flex-wrap items-center gap-2"
+  >
+    <button
+      class="btn btn-outline"
+      data-testid="connect-test-claude_cli"
+      type="button"
+    >
+      הרצת בדיקה
+    </button>
+    <span
+      class="text-sm text-text-muted"
+    >
+      (משתמש במעט מהמכסה שלך)
+    </span>
+  </div>
+  <div
+    class="flex flex-col items-start gap-1"
+  >
+    <button
+      class="btn btn-outline"
+      data-testid="ai-use-claude_cli"
+      type="button"
+    >
+      שימוש ב-Claude - המנוי שלך
+    </button>
+  </div>
+</section>
+`;
+
+exports[`ConnectCard - RTL > RTL snapshot: too_old (the command field stays LTR) 1`] = `
+<section
+  class="flex flex-col gap-2"
+  data-selected="false"
+  data-size="full"
+  data-state="too_old"
+  data-testid="connect-claude_cli"
+>
+  <div
+    class="flex flex-wrap items-center gap-2"
+  >
+    <span
+      aria-hidden="true"
+      class="icon icon-terminal text-warn"
+    />
+    <span
+      class="grow"
+      data-testid="connect-state-claude_cli"
+      role="status"
+    >
+      הגרסה 2.1.258 של Claude Code ישנה מדי - נדרשת גרסה 2.1.248 ומעלה.
+    </span>
+  </div>
+  <div
+    class="flex flex-wrap items-center gap-2"
+  >
+    <input
+      aria-label="פקודת התקנה / פקודת עדכון"
+      class="field command-field min-w-0 grow basis-60"
+      data-testid="connect-command-claude_cli"
+      dir="ltr"
+      readonly=""
+      value="claude update"
+    />
+    <button
+      class="btn btn-primary"
+      data-testid="connect-copy-claude_cli"
+      type="button"
+    >
+      העתקת הפקודה
+    </button>
+  </div>
+  <p
+    class="m-0 text-sm text-text-muted"
+  >
+    הותקן דרך WinGet? השתמשו ב: 
+    <bdi
+      dir="ltr"
+    >
+      winget upgrade Anthropic.ClaudeCode
+    </bdi>
+  </p>
+  <div
+    class="flex flex-wrap items-center gap-2"
+  >
+    <button
+      class="btn btn-quiet"
+      data-testid="connect-check-claude_cli"
+      type="button"
+    >
+      בדיקה חוזרת
+    </button>
+  </div>
+  <div
+    class="flex flex-col items-start gap-1"
+  >
+    <button
+      aria-describedby="ai-use-why-claude_cli"
+      class="btn btn-outline"
+      data-testid="ai-use-claude_cli"
+      disabled=""
+      type="button"
+    >
+      שימוש ב-Claude - המנוי שלך
+    </button>
+    <span
+      class="text-xs text-text-muted"
+      id="ai-use-why-claude_cli"
+    >
+      קודם צריך להשלים את השלבים שלמעלה
+    </span>
+  </div>
+</section>
+`;
+
+exports[`ConnectCard - RTL > RTL snapshot: unknown (the command field stays LTR) 1`] = `
+<section
+  class="flex flex-col gap-2"
+  data-selected="false"
+  data-size="full"
+  data-state="unknown"
+  data-testid="connect-claude_cli"
+>
+  <div
+    class="flex flex-wrap items-center gap-2"
+  >
+    <span
+      aria-hidden="true"
+      class="icon icon-alert text-warn"
+    />
+    <span
+      class="grow"
+      data-testid="connect-state-claude_cli"
+      role="status"
+    >
+      לא הצלחנו לבדוק אם יש חיבור לחשבון.
+    </span>
+    <button
+      class="btn btn-primary"
+      data-testid="connect-signin-claude_cli"
+      type="button"
+    >
+      התחברות
+    </button>
+  </div>
+  <div
+    class="flex flex-wrap items-center gap-2"
+  >
+    <button
+      class="btn btn-quiet"
+      data-testid="connect-check-claude_cli"
+      type="button"
+    >
+      בדיקה חוזרת
+    </button>
+  </div>
+  <div
+    class="flex flex-col items-start gap-1"
+  >
+    <button
+      aria-describedby="ai-use-why-claude_cli"
+      class="btn btn-outline"
+      data-testid="ai-use-claude_cli"
+      disabled=""
+      type="button"
+    >
+      שימוש ב-Claude - המנוי שלך
+    </button>
+    <span
+      class="text-xs text-text-muted"
+      id="ai-use-why-claude_cli"
+    >
+      קודם צריך להשלים את השלבים שלמעלה
+    </span>
+  </div>
+</section>
+`;

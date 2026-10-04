@@ -27,7 +27,10 @@
     "pack:dir": "npm run build && node scripts/hash-bridge.mjs && electron-builder --win --x64 --dir",
     "test:smoke": "npm run pack:dir && node scripts/smoke-packaged.mjs dist/win-unpacked",
     "audit:prod": "npm audit --omit=dev",
-    "verify": "npm run lint && npm run format:check && npm run typecheck && npm run stage:mcp && npm run test:coverage && npm run test:e2e && npm run test:smoke && npm run audit:prod"
+    "fetch:whisper": "node scripts/fetch-whisper.mjs",
+    "gen:fixtures": "node scripts/gen-v3-fixture.mjs && node scripts/gen-golden-images.mjs",
+    "bench:wa": "vitest run --project integration tests/bench/wa-bridgedb.bench.test.ts",
+    "verify": "npm run lint && npm run format:check && npm run typecheck && npm run stage:mcp && npm run test:coverage && npm run test:e2e && npm run fetch:whisper && npm run test:smoke && npm run audit:prod"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "0.127.0",
@@ -35,6 +38,7 @@
     "@modelcontextprotocol/sdk": "1.30.0",
     "electron-log": "5.4.4",
     "i18next": "26.4.2",
+    "opus-decoder": "0.7.12",
     "zod": "4.6.5"
   },
   "devDependencies": {

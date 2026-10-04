@@ -31,7 +31,8 @@ describe('DownloadPill', () => {
     expect(pill).toHaveTextContent('12 min left');
     const bar = screen.getByRole('progressbar');
     expect(bar).toHaveAttribute('aria-valuenow', '43');
-    expect(bar).toHaveAttribute('aria-valuetext', '43 percent, about 12 minutes left');
+    // [V2] UX2 2.1: the value text names the file ("Voice model, 62 percent, about 4 minutes left")
+    expect(bar).toHaveAttribute('aria-valuetext', 'Standard model, 43 percent, about 12 minutes left');
   });
 
   it('renders the paused, verifying and failed states', () => {

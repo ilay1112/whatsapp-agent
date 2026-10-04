@@ -463,3 +463,142 @@ describe('[R2] A20 - the consent channel itself', () => {
     expect(h.repos.settings.get().llm.provider).toBe(before);
   });
 });
+
+// ---------------------------------------------------------------------------------------------------------------------
+// [V2] (owner V2-W2-02) T2 8.2 group 23, consent half: the CLI providers need their own consent; the v2 text bump re-blocks a v1
+// record of the API providers; `all_chats` with a cloud provider needs that provider's CURRENT (v2) consent.
+// ---------------------------------------------------------------------------------------------------------------------
+describe('[V2] A20 / B17 / B21 - consent for the CLI providers, the v2 bump and the all_chats scope', () => {
+  function v2Settings(provider: 'claude' | 'gemini' | 'claude_cli' | 'antigravity_cli'): Settings {
+    const s = settingsWith('local') as unknown as { llm: Record<string, unknown> };
+    return {
+      ...s,
+      llm: { ...s.llm, provider, cli: { claudeModel: 'cli-test-model', agyModel: 'agy-test-model' } },
+    } as unknown as Settings;
+  }
+  function cliFactory(
+    repos: ReturnType<typeof memoryRepos>,
+    provider: 'claude_cli' | 'antigravity_cli',
+    built: string[],
+  ): ReturnType<typeof createProviderFactory> {
+    const fake = (id: string): LlmProvider =>
+      ({
+        id,
+        model: 'm',
+        validate: () => Promise.resolve({ ok: true }),
+        dispose: () => Promise.resolve(),
+      }) as unknown as LlmProvider;
+    return createProviderFactory({
+      settings: () => v2Settings(provider),
+      secrets: {
+        get: () => Promise.reject(new Error('a CLI provider reads no secret')),
+        has: () => ({ present: false, encrypted: true }) as never,
+      },
+      repos,
+      makeClaude: () => fake('claude'),
+      makeGemini: () => fake('gemini'),
+      makeLocal: () => fake('local'),
+      makeClaudeCli: () => {
+        built.push('claude_cli');
+        return Promise.resolve(fake('claude_cli'));
+      },
+      makeAgy: () => {
+        built.push('antigravity_cli');
+        return Promise.resolve(fake('antigravity_cli'));
+      },
+      log: silentLog,
+      now: () => NOW,
+    });
+  }
+
+  it('the consent table: each CLI provider has its OWN kind at version 1; the API kinds are at version 2', () => {
+    expect(CONSENT_KIND_FOR.claude_cli).toBe('cloud_claude_cli');
+    expect(CONSENT_KIND_FOR.antigravity_cli).toBe('cloud_antigravity_cli');
+    expect(CONSENT_VERSIONS.cloud_claude_cli).toBe(1);
+    expect(CONSENT_VERSIONS.cloud_antigravity_cli).toBe(1);
+    expect(CONSENT_VERSIONS.cloud_claude).toBe(2);
+    expect(CONSENT_VERSIONS.cloud_gemini).toBe(2);
+  });
+
+  it.each(['claude_cli', 'antigravity_cli'] as const)(
+    'the factory throws for %s without its consent - even with every OTHER consent accepted - and builds nothing',
+    async (id) => {
+      const repos = memoryRepos();
+      try {
+        repos.consents.accept('cloud_claude', CONSENT_VERSIONS.cloud_claude, NOW);
+        repos.consents.accept('cloud_gemini', CONSENT_VERSIONS.cloud_gemini, NOW);
+        const other = id === 'claude_cli' ? 'cloud_antigravity_cli' : 'cloud_claude_cli';
+        if (other === 'cloud_antigravity_cli') repos.consents.accept(other, 1, NOW, '2026-09-28');
+        else repos.consents.accept(other, 1, NOW);
+        const built: string[] = [];
+        const factory = cliFactory(repos, id, built);
+        expect(() => assertConsent(repos, id)).toThrow(ConsentRequiredError);
+        await expect(factory.get()).rejects.toBeInstanceOf(ConsentRequiredError);
+        expect(factory.usable()).toEqual({ ok: false, code: 'CONSENT_REQUIRED' });
+        expect(built, 'the CLI must not even be located without consent').toEqual([]);
+
+        if (id === 'antigravity_cli') repos.consents.accept('cloud_antigravity_cli', 1, NOW, '2026-09-28');
+        else repos.consents.accept('cloud_claude_cli', 1, NOW);
+        expect(() => assertConsent(repos, id)).not.toThrow();
+        await expect(factory.get()).resolves.toBeDefined();
+        expect(built).toEqual([id]);
+      } finally {
+        repos.close();
+      }
+    },
+  );
+
+  it.each(['claude', 'gemini'] as const)(
+    'a v1 record of cloud_%s (accepted before the v2 text bump) no longer counts: the factory throws and reads no key',
+    async (id) => {
+      const repos = memoryRepos();
+      try {
+        repos.consents.accept(CONSENT_KIND_FOR[id], 1, NOW);
+        expect(repos.consents.isCurrent(CONSENT_KIND_FOR[id])).toBe(false);
+        const reads: string[] = [];
+        const factory = createProviderFactory({
+          settings: () => settingsWith(id),
+          secrets: {
+            get: (name) => {
+              reads.push(name);
+              return Promise.resolve('sk-ant-TESTONLY-0123456789abcdef');
+            },
+            has: () => ({ present: true, encrypted: true }) as never,
+          },
+          repos,
+          makeClaude: () => ({}) as LlmProvider,
+          makeGemini: () => ({}) as LlmProvider,
+          makeLocal: () => ({}) as LlmProvider,
+          log: silentLog,
+        });
+        await expect(factory.get()).rejects.toBeInstanceOf(ConsentRequiredError);
+        expect(factory.usable()).toEqual({ ok: false, code: 'CONSENT_REQUIRED' });
+        expect(reads).toEqual([]);
+      } finally {
+        repos.close();
+      }
+    },
+  );
+
+  it('wa:setReadScope all_chats with a cloud provider on a v1 consent => CONSENT_REQUIRED, no dialog, nothing written', async () => {
+    h = await createHarness({ provider: 'claude', profile: { cloudConsent: false } });
+    const before = (await h.invoke('settings:get', undefined)) as { ok: boolean; value?: Settings };
+    expect(before.ok).toBe(true);
+    expect(before.value!.whatsapp.readTools.scope).toBe('trigger_chat');
+    expect(before.value!.llm.provider).toBe('claude');
+    // only the text the user read BEFORE the v2 bump is on disk
+    h.repos.consents.accept('cloud_claude', 1, h.clock.now() as EpochMs);
+    const res = await h.invoke('wa:setReadScope', { scope: 'all_chats' });
+    expect(res).toMatchObject({ ok: false, error: { code: 'CONSENT_REQUIRED' } });
+    expect(h.dialogs).toEqual([]);
+    const after = (await h.invoke('settings:get', undefined)) as { ok: boolean; value?: Settings };
+    expect(after.value!.whatsapp.readTools.scope).toBe('trigger_chat');
+    // the CURRENT text unlocks only the next step (the main-owned native confirmation, scripted to cancel here)
+    h.repos.consents.accept('cloud_claude', CONSENT_VERSIONS.cloud_claude, h.clock.now() as EpochMs);
+    const res2 = await h.invoke('wa:setReadScope', { scope: 'all_chats' });
+    expect(h.dialogs.map((d) => d.kind)).toEqual(['setting_read_all_chats']);
+    expect(res2.ok && (res2 as { value?: { scope?: string } }).value?.scope === 'all_chats').toBe(false);
+    const after2 = (await h.invoke('settings:get', undefined)) as { ok: boolean; value?: Settings };
+    expect(after2.value!.whatsapp.readTools.scope).toBe('trigger_chat');
+  });
+});

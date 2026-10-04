@@ -10,12 +10,24 @@ import type { ErrorCode } from '../../../shared/errors';
 import { checkVcRuntime, isVcRuntimeExitCode } from './hardware';
 
 export type LlamaRuntimeStatus = 'stopped' | 'starting' | 'ready' | 'failed';
+/** [V2 ADD, V2-W1-08] B19 / C2 9.1: the picture-reading state of the child.
+ *  requested = the running (or starting) child was spawned with `--mmproj` ; ready = it is ready AND `GET /props` reported
+ *  `modalities.vision === true` (= `mmprojReady`, the local provider's `capabilities.images`) ; stale = the child is up but the
+ *  wanted flag set (settings.images.enabled && projector present) differs from the spawned one - the next ensureStarted()
+ *  through the supervised facade restarts it (toggling restarts the child exactly like a flag change, C2 9.1). */
+export interface LlamaVisionStatus {
+  requested: boolean;
+  ready: boolean;
+  stale: boolean;
+}
 export interface LlamaRuntime {
   /** Spawns llama-server (fresh port + LLAMA_API_KEY via env, never argv) if needed and waits for GET /health 200. */
   ensureStarted(): Promise<{ port: number; apiKey: string }>;
   stop(): Promise<void>;
   childSpec(): ChildSpec; // registered with the Supervisor by compose.ts
   status(): { state: LlamaRuntimeStatus; code: ErrorCode | null; device: 'gpu' | 'cpu' | null };
+  /** [V2 ADD, V2-W1-08] optional so every v1 double still satisfies the interface; absent = no vision. */
+  vision?(): LlamaVisionStatus;
 }
 export interface LlamaRuntimeDeps {
   exePath: string; // <resources>\llama\llama-server.exe (or the WCA_LLAMA_CMD command in e2e builds)
@@ -43,6 +55,12 @@ export interface LlamaRuntimeDeps {
   /** Readiness budget; ARCH section 9 says 180 s for a cold multi-GB model. */
   readyTimeoutMs?: number;
   healthPollMs?: number;
+  // --- [V2 ADD, V2-W1-08] B19 / C2 9.1 (optional: absent = the v1 text-only child) ---
+  /** settings.images.enabled. */
+  imagesEnabled?: () => boolean;
+  /** Absolute path of the SELECTED tier's projector (`<userData>\models\<id>-mmproj-F16.gguf`) once it is downloaded and verified;
+   *  null while it is missing. Never a user-supplied path (the model manager resolves it from MEDIA_MODEL_MANIFEST). */
+  mmprojPath?: () => string | null;
 }
 
 // ---------------------------------------------------------------------------------------------------------------------
@@ -90,6 +108,30 @@ export interface LlamaArgsInput {
   lowRam: boolean;
   forceCpu: boolean;
   deviceArg: string | null;
+  /** [V2 ADD, V2-W1-08] the projector to load (B19); absent / null = the v1 text-only flag set. */
+  vision?: { mmprojPath: string; tier: ModelTier } | null;
+}
+
+/** [V2 ADD] B19: Gemma 4 visual token budget per tier (70/140/280/560/1120 exist; OCR needs 560+; tiny keeps CPU time down). */
+export const LLAMA_IMAGE_MAX_TOKENS: Readonly<Record<ModelTier, number>> = { tiny: 560, small: 1120, mid: 1120 };
+/** [V2 ADD] B19: the 12B projector attends bidirectionally over image tokens and needs n_ubatch >= n_tokens (llama.cpp #21461/#21550). */
+export const LLAMA_MID_VISION_BATCH = 2048;
+
+/** [V2 ADD] B19 / C2 9.1 literal: `--mmproj <file> --mmproj-device none --image-max-tokens 1120` (tiny: 560; mid: + batch 2048). The
+ *  projector always runs on the CPU (`gemma4uv` NaN / abort reports on GPU backends - image-events 2.3). */
+export function buildVisionArgs(mmprojPath: string, tier: ModelTier): string[] {
+  const args = [
+    '--mmproj',
+    mmprojPath,
+    '--mmproj-device',
+    'none',
+    '--image-max-tokens',
+    String(LLAMA_IMAGE_MAX_TOKENS[tier]),
+  ];
+  if (tier === 'mid') {
+    args.push('--batch-size', String(LLAMA_MID_VISION_BATCH), '--ubatch-size', String(LLAMA_MID_VISION_BATCH));
+  }
+  return args;
 }
 
 /** Exact flag array of ARCHITECTURE section 9 / TESTS 3.5. No `--log-file`; the API key is NEVER an argument. */
@@ -113,6 +155,8 @@ export function buildLlamaArgs(input: LlamaArgsInput): string[] {
     '--reasoning-budget',
     '0',
   ];
+  if (input.vision !== undefined && input.vision !== null)
+    args.push(...buildVisionArgs(input.vision.mmprojPath, input.vision.tier));
   if (input.lowRam) args.push('--cache-ram', '0');
   if (input.forceCpu) args.push('--device', 'none');
   else if (input.deviceArg !== null) args.push('--device', input.deviceArg);
@@ -159,6 +203,18 @@ export function createLlamaRuntime(deps: LlamaRuntimeDeps): LlamaRuntime {
   let starting: Promise<{ port: number; apiKey: string }> | null = null;
   const exitListeners: Array<(info: { code: number | null; signal: string | null }) => void> = [];
   const usedPorts: number[] = [];
+  /** [V2] the projector the current child was spawned with (null = text only) and whether /props confirmed vision. */
+  let spawnedVision: string | null = null;
+  let visionReady = false;
+
+  /** [V2] B19: the projector the child SHOULD load now (images enabled + the selected tier's projector present). */
+  const wantedVision = (): string | null => {
+    if (deps.imagesEnabled?.() !== true) return null;
+    const p = deps.mmprojPath?.() ?? null;
+    if (p === null || p === '') return null;
+    if (deps.exists !== undefined && !deps.exists(p)) return null;
+    return p;
+  };
 
   /** Read through a function so TypeScript does not narrow the closure variable away inside the readiness loop. */
   const currentExit = (): { code: number | null; signal: string | null } | null => exitInfo;
@@ -179,6 +235,25 @@ export function createLlamaRuntime(deps: LlamaRuntimeDeps): LlamaRuntime {
   const health = async (signal?: AbortSignal): Promise<number> => {
     const res = await deps.fetch(`http://127.0.0.1:${String(port)}/health`, { redirect: 'error', signal });
     return res.status;
+  };
+
+  /** [V2] C2 9.1: readiness for pictures = GET /props -> modalities.vision === true (never trusted from the spawn args alone). The
+   *  body is local-server JSON; only the boolean leaves this function. */
+  const probeVision = async (): Promise<boolean> => {
+    try {
+      const res = await deps.fetch(`http://127.0.0.1:${String(port)}/props`, {
+        headers: { authorization: `Bearer ${apiKey}` },
+        redirect: 'error',
+      });
+      if (res.status !== 200) {
+        await res.text().catch(() => '');
+        return false;
+      }
+      const body = (await res.json()) as { modalities?: { vision?: unknown } } | null;
+      return body?.modalities?.vision === true;
+    } catch {
+      return false;
+    }
   };
 
   const killChild = (): void => {
@@ -215,7 +290,10 @@ export function createLlamaRuntime(deps: LlamaRuntimeDeps): LlamaRuntime {
     const forceCpu = deps.forceCpu() || deps.acceleration() === 'off';
     const lowRam = (deps.totalMemBytes?.() ?? LOW_RAM_BYTES) < LOW_RAM_BYTES;
     const deviceArg = forceCpu ? null : (deps.preferredDevice?.() ?? null);
-    const flags = buildLlamaArgs({ modelPath, port, lowRam, forceCpu, deviceArg });
+    spawnedVision = wantedVision();
+    visionReady = false;
+    const vision = spawnedVision === null ? null : { mmprojPath: spawnedVision, tier: deps.tier() };
+    const flags = buildLlamaArgs({ modelPath, port, lowRam, forceCpu, deviceArg, vision });
     const args = [...(deps.exeArgs ?? []), ...flags];
 
     state = 'starting';
@@ -230,7 +308,7 @@ export function createLlamaRuntime(deps: LlamaRuntimeDeps): LlamaRuntime {
     });
     child = spawned;
     spawnedAt = deps.clock.now();
-    log.info('llama_spawned', { tier: deps.tier(), port, device, lowRam });
+    log.info('llama_spawned', { tier: deps.tier(), port, device, lowRam, vision: spawnedVision !== null });
     spawned.on('exit', (exitCode, signal) => {
       exitInfo = { code: exitCode, signal };
       if (isVcRuntimeExitCode(exitCode)) {
@@ -268,6 +346,11 @@ export function createLlamaRuntime(deps: LlamaRuntimeDeps): LlamaRuntime {
         status = 0;
       }
       if (status === 200) {
+        // [V2] a --mmproj child is text-ready either way; pictures additionally need /props to confirm the projector loaded.
+        if (spawnedVision !== null) {
+          visionReady = await probeVision();
+          log.info('llama_vision', { ready: visionReady });
+        }
         // Re-check the exit AFTER the fetch resolves, not only at the top of the loop: the 200 can already be on the
         // wire when the process dies (OOM, Vulkan device lost), and the 'exit' event is then delivered while this
         // await is pending. Without this check `state = 'ready'` overwrites the exit handler's 'failed' and the
@@ -313,6 +396,7 @@ export function createLlamaRuntime(deps: LlamaRuntimeDeps): LlamaRuntime {
         return;
       }
       state = 'stopped';
+      visionReady = false;
       const done = new Promise<void>((resolve) => {
         if (exitInfo !== null) {
           resolve();
@@ -367,6 +451,14 @@ export function createLlamaRuntime(deps: LlamaRuntimeDeps): LlamaRuntime {
       terminal: () => code === 'LLM_VCREDIST_MISSING',
     }),
     status: () => ({ state, code, device }),
+    vision: (): LlamaVisionStatus => {
+      const up = state === 'ready' && child !== null && exitInfo === null;
+      return {
+        requested: (state === 'ready' || state === 'starting') && spawnedVision !== null,
+        ready: up && visionReady,
+        stale: up && wantedVision() !== spawnedVision,
+      };
+    },
   };
   return runtime;
 }

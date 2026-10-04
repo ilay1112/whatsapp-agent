@@ -73,6 +73,7 @@ function scriptedRead(initial: BridgePairingStatusWire): Script {
       failure = err;
     },
     read: {
+      getMedia: () => Promise.reject(new Error('not used')), // [V2] C2 12
       health: () => Promise.reject(new Error('not used')),
       pairingStatus: async () => {
         script.statusCalls += 1;

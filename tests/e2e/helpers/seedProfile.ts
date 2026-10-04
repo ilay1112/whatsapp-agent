@@ -5,11 +5,15 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { createRepos, openDb, type Repos } from '../../../src/main/db/index.ts';
+import { mediaLocalFileName, type MediaModelFileId } from '../../../src/main/llm/local/manifest.ts';
 import {
+  ANTIGRAVITY_TERMS_READ_ON,
   CONSENT_VERSIONS,
   type ChatRef,
+  type ConsentKind,
   type EpochMs,
   type Lang,
+  type ModelTier,
   type OnboardingStep,
 } from '../../../src/shared/types.ts';
 import type { Settings } from '../../../src/shared/settings.ts';
@@ -50,6 +54,23 @@ export interface SeedProfileOptions {
   /** `tray_hint_seen` - set it to prove the coach mark is shown ONCE. */
   trayHintSeen?: boolean;
   now?: EpochMs;
+  // ---- [V2] ----
+  /** Consents at their CURRENT version (a CLI provider needs its own, B12). Never the automatic-mode policy: that has no seed. */
+  consents?: ConsentKind[];
+  /**
+   * Plain meta keys the app itself writes in normal use (e.g. `calendar_roles_json` after it listed the calendars once). The
+   * automatic-mode policy, a CLI "proven" flag or an undo approval are NOT meta keys and can never be seeded (T2 4.1 "Not seams").
+   */
+  meta?: Partial<Record<Parameters<Repos['meta']['set']>[0], string>>;
+  /** Media models the user downloaded earlier, as the ModelManager records them (file with the GGML magic + a `ready` row). */
+  readyMediaModels?: Array<{ id: MediaModelFileId; kind: 'asr' | 'vad' | 'mmproj' }>;
+  /**
+   * The local LLM tier the user downloaded earlier: the file (exact bytes, e.g. the fake model host's body) at its manifest file name
+   * and a `ready` row - so the Local provider starts the (fake) llama-server instead of offering a download.
+   */
+  readyLlm?: { tier: ModelTier; fileName: string; bytes: Uint8Array; sha256: string };
+  /** Any further settings change (applied through the settings repo, never through a seam). */
+  patchSettings?: (s: Settings) => void;
 }
 
 export interface SeededProfile {
@@ -112,6 +133,52 @@ export function seedProfile(opts: SeedProfileOptions): SeededProfile {
       repos.meta.set('last_online_ts', String(pairedAt));
     }
     if (opts.trayHintSeen === true) repos.meta.set('tray_hint_seen', '1');
+    // ---- [V2] ----
+    for (const kind of opts.consents ?? []) {
+      repos.consents.accept(
+        kind,
+        CONSENT_VERSIONS[kind],
+        now,
+        kind === 'cloud_antigravity_cli' ? ANTIGRAVITY_TERMS_READ_ON : undefined,
+      );
+    }
+    for (const [key, value] of Object.entries(opts.meta ?? {}))
+      if (value !== undefined) repos.meta.set(key as Parameters<Repos['meta']['set']>[0], value);
+    if (opts.patchSettings !== undefined) repos.settings.setInternal(opts.patchSettings);
+    if (opts.readyLlm !== undefined) {
+      const l = opts.readyLlm;
+      const file = join(opts.userDataDir, 'models', l.fileName);
+      writeFileSync(file, l.bytes);
+      repos.models.upsert({
+        id: l.tier,
+        kind: 'llm',
+        path: file,
+        size: l.bytes.byteLength,
+        sha256: l.sha256 as never,
+        mtime: 0,
+        status: 'ready',
+        bytesDone: l.bytes.byteLength,
+        verifiedAt: now,
+        bench: null,
+      });
+    }
+    for (const m of opts.readyMediaModels ?? []) {
+      const file = join(opts.userDataDir, 'models', mediaLocalFileName(m.id));
+      const magic = m.kind === 'mmproj' ? [0x47, 0x47, 0x55, 0x46] : [0x6c, 0x6d, 0x67, 0x67]; // GGUF / GGML ('lmgg')
+      writeFileSync(file, Buffer.from([...magic, 0]));
+      repos.models.upsert({
+        id: m.id,
+        kind: m.kind,
+        path: file,
+        size: 5,
+        sha256: '0'.repeat(64) as never,
+        mtime: 0,
+        status: 'ready',
+        bytesDone: 5,
+        verifiedAt: now,
+        bench: null,
+      });
+    }
 
     for (const chat of opts.chats ?? []) {
       const row = repos.chats.upsertFromBridge(chat.jid, chat.name ?? null, chat.isKnown ?? true, now);

@@ -100,8 +100,29 @@ const ATTACK_DRAFT =
 function userText(messages: LlmMessage[]): string {
   return messages
     .filter((m): m is Extract<LlmMessage, { role: 'user' }> => m.role === 'user')
-    .map((m) => m.content)
+    .map((m) =>
+      typeof m.content === 'string'
+        ? m.content
+        : m.content
+            .filter((part): part is { type: 'text'; text: string } => part.type === 'text')
+            .map((part) => part.text)
+            .join('\n'),
+    )
     .join('\n');
+}
+/** [V2 W0] A v1-shaped e2e extraction script (no `change` key) gets the S1 v2 null-event defaults (C2 5 few-shot defaults), exactly like
+ *  tests/fakes/stub-llm.ts, so the v1 e2e scenarios stay schema-valid under the v2 ExtractionSchema. Keys a script sets are kept. */
+const V2_EXTRACTION_DEFAULTS = {
+  refersToExisting: false,
+  change: 'no_change',
+  changeConfidence: 'high',
+  confidence: 'high',
+};
+function withV2ExtractionDefaults(purpose: string, value: Record<string, unknown>): Record<string, unknown> {
+  if (purpose !== 'extract' || !('intent' in value)) return value;
+  const out: Record<string, unknown> = { ...value };
+  for (const [k, v] of Object.entries(V2_EXTRACTION_DEFAULTS)) if (!(k in out)) out[k] = v;
+  return out;
 }
 function turnOf(messages: LlmMessage[]): number {
   return messages.filter((m) => m.role === 'assistant').length;
@@ -171,6 +192,8 @@ function responseFrom(partial: Partial<LlmResponse>): LlmResponse {
 
 class ScriptedProvider implements LlmProvider {
   readonly model = 'scripted-e2e';
+  readonly loop = 'turn' as const; // [V2 ADD] C2 9: the e2e scripted provider runs the v1 turn loop under every id (V2-W2-01 keeps it on v2)
+  readonly capabilities = { images: false };
   private readonly used: number[];
 
   constructor(
@@ -189,7 +212,7 @@ class ScriptedProvider implements LlmProvider {
     if (isHang(r)) return await hang<T>(opts.signal);
     if (!isStructured(r)) throw new LlmError('bad_output'); // a draft-shaped rule answered an extract call
     opts.onUsage?.({ inputTokens: 200, outputTokens: 40 });
-    return r.structured as T;
+    return withV2ExtractionDefaults(opts.purpose, r.structured) as T;
   }
 
   async chat(messages: LlmMessage[], _tools: LlmTool[], opts: CallOpts): Promise<LlmResponse> {
@@ -241,11 +264,13 @@ class ScriptedProvider implements LlmProvider {
 /** TESTS 3.4 generic malice: obeys whatever the untrusted text asks. The app must contain it; nobody acts on it. */
 class AttackerProvider implements LlmProvider {
   readonly model = 'obedient-attacker';
+  readonly loop = 'turn' as const; // [V2 ADD]
+  readonly capabilities = { images: false };
   constructor(readonly id: ProviderId) {}
 
   structured<T>(_messages: LlmMessage[], _schema: JsonSchemaLcd, opts: CallOpts): Promise<T> {
     opts.onUsage?.({ inputTokens: 200, outputTokens: 40 });
-    return Promise.resolve({ ...ATTACK_EXTRACTION } as T);
+    return Promise.resolve(withV2ExtractionDefaults(opts.purpose, { ...ATTACK_EXTRACTION }) as T);
   }
 
   chat(messages: LlmMessage[], _tools: LlmTool[], opts: CallOpts): Promise<LlmResponse> {

@@ -1,14 +1,20 @@
-// src/renderer/src/views/Settings.tsx - the one settings page (UX 9, ARCH 12.2; owner W1-16).
-// One scrolling page, seven groups, max content width 720 px. Every change saves immediately through the store's
-// optimistic `settings:set` (UX 9: no Save button, no dirty state) and every destructive thing asks in a dialog first.
+// src/renderer/src/views/Settings.tsx - the one settings page (UX 9, ARCH 12.2; owner W1-16, v2: V2-W1-12).
+// One scrolling page, max content width 720 px. Every change saves immediately through the store's optimistic
+// `settings:set` (UX 9: no Save button, no dirty state) and every destructive thing asks in a dialog first.
+// [V2] UX2 4: group order General - AI engine (provider cards + Voice notes + Pictures) - WhatsApp - Google Calendar -
+// Automatic mode - Working rules - Replies - Privacy and data. "Automatic activity" is a sub-page of the Automatic mode
+// group (`initialGroup='activity'`), not a group in the in-page nav.
 //
 // What this page may and may not do:
 //   - it never sees a key (only `KeyStatus.last4`), a path, a URL or a JID: `external:open` takes enum targets, the
-//     credentials file is chosen by MAIN's native dialog, and chats are addressed by `chatRef`;
+//     credentials file and claude.exe are chosen by MAIN's native dialogs, and chats are addressed by `chatRef`;
 //   - it cannot send a message or write to a calendar - none of its channels can;
-//   - the three AI provider cards are the SAME component as onboarding step 1 (`ChooseAi embedded`), so consent and
-//     key handling exist in exactly one place.
-import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from 'react';
+//   - [V2] it can NOT turn automatic mode on through `settings:set` (no `auto` key exists): only the Automatic mode group's
+//     two enable buttons call `auto:requestEnable`, and main's native dialog decides. The overage switch and the
+//     read-scope radios use their dedicated channels (`cli:setOverage`, `wa:setReadScope`, F11), never `settings:set`;
+//   - the AI provider cards are the SAME component as onboarding step 1 (`ChooseAi embedded`), so consent, key and
+//     Connect-card handling exist in exactly one place.
+import { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { ChatView, GoogleWizardState, Lang, ModelPlan } from '@shared/types';
 import type { PairingState } from '@shared/health';
@@ -16,15 +22,26 @@ import { api, on } from '../api';
 import { applyDocumentLanguage, dirOf } from '../i18n';
 import { useHealthStore } from '../store/health';
 import { useSettingsStore } from '../store/settings';
+import { useAutoStore } from '../store/auto';
 import { QrPairing } from '../components/QrPairing';
 import { ChooseAi } from './Onboarding/ChooseAi';
 import { toPanelState } from './Onboarding/LinkWhatsApp';
-import { CheckIcon, num } from './Onboarding/frame';
+import { num } from './Onboarding/frame';
+import { AutoActivity } from './AutoActivity';
+import { AutomaticMode } from './settings/AutomaticMode';
+import { CliLimits } from './settings/CliLimits';
+import { ConfirmDialog, Group, Row, Toggle } from './settings/parts';
+import { Pictures } from './settings/Pictures';
+import { ReadTools } from './settings/ReadTools';
+import { VoiceNotes } from './settings/VoiceNotes';
 import './setup.css';
 
-export type SettingsGroup = 'general' | 'ai' | 'whatsapp' | 'calendar' | 'rules' | 'replies' | 'privacy';
+export { ConfirmDialog, Toggle } from './settings/parts';
+
+export type SettingsGroup = 'general' | 'ai' | 'whatsapp' | 'calendar' | 'auto' | 'rules' | 'replies' | 'privacy';
 export interface SettingsProps {
-  initialGroup?: SettingsGroup;
+  /** [V2] + 'auto' (a group) and 'activity' (the Automatic activity sub-page, UX2 4.6). */
+  initialGroup?: SettingsGroup | 'activity';
 }
 
 export const SETTINGS_GROUPS: readonly SettingsGroup[] = [
@@ -32,6 +49,7 @@ export const SETTINGS_GROUPS: readonly SettingsGroup[] = [
   'ai',
   'whatsapp',
   'calendar',
+  'auto',
   'rules',
   'replies',
   'privacy',
@@ -44,175 +62,21 @@ const RETENTION_DAYS = [7, 14, 30, 60, 90] as const;
 const GENDERS = ['m', 'f', 'unspecified'] as const;
 const AMBIGUOUS = ['assume', 'ask'] as const;
 const POLICIES = ['default', 'never'] as const;
-const PRIVACY_ROWS = ['local', 'claude', 'gemini', 'calendar', 'whatsapp'] as const;
+const AUTO_POLICIES = ['inherit', 'never'] as const;
+/** [V2] UX2 4.8: rows for providers never selected are still listed (the table explains choices, not state). */
+export const PRIVACY_ROWS = [
+  'local',
+  'claude_cli',
+  'antigravity_cli',
+  'claude',
+  'gemini',
+  'voice',
+  'calendar',
+  'whatsapp',
+] as const;
 const SAVED_MS = 2000;
 
 type DialogKind = 'relink' | 'wipe' | 'disconnect' | 'purge' | 'deleteModel' | 'licences';
-
-// ---------------------------------------------------------------------------------------------------------------------
-// small colocated parts (UX 14: no new component files; internal parts live next to the view that owns them)
-// ---------------------------------------------------------------------------------------------------------------------
-
-/** UX 9: 36 x 20 track, role="switch", the thumb carries a check when on - never colour alone. */
-export function Toggle({
-  checked,
-  onChange,
-  labelledBy,
-  testId,
-  disabled,
-}: {
-  checked: boolean;
-  onChange(next: boolean): void;
-  labelledBy: string;
-  testId: string;
-  disabled?: boolean;
-}) {
-  return (
-    <button
-      type="button"
-      role="switch"
-      aria-checked={checked}
-      aria-labelledby={labelledBy}
-      data-testid={testId}
-      className="switch"
-      disabled={disabled}
-      onClick={() => onChange(!checked)}
-    >
-      <span className="switch-thumb">{checked ? <CheckIcon size={12} /> : null}</span>
-    </button>
-  );
-}
-
-function Row({
-  id,
-  label,
-  desc,
-  htmlFor,
-  testId,
-  children,
-}: {
-  id?: string;
-  label: string;
-  desc?: string;
-  htmlFor?: string;
-  testId: string;
-  children: ReactNode;
-}) {
-  const text = (
-    <div className="flex min-w-60 grow flex-col">
-      {htmlFor ? (
-        <label htmlFor={htmlFor} id={id} className="font-semibold">
-          {label}
-        </label>
-      ) : (
-        <span id={id} className="font-semibold">
-          {label}
-        </span>
-      )}
-      {desc ? <span className="text-sm text-text-muted">{desc}</span> : null}
-    </div>
-  );
-  return (
-    <div data-testid={testId} className="flex flex-wrap items-center gap-3 border-b border-line py-3 last:border-b-0">
-      {text}
-      <div className="flex flex-wrap items-center gap-2">{children}</div>
-    </div>
-  );
-}
-
-function Group({ group, title, children }: { group: SettingsGroup; title: string; children: ReactNode }) {
-  return (
-    <section
-      id={`settings-group-${group}`}
-      data-testid={`settings-group-${group}`}
-      aria-labelledby={`settings-h-${group}`}
-      className="border-t border-line pt-4"
-    >
-      <h2 id={`settings-h-${group}`} className="mt-0 mb-1 text-md font-semibold">
-        {title}
-      </h2>
-      {children}
-    </section>
-  );
-}
-
-/** UX 10: alertdialog, scrim, Escape = cancel, initial focus on the LEAST destructive button, primary at the inline-end. */
-export function ConfirmDialog({
-  open,
-  title,
-  body,
-  confirmLabel,
-  cancelLabel,
-  danger,
-  testId,
-  onConfirm,
-  onCancel,
-}: {
-  open: boolean;
-  title: string;
-  body: string;
-  confirmLabel: string;
-  cancelLabel: string;
-  danger?: boolean;
-  testId: string;
-  onConfirm(): void;
-  onCancel(): void;
-}) {
-  const titleId = useId();
-  const cancelRef = useRef<HTMLButtonElement>(null);
-  useEffect(() => {
-    if (open) cancelRef.current?.focus();
-  }, [open]);
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (e: KeyboardEvent): void => {
-      if (e.key === 'Escape') {
-        e.preventDefault();
-        onCancel();
-      }
-    };
-    document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
-  }, [open, onCancel]);
-  if (!open) return null;
-  return (
-    <div className="fixed inset-0 z-50 grid place-items-center bg-scrim p-4">
-      <div
-        role="alertdialog"
-        aria-modal="true"
-        aria-labelledby={titleId}
-        data-testid={testId}
-        className="flex w-120 max-w-full flex-col gap-3 rounded-lg bg-surface p-5 shadow-sheet"
-      >
-        <h2 id={titleId} className="m-0 text-lg">
-          {title}
-        </h2>
-        <p className="m-0 text-text-muted">{body}</p>
-        <div className="flex justify-end gap-2">
-          <button
-            ref={cancelRef}
-            type="button"
-            className="btn btn-outline"
-            data-testid={`${testId}-cancel`}
-            onClick={onCancel}
-          >
-            {cancelLabel}
-          </button>
-          <button
-            type="button"
-            className={`btn ${danger ? 'btn-danger' : 'btn-primary'}`}
-            data-testid={`${testId}-confirm`}
-            onClick={onConfirm}
-          >
-            {confirmLabel}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------------------------------------------------
 
 export function Settings({ initialGroup = 'general' }: SettingsProps) {
   const { t, i18n } = useTranslation();
@@ -239,8 +103,13 @@ export function Settings({ initialGroup = 'general' }: SettingsProps) {
   // acknowledged. Deriving it (rather than setting a flag from an effect) keeps the effect free of synchronous state.
   const [ackSavedAt, setAckSavedAt] = useState(0);
   const showSaved = savedAt !== 0 && ackSavedAt !== savedAt;
+  // [V2] the Automatic activity sub-page (UX2 4.6) replaces the page; "< Automatic mode" returns to the group.
+  const [sub, setSub] = useState<'page' | 'activity'>(initialGroup === 'activity' ? 'activity' : 'page');
+  const autoState = useAutoStore((s) => s.state);
 
   useEffect(() => {
+    // [V2] the Automatic mode group needs AutoState; App hydrates the store at boot, this covers a direct open.
+    if (useAutoStore.getState().state === null) void useAutoStore.getState().hydrate();
     void api.getGoogleWizard().then((r) => r.ok && setGoogle(r.value));
     // Always re-read here (not the store's fetch-once path): the user may have just connected Google or added a
     // calendar, and this is the screen that shows the list.
@@ -255,10 +124,11 @@ export function Settings({ initialGroup = 'general' }: SettingsProps) {
     };
   }, []);
 
+  const [focusGroup, setFocusGroup] = useState<SettingsGroup>(initialGroup === 'activity' ? 'auto' : initialGroup);
   useEffect(() => {
-    const el = document.getElementById(`settings-group-${initialGroup}`);
-    el?.scrollIntoView?.({ block: 'start' });
-  }, [initialGroup]);
+    if (sub !== 'page') return;
+    document.getElementById(`settings-group-${focusGroup}`)?.scrollIntoView?.({ block: 'start' });
+  }, [focusGroup, sub]);
 
   useEffect(() => {
     if (savedAt === 0) return;
@@ -325,6 +195,14 @@ export function Settings({ initialGroup = 'general' }: SettingsProps) {
     if (list.ok) setPolicies(list.value.chats);
   }, []);
 
+  /** [V2] UX2 4.5 "Per-contact": the "Automatic" column (`chat:setPolicy {chatRef, autoPolicy}`). */
+  const setAutoPolicy = useCallback(async (chatRef: number, autoPolicy: 'inherit' | 'never') => {
+    const r = await api.setChatPolicy({ chatRef, autoPolicy });
+    if (!r.ok) return;
+    const list = await api.listPolicies();
+    if (list.ok) setPolicies(list.value.chats);
+  }, []);
+
   const toggleConflictCalendar = useCallback(
     (id: string, checked: boolean) => {
       const current = settings?.calendar.conflictCalendarIds ?? [];
@@ -340,6 +218,17 @@ export function Settings({ initialGroup = 'general' }: SettingsProps) {
       <main data-testid="settings" data-group={initialGroup} className="p-4 text-text-muted">
         {t('app.loading')}
       </main>
+    );
+  }
+
+  if (sub === 'activity') {
+    return (
+      <AutoActivity
+        onBack={() => {
+          setFocusGroup('auto');
+          setSub('page');
+        }}
+      />
     );
   }
 
@@ -379,6 +268,12 @@ export function Settings({ initialGroup = 'general' }: SettingsProps) {
   };
   const active = dialog && dialog !== 'licences' ? dialogText[dialog] : null;
   const localTier = plan?.tiers.find((row) => row.tier === plan.selectedTier) ?? null;
+  const targetId = settings.calendar.targetCalendarId;
+  const targetRole =
+    (
+      calendars.find((c) => c.id === targetId) ??
+      (targetId === 'primary' ? calendars.find((c) => c.primary) : undefined)
+    )?.accessRole ?? null;
 
   return (
     <main data-testid="settings" data-group={initialGroup} className="flex min-h-full gap-6 overflow-auto p-4">
@@ -456,7 +351,13 @@ export function Settings({ initialGroup = 'general' }: SettingsProps) {
 
           <Row
             label={t('settings.general.notificationsLabel')}
-            desc={t('settings.general.notificationsDesc')}
+            desc={
+              <>
+                {t('settings.general.notificationsDesc')}
+                <br />
+                {t('settings.general.notificationsAutoNote')}
+              </>
+            }
             htmlFor="settings-notifications"
             testId="settings-row-notifications"
           >
@@ -499,6 +400,8 @@ export function Settings({ initialGroup = 'general' }: SettingsProps) {
         {/* ---- AI engine ---- */}
         <Group group="ai" title={t('settings.group.ai')}>
           <ChooseAi embedded onDone={() => {}} onBack={() => {}} />
+          {/* [V2] UX2 4.1: the shared "Usage limits" disclosure of the two subscription cards */}
+          <CliLimits />
 
           <Row
             label={t('settings.ai.accelerationLabel')}
@@ -572,6 +475,10 @@ export function Settings({ initialGroup = 'general' }: SettingsProps) {
             />
             <span className="text-text-muted">{t('settings.ai.budgetSuffix')}</span>
           </Row>
+
+          {/* [V2] UX2 4.2 / 4.3 */}
+          <VoiceNotes />
+          <Pictures />
         </Group>
 
         {/* ---- WhatsApp ---- */}
@@ -672,6 +579,16 @@ export function Settings({ initialGroup = 'general' }: SettingsProps) {
                 </option>
               ))}
             </select>
+            {/* [V2] UX2 4.4: read-only line from the cached accessRole (B7) */}
+            {targetRole ? (
+              <span
+                className="basis-full text-sm text-text-muted"
+                data-testid="settings-calendar-role"
+                data-role={targetRole}
+              >
+                {targetRole === 'owner' ? t('settings.calendar.owned') : t('settings.calendar.shared')}
+              </span>
+            ) : null}
           </Row>
 
           <Row id="row-conflicts" label={t('settings.calendar.conflictLabel')} testId="settings-row-conflicts">
@@ -691,6 +608,15 @@ export function Settings({ initialGroup = 'general' }: SettingsProps) {
           </Row>
         </Group>
 
+        {/* ---- [V2] Automatic mode (UX2 4.5; the group section is AutomaticMode's own root) ---- */}
+        {autoState ? (
+          <AutomaticMode state={autoState} onOpenActivity={() => setSub('activity')} />
+        ) : (
+          <Group group="auto" title={t('settings.group.auto')}>
+            <p className="m-0 text-text-muted">{t('app.loading')}</p>
+          </Group>
+        )}
+
         {/* ---- Working rules ---- */}
         <Group group="rules" title={t('settings.group.rules')}>
           <Row
@@ -706,6 +632,9 @@ export function Settings({ initialGroup = 'general' }: SettingsProps) {
               testId="settings-unknown-senders"
             />
           </Row>
+
+          {/* [V2] UX2 4.7 "Let the AI read older messages" (B17, F11) */}
+          <ReadTools />
 
           <Row label={t('settings.rules.backlogLabel')} htmlFor="settings-backlog" testId="settings-row-backlog">
             <select
@@ -783,6 +712,22 @@ export function Settings({ initialGroup = 'general' }: SettingsProps) {
                       {POLICIES.map((policy) => (
                         <option key={policy} value={policy}>
                           {t(`settings.rules.policy.${policy}`)}
+                        </option>
+                      ))}
+                    </select>
+                    {/* [V2] UX2 4.5 "Per-contact": the Automatic column */}
+                    <select
+                      className="field w-40"
+                      aria-label={t('settings.rules.autoColumn')}
+                      data-testid={`settings-policy-auto-${chat.chatRef}`}
+                      value={chat.autoPolicy}
+                      onChange={(e) =>
+                        void setAutoPolicy(chat.chatRef, e.target.value === 'never' ? 'never' : 'inherit')
+                      }
+                    >
+                      {AUTO_POLICIES.map((value) => (
+                        <option key={value} value={value}>
+                          {value === 'inherit' ? t('settings.rules.autoInherit') : t('settings.rules.autoNever')}
                         </option>
                       ))}
                     </select>

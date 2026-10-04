@@ -18,6 +18,8 @@ import {
   mapStopReason,
   toClaudeMessages,
   toClaudeSchema,
+  toClaudeContent,
+  hasImagePart,
   type ClaudeClientLike,
 } from './claude';
 import { LlmError, type CallOpts, type LlmMessage, type LlmTool } from './types';
@@ -652,5 +654,101 @@ describe('fixtures', () => {
       expect(JSON.parse(raw)._unverified).toBe(true);
       expect(raw).not.toMatch(/@s\.whatsapp\.net|@lid/);
     }
+  });
+});
+
+// ---------------------------------------------------------------------------------------------------------------------
+// [V2, V2-W1-08-vision] V1 READ-IMAGE (C2 9 / 9.1, B19, I12): native base64 image block FIRST, no tools, structured only
+// ---------------------------------------------------------------------------------------------------------------------
+describe('V1 read_image (image block, tool-less)', () => {
+  const B64 = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 1, 2, 3]).toString('base64');
+  const V1: LlmMessage[] = [
+    { role: 'system', content: 'V1 CONSTANT (test)' },
+    {
+      role: 'user',
+      content: [
+        { type: 'image', mime: 'image/jpeg', base64: B64 },
+        { type: 'text', text: '<<DATA-0123456789abcdef>>\n{}\n<<END-DATA-0123456789abcdef>>' },
+      ],
+    },
+  ];
+
+  it('capabilities.images is true and the loop is the v1 turn loop', () => {
+    const p = createClaudeProvider({
+      apiKey: SENTINEL_KEY,
+      model: 'claude-opus-5',
+      client: recorder({}).client,
+      log: recordingLogger().logger,
+    });
+    expect(p.capabilities).toEqual({ images: true });
+    expect(p.loop).toBe('turn');
+  });
+
+  it('maps the picture to {type:image, source:{type:base64, media_type, data}} before the text, and sends no tools', async () => {
+    const r = recorder(fixture('claude/image-read-turn.json'));
+    const p = createClaudeProvider({
+      apiKey: SENTINEL_KEY,
+      model: 'claude-opus-5',
+      client: r.client,
+      log: recordingLogger().logger,
+    });
+    const out = await p.structured<{ readable: boolean; day: number }>(
+      V1,
+      SCHEMA,
+      opts({ purpose: 'read_image', maxOutputTokens: 768 }),
+    );
+    expect(out).toMatchObject({ readable: true, day: 6 });
+    const req = r.requests[0]!;
+    expect(req).not.toHaveProperty('tools');
+    expect(req).not.toHaveProperty('tool_choice');
+    expect(req).not.toHaveProperty('mcp_servers');
+    expect(req.system).toEqual([{ type: 'text', text: 'V1 CONSTANT (test)', cache_control: { type: 'ephemeral' } }]);
+    expect(req.messages).toEqual([
+      {
+        role: 'user',
+        content: [
+          { type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: B64 } },
+          { type: 'text', text: '<<DATA-0123456789abcdef>>\n{}\n<<END-DATA-0123456789abcdef>>' },
+        ],
+      },
+    ]);
+  });
+
+  it('toClaudeContent keeps the caller order and the png mime', () => {
+    expect(
+      toClaudeContent([
+        { type: 'text', text: 'a' },
+        { type: 'image', mime: 'image/png', base64: 'AA==' },
+      ]),
+    ).toEqual([
+      { type: 'text', text: 'a' },
+      { type: 'image', source: { type: 'base64', media_type: 'image/png', data: 'AA==' } },
+    ]);
+    expect(hasImagePart(HISTORY)).toBe(false);
+    expect(hasImagePart(V1)).toBe(true);
+    expect(hasImagePart([{ role: 'user', content: [{ type: 'text', text: 'x' }] }])).toBe(false);
+  });
+
+  it('a picture on any other purpose, or in chat(), is refused before any request (unsupported)', async () => {
+    const r = recorder(fixture('claude/image-read-turn.json'));
+    const p = createClaudeProvider({
+      apiKey: SENTINEL_KEY,
+      model: 'claude-opus-5',
+      client: r.client,
+      log: recordingLogger().logger,
+    });
+    await expect(p.structured(V1, SCHEMA, opts({ purpose: 'extract' }))).rejects.toMatchObject({ code: 'unsupported' });
+    await expect(p.chat(V1, TOOLS, opts({ purpose: 'read_image' }))).rejects.toMatchObject({ code: 'unsupported' });
+    await expect(p.chat(V1, [], opts({ purpose: 'draft' }))).rejects.toMatchObject({ code: 'unsupported' });
+    expect(r.requests).toHaveLength(0);
+  });
+
+  it('the image fixture is flagged unverified and synthetic', () => {
+    const raw = readFileSync(
+      fileURLToPath(new URL('./__fixtures__/claude/image-read-turn.json', import.meta.url)),
+      'utf8',
+    );
+    expect(JSON.parse(raw)._unverified).toBe(true);
+    expect(raw).not.toMatch(/@s\.whatsapp\.net|@lid/);
   });
 });

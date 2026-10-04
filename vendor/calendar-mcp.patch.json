@@ -1,0 +1,66 @@
+{
+  "package": "@cocal/google-calendar-mcp",
+  "version": "2.6.3",
+  "file": "build/index.js",
+  "patch": "status+requestBody.status+ifMatch",
+  "preconditionErrorText": "Precondition failed (HTTP 412): the event was changed after it was read (If-Match etag mismatch).",
+  "preconditionErrorPattern": "/precondition failed|\\b412\\b/i",
+  "insertions": [
+    {
+      "id": 1,
+      "name": "update_event_status_schema",
+      "mode": "after",
+      "anchor": "    location: z.string().optional().describe(\"Updated location\"),\n",
+      "text": "    status: z.enum([\"confirmed\", \"tentative\", \"cancelled\"]).optional().describe(\"Updated status; 'cancelled' cancels the event\"),\n",
+      "marker": "status: z.enum([\"confirmed\", \"tentative\", \"cancelled\"]).optional().describe(\"Updated status;"
+    },
+    {
+      "id": 2,
+      "name": "update_request_body_status",
+      "mode": "after",
+      "anchor": "    if (args.location !== void 0 && args.location !== null) requestBody.location = args.location;\n",
+      "text": "    if (args.status !== void 0 && args.status !== null) requestBody.status = args.status;\n",
+      "marker": "requestBody.status = args.status;"
+    },
+    {
+      "id": 3,
+      "name": "update_event_ifmatch_schema",
+      "mode": "after",
+      "anchor": "    eventId: z.string().describe(\"ID of the event to update\"),\n",
+      "text": "    ifMatch: z.string().optional().describe(\"ETag of the event as last read; sent as the If-Match header\"),\n",
+      "marker": "ifMatch: z.string().optional()"
+    },
+    {
+      "id": 4,
+      "name": "update_all_instances_if_match_header",
+      "mode": "replace",
+      "anchor": "      ...supportsAttachments && { supportsAttachments }\n    });\n    if (!response.data) throw new Error(\"Failed to update event\");\n",
+      "text": "      ...supportsAttachments && { supportsAttachments }\n    }, args.ifMatch ? { headers: { \"If-Match\": args.ifMatch } } : void 0);\n    if (!response.data) throw new Error(\"Failed to update event\");\n",
+      "marker": "{ headers: { \"If-Match\": args.ifMatch } }"
+    },
+    {
+      "id": 5,
+      "name": "handle_google_api_error_412",
+      "mode": "before",
+      "anchor": "      if (status === 400) {\n",
+      "text": "      if (status === 412) {\n        throw new McpError(\n          ErrorCode.InvalidRequest,\n          \"Precondition failed (HTTP 412): the event was changed after it was read (If-Match etag mismatch).\"\n        );\n      }\n",
+      "marker": "if (status === 412) {"
+    },
+    {
+      "id": 6,
+      "name": "allowed_event_fields_etag",
+      "mode": "replace",
+      "anchor": "  \"source\",\n  \"eventType\"\n];\nvar DEFAULT_EVENT_FIELDS = [\n",
+      "text": "  \"source\",\n  \"eventType\",\n  \"etag\"\n];\nvar DEFAULT_EVENT_FIELDS = [\n",
+      "marker": "  \"eventType\",\n  \"etag\"\n];"
+    },
+    {
+      "id": 7,
+      "name": "structured_event_etag",
+      "mode": "after",
+      "anchor": "    sequence: event.sequence ?? void 0,\n",
+      "text": "    etag: event.etag ?? void 0,\n",
+      "marker": "etag: event.etag ?? void 0,"
+    }
+  ]
+}

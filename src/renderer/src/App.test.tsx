@@ -200,7 +200,7 @@ describe('App - health actions', () => {
       ...defaultHealth,
       overall: 'working',
       whatsapp: { state: 'needs_pairing', since: 0 },
-      calendar: { state: 'not_configured', since: 0 },
+      calendar: { state: 'not_configured', since: 0, updatesAvailable: true },
     };
     invokeMocks['app:getBootstrap'].mockResolvedValueOnce(bootstrap({ health }));
     const { unmount } = render(<App />);
@@ -222,7 +222,7 @@ describe('App - health actions', () => {
     const health: AppHealth = {
       ...defaultHealth,
       overall: 'attention',
-      calendar: { state: 'toolset_mismatch', since: 0, code: 'CAL_TOOLSET_MISMATCH' },
+      calendar: { state: 'toolset_mismatch', since: 0, code: 'CAL_TOOLSET_MISMATCH', updatesAvailable: true },
     };
     invokeMocks['app:getBootstrap'].mockResolvedValueOnce(bootstrap({ health }));
     render(<App />);
@@ -237,7 +237,14 @@ describe('App - health actions', () => {
     const health: AppHealth = {
       ...defaultHealth,
       overall: 'attention',
-      llm: { state: 'key_invalid', since: 0, provider: 'claude', model: 'claude-opus-5', code: 'KEY_INVALID' },
+      llm: {
+        state: 'key_invalid',
+        since: 0,
+        provider: 'claude',
+        model: 'claude-opus-5',
+        code: 'KEY_INVALID',
+        quota: null,
+      },
     };
     invokeMocks['app:getBootstrap'].mockResolvedValueOnce(bootstrap({ health }));
     render(<App />);
@@ -321,7 +328,7 @@ describe('App - setup strip', () => {
       ...defaultHealth,
       overall: 'working',
       whatsapp: { state: 'needs_pairing', since: 0 },
-      calendar: { state: 'not_configured', since: 0 },
+      calendar: { state: 'not_configured', since: 0, updatesAvailable: true },
     };
     invokeMocks['app:getBootstrap'].mockResolvedValueOnce(bootstrap({ health }));
     render(<App />);
@@ -418,7 +425,11 @@ describe('App - coach mark, toast and live regions', () => {
       ok: true,
       value: {
         outcome: 'done',
-        item: { ...defaultDetail, eventState: 'created', calendar: { eventStartTs: Date.UTC(2026, 8, 24, 14, 0, 0) } },
+        item: {
+          ...defaultDetail,
+          eventState: 'created',
+          calendar: { eventStartTs: Date.UTC(2026, 8, 24, 14, 0, 0), eventKey: 'k1', revision: 1, status: 'confirmed' },
+        },
       },
     }));
     await act(async () => {
@@ -458,8 +469,8 @@ describe('App - pure helpers', () => {
     const health: AppHealth = {
       ...defaultHealth,
       whatsapp: { state: 'needs_pairing', since: 0 },
-      llm: { state: 'key_missing', since: 0, provider: 'claude', model: '' },
-      calendar: { state: 'not_configured', since: 0 },
+      llm: { state: 'key_missing', since: 0, provider: 'claude', model: '', quota: null },
+      calendar: { state: 'not_configured', since: 0, updatesAvailable: true },
     };
     expect(setupTasksOf(health, [])).toEqual(['whatsapp', 'ai', 'calendar']);
     expect(setupTasksOf(health, ['calendar'])).toEqual(['whatsapp', 'ai']);
@@ -473,13 +484,22 @@ describe('App - pure helpers', () => {
 
   it('announceWhenOf prefers the calendar start, falls back to the proposal and survives a bad zone', () => {
     const at = Date.UTC(2026, 8, 24, 14, 0, 0);
-    expect(announceWhenOf({ ...defaultDetail, calendar: { eventStartTs: at } }, 'en')).toContain('Thursday');
+    expect(
+      announceWhenOf(
+        { ...defaultDetail, calendar: { eventStartTs: at, eventKey: 'k1', revision: 1, status: 'confirmed' } },
+        'en',
+      ),
+    ).toContain('Thursday');
     // No calendar row yet: the proposal's local time in its own zone says the same thing.
     expect(announceWhenOf(defaultDetail, 'en')).toContain('Thursday');
     expect(announceWhenOf({ ...defaultDetail, event: null, calendar: null }, 'en')).toBe('');
     expect(
       announceWhenOf(
-        { ...defaultDetail, calendar: { eventStartTs: at }, event: { ...defaultDetail.event!, timeZone: 'Not/AZone' } },
+        {
+          ...defaultDetail,
+          calendar: { eventStartTs: at, eventKey: 'k1', revision: 1, status: 'confirmed' },
+          event: { ...defaultDetail.event!, timeZone: 'Not/AZone' },
+        },
         'en',
       ),
     ).not.toBe('');

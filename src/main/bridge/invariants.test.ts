@@ -1,10 +1,16 @@
 // TESTS 5.3 row `bridge/invariants.ts` (I6 / ARCHITECTURE A15): one test per violated precondition, plus the streamed hash.
-import { mkdtempSync, rmSync, writeFileSync, mkdirSync, readFileSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync, mkdirSync, readFileSync, readdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, relative, sep } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { afterAll, describe, expect, it } from 'vitest';
 import {
+  BRIDGE_ENDPOINTS,
   BRIDGE_ENV_KEYS,
+  FORBIDDEN_BRIDGE_ENDPOINT_NAMES,
+  MEDIA_FETCH_MODULE,
+  stripComments,
+  sweepBridgeEndpointRefs,
   BRIDGE_EXE,
   FORBIDDEN_BRIDGE_ARGS,
   OS_ENV_PASSTHROUGH,
@@ -280,5 +286,70 @@ describe('sha256OfFile', () => {
 
   it('rejects when the file cannot be read', async () => {
     await expect(sha256OfFile(join(root, 'does-not-exist.bin'))).rejects.toThrow();
+  });
+});
+
+// ---------------------------------------------------------------------------------------------------------------------
+// [V2] B5 endpoint sweep (V2-W1-07-media-voice): /api/media only via media/fetch.ts; download/typing/react/group nowhere in src/
+// ---------------------------------------------------------------------------------------------------------------------
+describe('B5 endpoint sweep', () => {
+  const repo = fileURLToPath(new URL('../../../', import.meta.url));
+  function sourceFiles(dir: string): Array<{ path: string; text: string }> {
+    const out: Array<{ path: string; text: string }> = [];
+    for (const e of readdirSync(dir, { withFileTypes: true })) {
+      const full = join(dir, e.name);
+      if (e.isDirectory()) {
+        if (e.name === 'node_modules' || e.name === '__fixtures__') continue;
+        out.push(...sourceFiles(full));
+      } else if (/\.(ts|tsx|mjs|js)$/.test(e.name) && !/\.test\.(ts|tsx|mjs)$/.test(e.name)) {
+        out.push({ path: relative(repo, full).split(sep).join('/'), text: readFileSync(full, 'utf8') });
+      }
+    }
+    return out;
+  }
+
+  it('the real src/ tree is clean', () => {
+    const files = sourceFiles(join(repo, 'src'));
+    expect(files.length).toBeGreaterThan(50);
+    expect(files.some((f) => f.path === MEDIA_FETCH_MODULE)).toBe(true);
+    expect(sweepBridgeEndpointRefs(files)).toEqual([]);
+  });
+
+  it('five endpoints; the forbidden names are stored without their path so this module never references them', () => {
+    expect(BRIDGE_ENDPOINTS).toEqual([
+      '/api/health',
+      '/api/pairing/status',
+      '/api/pairing/qr.png',
+      '/api/send',
+      '/api/media',
+    ]);
+    expect(FORBIDDEN_BRIDGE_ENDPOINT_NAMES.map((n) => `/api/${n}`)).toEqual([
+      '/api/download',
+      '/api/typing',
+      '/api/react',
+      '/api/group/',
+    ]);
+  });
+
+  it('flags each kind of violation; comments do not count; strings and escapes are kept', () => {
+    const findings = sweepBridgeEndpointRefs([
+      {
+        path: 'src/main/x.ts',
+        text: 'fetch(\'/api/typing\'); // /api/react in a comment\n/* /api/download */ const a = "/api/group/status";',
+      },
+      { path: 'src/main/agent/y.ts', text: 'const u = `http://h/api/media?x=1`; client.getMedia (a, b);' },
+      { path: 'src/main/media/fetch.ts', text: 'await deps.read.getMedia(chat, id, opts);' },
+      { path: 'src/main/bridge/readClient.ts', text: "const p = '/api/media'; const q = 'it\\'s /api/react';" },
+      { path: 'src/main/z.ts', text: '/* never closed /api/download' },
+      { path: 'src/main/w.ts', text: '// only a comment /api/typing' },
+    ]);
+    expect(findings).toEqual([
+      { file: 'src/main/x.ts', kind: 'forbidden_endpoint', detail: '/api/typing' },
+      { file: 'src/main/x.ts', kind: 'forbidden_endpoint', detail: '/api/group/' },
+      { file: 'src/main/agent/y.ts', kind: 'media_path_outside_transport', detail: '/api/media' },
+      { file: 'src/main/agent/y.ts', kind: 'get_media_outside_fetch', detail: 'getMedia(' },
+      { file: 'src/main/bridge/readClient.ts', kind: 'forbidden_endpoint', detail: '/api/react' },
+    ]);
+    expect(stripComments('a/b // c')).toBe('a/b ');
   });
 });

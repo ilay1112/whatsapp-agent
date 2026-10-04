@@ -28,6 +28,29 @@ const SAFETY_CRITICAL = [
   'src/shared/when.ts',
   'src/shared/schemas.ts',
 ];
+// [V2] T2 13: the safety-critical set gains these (100/95/100 perFile) ...
+SAFETY_CRITICAL.push(
+  'src/main/exec/autoGate.ts',
+  'src/main/exec/autoPolicy.ts',
+  'src/main/exec/undo.ts',
+  'src/main/exec/buildUpdateEventArgs.ts',
+  'src/main/mcp/toolServer.ts',
+  'src/main/agent/waTools.ts',
+  'src/main/agent/handles.ts',
+  'src/main/agent/resolveDelta.ts',
+  'src/main/agent/readImage.ts',
+  'src/main/bridge/waReadClient.ts',
+  'src/main/media/fetch.ts',
+  'src/main/media/imageDims.ts',
+  'src/main/voice/ogg.ts',
+  'src/main/llm/cli/runner.ts',
+  'src/main/ipc/handlers/auto.ts',
+  'src/main/proc/jobRunner.ts',
+);
+// [V2] bench:wa (T2 14, U-D1: 10^6 rows) must never run inside `npm test` and must not be skipped conditionally. Mechanism
+// (V2-W0-scaffold): the bench file is COLLECTED only when the command line names tests/bench/ - which only the
+// `bench:wa` script does. `npm test` / `test:int` never collect it, so nothing is skipped; it simply is not part of them.
+const BENCH_ON_COMMAND_LINE = process.argv.some((a) => a.replaceAll('\\', '/').includes('tests/bench/'));
 const safetyThresholds = Object.fromEntries(
   SAFETY_CRITICAL.map((g) => [g, { lines: 100, branches: 95, functions: 100, perFile: true }]),
 );
@@ -65,8 +88,14 @@ export default defineConfig({
         test: {
           name: 'integration',
           environment: 'node',
-          setupFiles: ['tests/setup-guards.ts', 'tests/helpers/ledger-hook.ts'],
-          include: ['tests/integration/**/*.test.ts', 'tests/golden/golden.test.ts'],
+          // [V2] T2 2: cli-fakes-hook registers the spawned-fake journals with the ledger (no-op until V2-W1-06)
+          setupFiles: ['tests/setup-guards.ts', 'tests/helpers/ledger-hook.ts', 'tests/helpers/cli-fakes-hook.ts'],
+          include: [
+            'tests/integration/**/*.test.ts',
+            'tests/golden/golden.test.ts',
+            'tests/golden/golden.v2.test.ts', // [V2-W2-01] W1-03 REQUEST 1
+            ...(BENCH_ON_COMMAND_LINE ? ['tests/bench/**/*.bench.test.ts'] : []),
+          ],
           testTimeout: 20_000,
           pool: 'forks',
         },
@@ -76,7 +105,7 @@ export default defineConfig({
         test: {
           name: 'security',
           environment: 'node',
-          setupFiles: ['tests/setup-guards.ts', 'tests/helpers/ledger-hook.ts'],
+          setupFiles: ['tests/setup-guards.ts', 'tests/helpers/ledger-hook.ts', 'tests/helpers/cli-fakes-hook.ts'], // [V2] T2 2
           include: ['tests/security/**/*.test.ts'],
           testTimeout: 30_000,
           pool: 'forks',
@@ -122,6 +151,10 @@ export default defineConfig({
         'src/main/proc/**': { lines: 90, branches: 85, functions: 90 },
         'src/main/agent/**': { lines: 90, branches: 85, functions: 90 },
         'src/main/llm/**': { lines: 90, branches: 85, functions: 90 },
+        // [V2] T2 13: the 90/85/90 band gains voice/**, media/**, llm/cli/** (the rest of it; runner.ts is safety-critical above)
+        'src/main/voice/**': { lines: 90, branches: 85, functions: 90 },
+        'src/main/media/**': { lines: 90, branches: 85, functions: 90 },
+        'src/main/llm/cli/**': { lines: 90, branches: 85, functions: 90 },
         'src/renderer/**': { lines: 75, branches: 70, functions: 75 },
         'src/preload/**': { lines: 100, functions: 100 },
       },

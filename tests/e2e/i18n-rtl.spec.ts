@@ -7,6 +7,10 @@
 import { attachBridge } from './helpers/fakes.ts';
 import { expect, test, wca, type LaunchedApp } from './helpers/fixtures.ts';
 import { SEED_CHAT_JID, SEED_CHAT_NAME, seedProfile } from './helpers/seedProfile.ts';
+import { createCalls, enableAutoViaUi, launchAutoWorld, sendScheduling } from './helpers/auto.ts';
+import { connectState, launchCliWorld, openAiCard } from './helpers/cli.ts';
+import { launchMediaWorld } from './helpers/media.ts';
+import { backToDashboard, openSettings } from './helpers/v2.ts';
 
 const MIN_WIDTH = 420;
 const MIN_HEIGHT = 560;
@@ -195,3 +199,80 @@ async function horizontalOverflow(launched: LaunchedApp): Promise<number> {
   if (page === null) return 0;
   return page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
 }
+
+// =====================================================================================================================
+// [V2] T2 9 / UX2 15.8: the v2 surfaces screenshotted in both languages (AutoStrip, the Automatic-mode group, the activity page,
+// the Connect card states, both media bubbles; the Change card's he/en shots come from edit-change.spec.ts), plus the 420 px rule.
+// =====================================================================================================================
+
+async function bothLanguages(launched: LaunchedApp, shoot: (lang: 'en' | 'he') => Promise<void>): Promise<void> {
+  const page = launched.page!;
+  for (const lang of ['en', 'he'] as const) {
+    await page.locator(`[data-testid="lang-toggle"] [data-lang="${lang}"]`).click();
+    await expect(page.locator('html')).toHaveAttribute('dir', lang === 'he' ? 'rtl' : 'ltr');
+    await shoot(lang);
+  }
+}
+
+test('[v2] AutoStrip, the Automatic-mode group and the activity page in both languages, no overflow at 420 px', async ({
+  e2e,
+}) => {
+  test.setTimeout(360_000);
+  const w = await launchAutoWorld(e2e, 'screens-auto', [{ match: 'auto_enable', response: 1, checkboxChecked: true }]);
+  const { page } = w;
+  await enableAutoViaUi(w);
+  const before = createCalls(w);
+  await sendScheduling(w, [7]);
+  await expect.poll(() => createCalls(w), { timeout: 60_000 }).toBe(before + 1);
+  await expect(page.getByTestId('autostrip')).toBeVisible({ timeout: 30_000 });
+  const launched = e2e.launches[e2e.launches.length - 1]!;
+
+  await bothLanguages(launched, async (lang) => {
+    await backToDashboard(page);
+    await expect(page.getByTestId('autostrip')).toBeVisible();
+    await e2e.screenshot(page, `autostrip-${lang}`);
+    await setContentSize(launched, MIN_WIDTH, MIN_HEIGHT);
+    expect(await horizontalOverflow(launched), `no horizontal scrollbar with the AutoStrip (${lang}, 420 px)`).toBe(0);
+    await e2e.screenshot(page, `autostrip-${lang}-420`);
+    await setContentSize(launched, 1100, 800);
+
+    await openSettings(page);
+    await page.getByTestId('settings-group-auto').scrollIntoViewIfNeeded();
+    await e2e.screenshot(page, `settings-auto-group-${lang}`);
+    await page.getByTestId('auto-open-activity').click();
+    await expect(page.getByTestId('auto-activity')).toBeVisible({ timeout: 10_000 });
+    await e2e.screenshot(page, `auto-activity-${lang}`);
+    await page.getByTestId('auto-activity-back').click();
+  });
+});
+
+test('[v2] the Connect card states and both media bubbles in both languages', async ({ e2e }) => {
+  test.setTimeout(240_000);
+  // (a) Connect card: Claude not installed (WCA_CLI_CMD null), Gemini ready (fake agy; with the workspace-trust block)
+  const cli = await launchCliWorld(e2e, 'screens-cli', { claude: null, agy: {} });
+  await bothLanguages(e2e.launches[e2e.launches.length - 1]!, async (lang) => {
+    await openAiCard(cli.page, 'claude_cli');
+    await expect.poll(() => connectState(cli.page, 'claude_cli'), { timeout: 30_000 }).toBe('not_installed');
+    const command = cli.page.getByTestId('connect-command-claude_cli');
+    expect(await command.evaluate((el) => getComputedStyle(el).direction), 'command fields stay LTR (UX2 15.8)').toBe(
+      'ltr',
+    );
+    await e2e.screenshot(cli.page, `connect-not-installed-${lang}`);
+    await openAiCard(cli.page, 'antigravity_cli');
+    await expect.poll(() => connectState(cli.page, 'antigravity_cli'), { timeout: 30_000 }).toBe('ready');
+    await e2e.screenshot(cli.page, `connect-agy-ready-${lang}`);
+    await backToDashboard(cli.page);
+  });
+  // let the card's own `agy models` listing finish first: quitting DURING a job is cli-connect.spec (9)'s subject, not this one's
+  await expect.poll(async () => (await wca(cli.app).jobPids()).cli, { timeout: 30_000 }).toEqual([]);
+  await e2e.quit(e2e.launches[e2e.launches.length - 1]!);
+
+  // (b) VoiceBubble + ImageBubble: the real Local provider against the fake llama-server (with the projector) and the fake whisper
+  const media = await launchMediaWorld(e2e);
+  await bothLanguages(media.launched, async (lang) => {
+    await backToDashboard(media.page);
+    await expect(media.page.getByTestId(`voice-bubble-${media.voiceItem}`)).toBeVisible();
+    await expect(media.page.getByTestId(`image-bubble-${media.imageItem}`)).toBeVisible();
+    await e2e.screenshot(media.page, `media-bubbles-${lang}`);
+  });
+});

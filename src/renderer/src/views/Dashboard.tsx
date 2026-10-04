@@ -16,10 +16,19 @@
 // duplicate the strip), the toast, the live regions or the footer.
 //
 // No approval logic lives here. Approving is ItemCard's business; this view only decides what is on screen.
+//
+// [V2] (owner V2-W1-11; UX2 0, 2.5, 3.1, 11.1): the AutoStrip sits ABOVE the three lists (a <section> landmark in the
+// F6 cycle, gone when nothing qualifies - never a fourth list, C9). The dashboard hydrates the automatic-mode store and
+// subscribes to `auto:changed` / `queue:changed` while it is mounted; the Needs-reply queue line becomes
+// "Transcribing a voice note (0:42)..." while a whisper job runs. Undo in the strip goes through `auto:undo` from the
+// row's click handler only; Pause is the fail-safe direction (no dialog, no guard).
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useDashboardStore, LIST_KEYS, type ListKey } from '../store/dashboard';
 import { useHealthStore } from '../store/health';
+import { useAutoStore } from '../store/auto';
+import { events } from '../api';
+import { AutoStrip } from '../components/AutoStrip';
 import { ItemList } from '../components/ItemList';
 import { ItemCard } from '../components/ItemCard';
 import { CloseIcon, UndoDismissDrawer, useDialogChrome } from '../components/UndoDismissDrawer';
@@ -79,6 +88,23 @@ export function Dashboard() {
   const undoDrawerOpen = useDashboardStore((s) => s.undoDrawerOpen);
   const setUndoDrawerOpen = useDashboardStore((s) => s.setUndoDrawerOpen);
   const health = useHealthStore((s) => s.health);
+  const healthQueue = useHealthStore((s) => s.queue);
+  const ownQueue = useDashboardStore((s) => s.queue);
+  const autoRows = useAutoStore((s) => s.rows);
+  const autoPolicy = useAutoStore((s) => s.state?.policy ?? null);
+  const transcribing = (ownQueue ?? healthQueue)?.transcribing?.seconds ?? null;
+
+  // [V2] automatic-mode store + the queue line, for as long as the dashboard is on screen.
+  useEffect(() => {
+    const auto = useAutoStore.getState();
+    void auto.hydrate().catch(() => undefined);
+    const offAuto = auto.subscribe();
+    const offQueue = events.onQueueChanged((q) => useDashboardStore.getState().setQueue(q));
+    return () => {
+      offAuto();
+      offQueue();
+    };
+  }, []);
 
   const wide = useWideLayout();
   const mainRef = useRef<HTMLElement>(null);
@@ -148,6 +174,8 @@ export function Dashboard() {
       e.preventDefault();
       const regions = [
         document.querySelector<HTMLElement>('[data-testid="pause-toggle"]'),
+        // UX2 11.1: header -> AutoStrip (when present) -> columns -> footer.
+        mainRef.current?.querySelector<HTMLElement>('[data-testid="autostrip-toggle"]') ?? null,
         ...visibleLists.map(
           (k) => mainRef.current?.querySelector<HTMLElement>(`[data-testid="list-${k}"] h2 > *`) ?? null,
         ),
@@ -238,6 +266,14 @@ export function Dashboard() {
         </div>
       ) : null}
 
+      <AutoStrip
+        rows={autoRows}
+        policyState={autoPolicy}
+        onUndo={(autoWriteId) => void useAutoStore.getState().undo(autoWriteId)}
+        onShow={(itemId) => void openItemById(itemId)}
+        onPause={() => void useAutoStore.getState().pause()}
+      />
+
       <div
         className={wide ? 'dash-columns grid min-h-0 grow gap-4' : 'flex min-h-0 grow flex-col gap-3 overflow-y-auto'}
       >
@@ -249,6 +285,7 @@ export function Dashboard() {
             count={lists[key].count}
             items={lists[key].items}
             queueCount={key === 'needs_reply' ? analysing : undefined}
+            transcribingSeconds={key === 'needs_reply' ? transcribing : undefined}
             collapsible={!wide}
             open={wide || sectionOpen[key]}
             onToggle={() => toggleSection(key)}

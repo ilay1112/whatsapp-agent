@@ -1,0 +1,35 @@
+
+ RUN  v4.1.11 C:/dev/whatsapp agent
+
+ ❯ |security| tests/security/electron-hardening.test.ts (62 tests | 1 failed) 136ms
+     × every production package (direct AND transitive) carries an SPDX licence from the allow-list 8ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |security| tests/security/electron-hardening.test.ts > [V2] ARCH2 12 / B18 - forbidden v2 packages and the SPDX licence allow-list > every production package (direct AND transitive) carries an SPDX licence from the allow-list
+AssertionError: production packages outside the SPDX allow-list (missing / UNLICENSED / other): expected [ 'fast-sha256@1.3.0: Unlicense' ] to deeply equal []
+
+- Expected
++ Received
+
+- []
++ [
++   "fast-sha256@1.3.0: Unlicense",
++ ]
+
+ ❯ tests/security/electron-hardening.test.ts:764:105
+    762|       }
+    763|     }
+    764|     expect(offenders, 'production packages outside the SPDX allow-list…
+       |                                                                                                         ^
+    765|   });
+    766| });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed | 309 passed (310)
+      Tests  1 failed | 7315 passed | 1 expected fail (7317)
+   Start at  19:36:03
+   Duration  71.66s (transform 57.24s, setup 80.16s, import 124.04s, tests 510.88s, environment 95.94s)
+

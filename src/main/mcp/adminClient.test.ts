@@ -147,16 +147,24 @@ describe('projectCalendars', () => {
       primary: false,
       timeZone: '',
       writable: false,
+      accessRole: 'reader', // [V2] C2 11 accessRole projection
     });
-    expect(Object.keys(res.value[0] ?? {}).sort()).toEqual(['id', 'name', 'primary', 'timeZone', 'writable']);
+    expect(Object.keys(res.value[0] ?? {}).sort()).toEqual([
+      'accessRole',
+      'id',
+      'name',
+      'primary',
+      'timeZone',
+      'writable',
+    ]);
     expect(JSON.stringify(res)).not.toContain('secret');
   });
 
-  it('treats the id "primary" as primary and a missing accessRole as writable', () => {
+  it('treats the id "primary" as primary; a missing accessRole is unknown and NOT writable (C2 11)', () => {
     const res = projectCalendars(JSON.stringify({ items: [{ id: 'primary', summary: 'P' }] }));
     expect(res).toEqual({
       ok: true,
-      value: [{ id: 'primary', name: 'P', primary: true, timeZone: '', writable: true }],
+      value: [{ id: 'primary', name: 'P', primary: true, timeZone: '', writable: false, accessRole: 'unknown' }], // [V2] C2 11: absent => unknown, not writable
     });
   });
 
@@ -248,7 +256,7 @@ describe('createMcpAdminClient', () => {
     );
     await expect(createMcpAdminClient(call).listCalendars()).resolves.toEqual({
       ok: true,
-      value: [{ id: 'primary', name: 'P', primary: true, timeZone: '', writable: true }],
+      value: [{ id: 'primary', name: 'P', primary: true, timeZone: '', writable: false, accessRole: 'unknown' }], // [V2] C2 11: absent => unknown, not writable
     });
     expect(calls[0]).toEqual({ tool: 'list-calendars', args: { account: ACCOUNT_ID } });
   });

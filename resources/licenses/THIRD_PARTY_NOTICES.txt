@@ -128,15 +128,16 @@ Chromium's own credits) and Node.js (MIT). The complete Chromium and Electron cr
 Electron runtime itself as  LICENSES.chromium.html  and  LICENSE  in the installation directory.
 
 ====================================================================================================
-8. npm production dependencies inside app.asar  (142 packages)
+8. npm production dependencies inside app.asar  (146 packages)
 ====================================================================================================
 
 All are pure JavaScript; there is no native addon anywhere in the production tree (no binding.gyp, no *.node).
-Licence summary: MIT (113), BSD-3-Clause (13), Apache-2.0 (7), ISC (7), BSD-2-Clause (1), Unlicense (1).
+Licence summary: MIT (116), BSD-3-Clause (13), Apache-2.0 (8), ISC (7), BSD-2-Clause (1), Unlicense (1).
 Each package ships its own licence text inside app.asar under node_modules/<name>/.
 
   @anthropic-ai/sdk@0.127.0  -  MIT
   @babel/runtime@7.29.7  -  MIT
+  @eshaz/web-worker@1.2.2  -  Apache-2.0
   @google/genai@2.23.0  -  Apache-2.0
   @hono/node-server@2.1.1  -  MIT
   @modelcontextprotocol/sdk@1.30.0  -  MIT
@@ -152,6 +153,7 @@ Each package ships its own licence text inside app.asar under node_modules/<name
   @stablelib/base64@1.0.1  -  MIT
   @types/node@24.13.6  -  MIT
   @types/retry@0.12.0  -  MIT
+  @wasm-audio-decoders/common@9.0.7  -  MIT
   accepts@2.0.0  -  MIT
   agent-base@7.1.4  -  MIT
   ajv@8.20.0  -  MIT
@@ -239,6 +241,7 @@ Each package ships its own licence text inside app.asar under node_modules/<name
   object-inspect@1.13.4  -  MIT
   on-finished@2.4.1  -  MIT
   once@1.4.0  -  ISC
+  opus-decoder@0.7.12  -  MIT
   p-retry@4.6.2  -  MIT
   parseurl@1.3.3  -  MIT
   path-key@3.1.1  -  MIT
@@ -263,6 +266,7 @@ Each package ships its own licence text inside app.asar under node_modules/<name
   side-channel-list@1.0.1  -  MIT
   side-channel-map@1.0.1  -  MIT
   side-channel-weakmap@1.0.2  -  MIT
+  simple-yenc@1.0.4  -  MIT
   standardwebhooks@1.1.1  -  MIT
   statuses@2.0.2  -  MIT
   toidentifier@1.0.1  -  MIT
@@ -277,6 +281,147 @@ Each package ships its own licence text inside app.asar under node_modules/<name
   ws@8.21.3  -  MIT
   zod@4.6.5  -  MIT
   zod-to-json-schema@3.25.2  -  ISC
+
+====================================================================================================
+9. whisper.cpp b5130 - Windows x64 CPU build  (MIT)
+====================================================================================================
+
+Shipped at: resources\whisper\ (whisper-cli.exe, whisper.dll, ggml.dll, ggml-base.dll and the CPU-dispatched
+ggml-cpu-*.dll set of the pinned release; its own folder - it never shares a DLL with resources\llama\)
+Source of the binaries: https://github.com/ggml-org/whisper.cpp/releases/download/b5130/whisper-bin-x64.zip
+Project: https://github.com/ggml-org/whisper.cpp
+The Microsoft VC++ runtime is NOT shipped beside it in this build (see section 4; the app reports LLM_VCREDIST_MISSING).
+
+MIT License
+
+Copyright (c) 2023-2026 The ggml authors
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+====================================================================================================
+10. Voice-note decoder chain - opus-decoder@0.7.12 and its dependencies
+====================================================================================================
+
+Used to turn WhatsApp voice notes (Ogg Opus) into audio for the local transcriber. Plain JavaScript inside
+app.asar; the WebAssembly is embedded in the JavaScript as a string (no .wasm file, no native addon).
+  opus-decoder@0.7.12  -  MIT
+  @wasm-audio-decoders/common@9.0.7  -  MIT
+  simple-yenc@1.0.4  -  MIT
+  @eshaz/web-worker@1.2.2  -  Apache-2.0
+Each of these packages carries its own licence text inside app.asar under node_modules/<name>/ where its
+author ships one; the Apache-2.0 text is at https://www.apache.org/licenses/LICENSE-2.0
+
+====================================================================================================
+11. libopus - the Opus reference decoder, compiled to WebAssembly inside opus-decoder  (BSD-3-Clause)
+====================================================================================================
+
+Project: https://opus-codec.org/  (licence: https://opus-codec.org/license/)
+The libopus licence, reproduced from the COPYING file of the libopus source distribution:
+
+Copyright 2001-2023 Xiph.Org, Skype Limited, Octasic,
+                    Jean-Marc Valin, Timothy B. Terriberry,
+                    CSIRO, Gregory Maxwell, Mark Borgerding,
+                    Erik de Castro Lopo, Mozilla, Amazon
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions
+are met:
+
+- Redistributions of source code must retain the above copyright
+notice, this list of conditions and the following disclaimer.
+
+- Redistributions in binary form must reproduce the above copyright
+notice, this list of conditions and the following disclaimer in the
+documentation and/or other materials provided with the distribution.
+
+- Neither the name of Internet Society, IETF or IETF Trust, nor the
+names of specific contributors, may be used to endorse or promote
+products derived from this software without specific prior written
+permission.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+``AS IS'' AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER
+OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
+EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
+PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
+LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
+NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+Opus is subject to the royalty-free patent licenses which are
+specified at:
+
+Xiph.Org Foundation:
+https://datatracker.ietf.org/ipr/1524/
+
+Microsoft Corporation:
+https://datatracker.ietf.org/ipr/1914/
+
+Broadcom Corporation:
+https://datatracker.ietf.org/ipr/1526/
+
+====================================================================================================
+12. Speech-recognition models  (downloaded by the user, not redistributed here)
+====================================================================================================
+
+No speech model is contained in this installer. When the user turns on voice notes, the application
+downloads the chosen file from Hugging Face over HTTPS, pinned by commit, size and SHA-256:
+
+ivrit-ai/whisper-large-v3-turbo-ggml  (Apache-2.0)
+  Hebrew tier: ggml-model.bin - https://huggingface.co/ivrit-ai/whisper-large-v3-turbo-ggml
+  Apache License 2.0: https://www.apache.org/licenses/LICENSE-2.0
+
+OpenAI Whisper model weights  (MIT)
+  Multilingual and Lite tiers: ggml conversions of OpenAI Whisper (large-v3-turbo q8_0, small q8_0)
+  published at https://huggingface.co/ggerganov/whisper.cpp ; Whisper: https://github.com/openai/whisper
+  (MIT License, Copyright (c) 2022 OpenAI).
+
+Silero VAD  (MIT)
+  Voice-activity model ggml-silero-v6.2.0.bin - https://huggingface.co/ggml-org/whisper-vad ;
+  Silero VAD: https://github.com/snakers4/silero-vad (MIT License).
+
+The picture projectors (mmproj-F16.gguf of the three Gemma tiers) are downloaded on demand under the
+Gemma terms of section 6, like the language models themselves.
+Model files live in the user profile and are never bundled or re-distributed by this application.
+
+====================================================================================================
+13. MODIFICATION NOTICE - @cocal/google-calendar-mcp 2.6.3
+====================================================================================================
+
+The file resources\calendar-mcp\node_modules\@cocal\google-calendar-mcp\build\index.js is a MODIFIED copy
+of the published @cocal/google-calendar-mcp 2.6.3 bundle (MIT, see section 5; the licence
+text ships unchanged beside it as LICENSE). The build applies exactly these insertions and nothing else, only
+to the byte-identical published bundle:
+  (1) update_event_status_schema
+  (2) update_request_body_status
+  (3) update_event_ifmatch_schema
+  (4) update_all_instances_if_match_header
+  (5) handle_google_api_error_412
+  (6) allowed_event_fields_etag
+  (7) structured_event_etag
+SHA-256 of the published bundle: 3fc4202c6ac4886b47d89a773889ea285e6402135536f036317913223e141b16
+SHA-256 of the shipped, modified bundle: c80c89803acad1d3ff1779f998e9936f99ca19b5121625c05fd69f44091a3dfd
+Purpose: let the application change or cancel an event it created itself, with an If-Match guard, and never
+delete one. The insertions are recorded in vendor/calendar-mcp.patch.json of the application source.
 
 ====================================================================================================
 END OF THIRD PARTY NOTICES

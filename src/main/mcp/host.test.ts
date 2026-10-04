@@ -15,6 +15,7 @@ import { createVirtualClock } from '../../../tests/helpers/virtualClock';
 import { DEFAULT_GRACE_MS, createSupervisor } from '../proc/supervisor';
 import { MCP_TOOLS, McpCapabilityError, createMcpReadClient } from './readClient';
 import {
+  DESTRUCTIVE_HINT_TOOLS,
   MCP_BACKOFF_MS,
   MCP_BREAKER,
   MCP_CALL_TIMEOUT_MS,
@@ -47,6 +48,20 @@ import { MCP_STATUSES, overallOf } from '../../shared/health';
 import type { McpStatus } from '../../shared/health';
 import { severityOf } from '../health/healthHub';
 import type { ErrorCode } from '../../shared/errors';
+
+/** [V2] The inputSchema a PATCHED server lists (B4 insertions 1 + 3 on update-event); required fields as the startup contract needs. */
+function patchedSchemaOf(name: string): { required: string[]; properties?: Record<string, unknown> } {
+  const required = [...(REQUIRED_INPUT_FIELDS[name] ?? [])];
+  return name === 'update-event'
+    ? {
+        required,
+        properties: {
+          status: { type: 'string', enum: ['confirmed', 'tentative', 'cancelled'] },
+          ifMatch: { type: 'string' },
+        },
+      }
+    : { required };
+}
 
 const DEPS: McpHostDeps = {
   execPath: 'C:\\Program Files\\WhatsApp Calendar Agent\\WhatsApp Calendar Agent.exe',
@@ -117,7 +132,7 @@ describe('the spawn contract of ARCH 5.1', () => {
     expect(env.GOOGLE_CALENDAR_MCP_TOKEN_PATH).toBe(DEPS.tokenPath);
     expect(env.GOOGLE_ACCOUNT_MODE).toBe('personal');
     expect(env.ENABLED_TOOLS).toBe(
-      'get-current-time,get-freebusy,list-events,list-calendars,create-event,manage-accounts',
+      'get-current-time,get-freebusy,list-events,get-event,list-calendars,create-event,update-event,manage-accounts', // [V2] C2 11
     );
 
     const ours = [
@@ -189,11 +204,14 @@ describe('the spawn contract of ARCH 5.1', () => {
 describe('verifyToolset (startup contract, fail closed)', () => {
   const good: ToolListEntry[] = Object.keys(MCP_TOOLS).map((name) => ({
     name,
-    annotations: { readOnlyHint: READ_ONLY_HINT_TOOLS.includes(name as never) },
-    inputSchema: { required: [...(REQUIRED_INPUT_FIELDS[name] ?? [])] },
+    annotations: {
+      readOnlyHint: READ_ONLY_HINT_TOOLS.includes(name as never),
+      destructiveHint: DESTRUCTIVE_HINT_TOOLS.includes(name as never), // [V2] B3
+    },
+    inputSchema: patchedSchemaOf(name),
   }));
 
-  it('accepts exactly the six names with readOnlyHint and the required fields', () => {
+  it('accepts exactly the eight names with readOnlyHint, destructiveHint and the required fields', () => {
     expect(verifyToolset(good)).toBeNull();
   });
 
@@ -345,10 +363,13 @@ describe('mcpStatusToErrorCode', () => {
   it('carries a code for exactly the states overallOf classes as attention', () => {
     const healthy = {
       whatsapp: { state: 'online' as const, since: 0 },
-      llm: { state: 'ready' as const, since: 0, provider: 'local' as const, model: '' },
+      llm: { state: 'ready' as const, since: 0, provider: 'local' as const, model: '', quota: null },
     };
     for (const status of MCP_STATUSES) {
-      const overall = overallOf({ ...healthy, calendar: { state: status, since: 0 } }, severityOf);
+      const overall = overallOf(
+        { ...healthy, calendar: { state: status, since: 0, updatesAvailable: true } },
+        severityOf,
+      );
       expect([status, mcpStatusToErrorCode(status) !== null]).toEqual([status, overall === 'attention']);
     }
   });
@@ -387,8 +408,11 @@ describe('createMcpHost start-up', () => {
       listTools: async () => ({
         tools: Object.keys(MCP_TOOLS).map((name) => ({
           name,
-          annotations: { readOnlyHint: READ_ONLY_HINT_TOOLS.includes(name as never) },
-          inputSchema: { required: [...(REQUIRED_INPUT_FIELDS[name] ?? [])] },
+          annotations: {
+            readOnlyHint: READ_ONLY_HINT_TOOLS.includes(name as never),
+            destructiveHint: DESTRUCTIVE_HINT_TOOLS.includes(name as never), // [V2] B3
+          },
+          inputSchema: patchedSchemaOf(name),
         })),
       }),
       callTool: async () => {
@@ -456,8 +480,11 @@ describe('createMcpHost start-up', () => {
       listTools: async () => ({
         tools: Object.keys(MCP_TOOLS).map((name) => ({
           name,
-          annotations: { readOnlyHint: READ_ONLY_HINT_TOOLS.includes(name as never) },
-          inputSchema: { required: [...(REQUIRED_INPUT_FIELDS[name] ?? [])] },
+          annotations: {
+            readOnlyHint: READ_ONLY_HINT_TOOLS.includes(name as never),
+            destructiveHint: DESTRUCTIVE_HINT_TOOLS.includes(name as never), // [V2] B3
+          },
+          inputSchema: patchedSchemaOf(name),
         })),
       }),
       callTool: async () => ({
@@ -520,7 +547,17 @@ describe('callerFor - the only exit from host.ts', () => {
     await host.start();
     expect(host).not.toHaveProperty('caller');
     expect(host).not.toHaveProperty('client');
-    expect(Object.keys(host).sort()).toEqual(['callerFor', 'childSpec', 'onStatus', 'pid', 'start', 'status', 'stop']);
+    // [V2] + updateSurface() (C2 11): a status query, not a capability
+    expect(Object.keys(host).sort()).toEqual([
+      'callerFor',
+      'childSpec',
+      'onStatus',
+      'pid',
+      'start',
+      'status',
+      'stop',
+      'updateSurface',
+    ]);
     expectTypeOf(host.callerFor('read')).toEqualTypeOf<McpToolCaller<'read'>>();
     expectTypeOf(host).toExtend<McpCallerSource>();
   });
@@ -628,8 +665,11 @@ describe('callerFor - the only exit from host.ts', () => {
       listTools: async () => ({
         tools: Object.keys(MCP_TOOLS).map((name) => ({
           name,
-          annotations: { readOnlyHint: READ_ONLY_HINT_TOOLS.includes(name as never) },
-          inputSchema: { required: [...(REQUIRED_INPUT_FIELDS[name] ?? [])] },
+          annotations: {
+            readOnlyHint: READ_ONLY_HINT_TOOLS.includes(name as never),
+            destructiveHint: DESTRUCTIVE_HINT_TOOLS.includes(name as never), // [V2] B3
+          },
+          inputSchema: patchedSchemaOf(name),
         })),
       }),
       callTool: async ({ name }) =>
@@ -654,8 +694,11 @@ describe('callerFor - the only exit from host.ts', () => {
       listTools: async () => ({
         tools: Object.keys(MCP_TOOLS).map((name) => ({
           name,
-          annotations: { readOnlyHint: READ_ONLY_HINT_TOOLS.includes(name as never) },
-          inputSchema: { required: [...(REQUIRED_INPUT_FIELDS[name] ?? [])] },
+          annotations: {
+            readOnlyHint: READ_ONLY_HINT_TOOLS.includes(name as never),
+            destructiveHint: DESTRUCTIVE_HINT_TOOLS.includes(name as never), // [V2] B3
+          },
+          inputSchema: patchedSchemaOf(name),
         })),
       }),
       callTool: async ({ name }) => {
@@ -739,8 +782,11 @@ describe('stderr plumbing and childSpec', () => {
       listTools: async () => ({
         tools: Object.keys(MCP_TOOLS).map((name) => ({
           name,
-          annotations: { readOnlyHint: READ_ONLY_HINT_TOOLS.includes(name as never) },
-          inputSchema: { required: [...(REQUIRED_INPUT_FIELDS[name] ?? [])] },
+          annotations: {
+            readOnlyHint: READ_ONLY_HINT_TOOLS.includes(name as never),
+            destructiveHint: DESTRUCTIVE_HINT_TOOLS.includes(name as never), // [V2] B3
+          },
+          inputSchema: patchedSchemaOf(name),
         })),
       }),
       callTool: async () => ({ content: [{ type: 'text', text: JSON.stringify({ accounts: [] }) }] }),
@@ -776,8 +822,11 @@ describe('stderr plumbing and childSpec', () => {
         toolsListCalls += 1;
         const tools = Object.keys(MCP_TOOLS).map((name) => ({
           name,
-          annotations: { readOnlyHint: READ_ONLY_HINT_TOOLS.includes(name as never) },
-          inputSchema: { required: [...(REQUIRED_INPUT_FIELDS[name] ?? [])] },
+          annotations: {
+            readOnlyHint: READ_ONLY_HINT_TOOLS.includes(name as never),
+            destructiveHint: DESTRUCTIVE_HINT_TOOLS.includes(name as never), // [V2] B3
+          },
+          inputSchema: patchedSchemaOf(name),
         }));
         // The second spawn is a different (upgraded) server: one extra tool appeared.
         return { tools: drift ? [...tools, { name: 'search-events' }] : tools };
@@ -950,7 +999,7 @@ describe('the fake stays a faithful stand-in', () => {
     await fake.connect();
     expectTypeOf(fake.callerFor('read'))
       .parameter(0)
-      .toEqualTypeOf<'get-current-time' | 'get-freebusy' | 'list-events'>();
+      .toEqualTypeOf<'get-current-time' | 'get-freebusy' | 'list-events' | 'get-event'>(); // [V2] C2 11
     await expect((fake.callerFor('read') as unknown as McpToolCaller)('create-event', {})).rejects.toMatchObject({
       name: 'McpCapabilityError',
     });

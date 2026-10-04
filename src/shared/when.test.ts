@@ -36,6 +36,11 @@ const BASE: Extraction = {
   location: '',
   missing: [],
   suspicious: false,
+  // [V2] C2 5: the four B20 fields S1 v2 always returns (null-event defaults of the S1 v2 few-shots)
+  refersToExisting: false,
+  change: 'no_change',
+  changeConfidence: 'high',
+  confidence: 'high',
 };
 const ex = (patch: Partial<Extraction>): Extraction => ({ ...BASE, ...patch });
 const ctx = (patch: Partial<WhenContext> = {}): WhenContext => ({

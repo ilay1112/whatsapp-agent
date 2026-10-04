@@ -25,6 +25,13 @@ export interface AppPaths {
   mcpEntry: string; // <mcpRoot>\node_modules\@cocal\google-calendar-mcp\build\index.js
   iconsDir: string; // <resources>\icons | <appRoot>\resources\icons
   linksJson: string; // <resources>\links.json | <appRoot>\resources\links.json
+  // ---- [V2 ADD] v2-build-plan section 3 seam (owner V2-W1-10-main-platform) ----
+  mediaCacheDir: string; // <userData>\media-cache  (<sha256(chatJid|waMsgId)>.jpg + .thumb.jpg)
+  voiceTmpDir: string; // <userData>\voice\tmp  (<uuid>.wav, deleted in finally)
+  cliRunsDir: string; // <userData>\cli-runs  (fresh empty cwd per claude job)
+  agyWorkspaceDir: string; // <userData>\agy-workspace  (runs\<runId>\ per agy job)
+  whisperDir: string; // <resources>\whisper | <appRoot>\vendor\whisper
+  whisperCliExe: string; // <whisperDir>\whisper-cli.exe (never spawned by a test, T8)
 }
 
 export interface CreatePathsInput {
@@ -38,6 +45,8 @@ export interface CreatePathsInput {
 export const DEV_RESOURCES_DIR = 'resources';
 export const DEV_LLAMA_DIR = path.join('vendor', 'llama', 'win-x64-vulkan');
 export const DEV_MCP_DIR = path.join('build-resources', 'calendar-mcp');
+/** [V2 ADD] Unpackaged location of the fetched whisper.cpp binaries (scripts/fetch-whisper.mjs; git-ignored). */
+export const DEV_WHISPER_DIR = path.join('vendor', 'whisper');
 /** Entry point of the staged calendar MCP server, relative to `mcpRoot`. */
 export const MCP_ENTRY_REL = path.join('node_modules', '@cocal', 'google-calendar-mcp', 'build', 'index.js');
 
@@ -51,6 +60,7 @@ export function createPaths(input: CreatePathsInput): AppPaths {
   const bridgeCwd = path.join(userData, 'bridge');
   const bridgeStoreDir = path.join(bridgeCwd, 'store');
   const googleDir = path.join(userData, 'google');
+  const whisperDir = input.isPackaged ? path.join(resourcesDir, 'whisper') : path.join(appRoot, DEV_WHISPER_DIR);
   return {
     userData,
     appDb: path.join(userData, 'app.db'),
@@ -74,6 +84,12 @@ export function createPaths(input: CreatePathsInput): AppPaths {
     mcpEntry: path.join(mcpRoot, MCP_ENTRY_REL),
     iconsDir: path.join(resourcesDir, 'icons'),
     linksJson: path.join(resourcesDir, 'links.json'),
+    mediaCacheDir: path.join(userData, 'media-cache'),
+    voiceTmpDir: path.join(userData, 'voice', 'tmp'),
+    cliRunsDir: path.join(userData, 'cli-runs'),
+    agyWorkspaceDir: path.join(userData, 'agy-workspace'),
+    whisperDir,
+    whisperCliExe: path.join(whisperDir, 'whisper-cli.exe'),
   };
 }
 
@@ -88,4 +104,15 @@ export function createPaths(input: CreatePathsInput): AppPaths {
  */
 export function childExeRoots(paths: AppPaths): string[] {
   return [paths.resourcesDir, paths.llamaDir, paths.mcpRoot];
+}
+
+/**
+ * [V2] B2/B31: the job class adds `whisper-cli.exe` to the executables a pid file may name. Packaged it sits under
+ * `<resources>\whisper` (inside `resourcesDir`, already accepted); unpackaged it is `<appRoot>\vendor\whisper`, outside every
+ * v1 root - the same trap `childExeRoots` fixed for llama. The v1 list is left byte-identical (its tests pin three entries);
+ * compose.ts (V2-W2-01) passes this list to the reaper instead. The CLI exe paths are NOT roots: B31 accepts them only by
+ * exact equality with a locator-resolved path, never by directory.
+ */
+export function childAndJobExeRoots(paths: AppPaths): string[] {
+  return [...childExeRoots(paths), paths.whisperDir];
 }

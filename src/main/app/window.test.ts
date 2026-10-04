@@ -478,6 +478,22 @@ describe('runQuitSequence', () => {
     expect(h.order).toContain('drainExecutor:1000');
   });
 
+  it('[V2] B2: every job is killed BEFORE the supervised children stop (call-order spy)', async () => {
+    const h = setup();
+    h.deps.killJobs = async () => void h.order.push('killJobs');
+    await runQuitSequence(h.deps);
+    expect(h.order.indexOf('killJobs')).toBeGreaterThan(h.order.indexOf('stopQueue'));
+    expect(h.order.indexOf('killJobs')).toBeLessThan(h.order.indexOf(`stopChildren:${QUIT_CHILD_GRACE_MS}`));
+    expect(h.order.filter((x) => x === 'killJobs')).toHaveLength(1);
+  });
+
+  it('[V2] a failing job kill never stops the sequence', async () => {
+    const h = setup({ killJobs: () => Promise.reject(new Error('taskkill refused')) });
+    await runQuitSequence(h.deps);
+    expect(h.order).toContain(`stopChildren:${QUIT_CHILD_GRACE_MS}`);
+    expect(h.order.at(-1)).toBe('exit');
+  });
+
   it('setQuitting runs before anything else so the close handler stops hiding', async () => {
     const h = setup();
     await runQuitSequence(h.deps);

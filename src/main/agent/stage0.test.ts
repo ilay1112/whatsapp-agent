@@ -2,9 +2,24 @@
 // Safety-critical file: 100 % lines / 95 % branches. One test per rule, one per precedence pair, plus the visibility rule
 // and the `[R2]` cloud release window. Real in-memory app.db + real repos - no repo doubles.
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { createStage0, isNeverTriggerRow, releaseHeldItems, type Stage0Deps, type Stage0Input } from './stage0';
+import {
+  createStage0,
+  isNeverTriggerRow,
+  isSelfTriggerCandidate,
+  releaseHeldItems,
+  type Stage0Deps,
+  type Stage0Input,
+} from './stage0';
 import { isListed } from '../../shared/state';
-import { LIMITS, type Chat, type EpochMs, type Item, type Message, type ProviderId } from '../../shared/types';
+import {
+  CONSENT_VERSIONS,
+  LIMITS,
+  type Chat,
+  type EpochMs,
+  type Item,
+  type Message,
+  type ProviderId,
+} from '../../shared/types';
 import type { ErrorCode } from '../../shared/errors';
 import { ANCHOR_MS, createTestEnv, seedChat, seedOpenItem, type TestEnv } from '../../../tests/golden/testDb';
 
@@ -39,6 +54,21 @@ describe('isNeverTriggerRow', () => {
   it('keeps an inbound DM with text, including an @lid DM', () => {
     expect(isNeverTriggerRow(message())).toBe(false);
     expect(isNeverTriggerRow(message({ chatJid: '112233445566778@lid' }))).toBe(false);
+  });
+});
+
+describe('isSelfTriggerCandidate ([V2-W1-07] F28)', () => {
+  it('accepts only the own non-empty text row of a DM', () => {
+    expect(isSelfTriggerCandidate(message({ fromMe: true }))).toBe(true);
+    expect(isSelfTriggerCandidate(message({ fromMe: true, chatJid: '112233445566778@lid' }))).toBe(true);
+    expect(isSelfTriggerCandidate(message())).toBe(false); // inbound
+    expect(isSelfTriggerCandidate(message({ fromMe: true, chatJid: '120363000000000000@g.us' }))).toBe(false);
+    expect(isSelfTriggerCandidate(message({ fromMe: true, deleted: true }))).toBe(false);
+    expect(isSelfTriggerCandidate(message({ fromMe: true, mediaType: 'reaction' }))).toBe(false);
+    expect(isSelfTriggerCandidate(message({ fromMe: true, text: '  ' }))).toBe(false);
+    // a voice note / captioned picture of the user is never a self trigger at ingest time (no transcript before V0)
+    expect(isSelfTriggerCandidate(message({ fromMe: true, mediaType: 'audio', text: '' }))).toBe(false);
+    expect(isSelfTriggerCandidate(message({ fromMe: true, mediaType: 'image', text: 'caption' }))).toBe(false);
   });
 });
 
@@ -90,6 +120,33 @@ describe('createStage0 gate order (ARCHITECTURE 6.1)', () => {
   it('rule 1 beats rule 2: an own backlog row is dropped, not stored as context', () => {
     const verdict = createStage0(deps)(input({ isLive: false, message: message({ fromMe: true, chatJid: chat.jid }) }));
     expect(verdict).toEqual({ kind: 'drop' });
+  });
+
+  it('[V2-W1-07, F28] rule 1 waives only the from_me rule for a flagged self-trigger candidate', () => {
+    const own = message({ fromMe: true, chatJid: chat.jid });
+    expect(createStage0(deps)(input({ message: own, selfTrigger: true }))).toEqual({ kind: 'queued' });
+    // not flagged => v1 drop; flagged but not a candidate (reaction / empty / audio) => drop
+    expect(createStage0(deps)(input({ message: own, selfTrigger: false }))).toEqual({ kind: 'drop' });
+    for (const over of [
+      { mediaType: 'reaction' },
+      { text: ' ' },
+      { mediaType: 'audio', text: '' },
+    ] as Partial<Message>[])
+      expect(createStage0(deps)(input({ message: { ...own, ...over }, selfTrigger: true }))).toEqual({ kind: 'drop' });
+  });
+
+  it('[V2-W1-07, F28] every later gate still applies to a self trigger (backlog, policy, pause, budget, edit-lock)', () => {
+    const own = message({ fromMe: true, chatJid: chat.jid });
+    const s0 = createStage0(deps);
+    expect(s0(input({ message: own, selfTrigger: true, isLive: false }))).toEqual({ kind: 'context_only' });
+    paused = true;
+    expect(s0(input({ message: own, selfTrigger: true }))).toEqual({ kind: 'held', reason: 'paused' });
+    paused = false;
+    for (let i = 0; i < LIMITS.llmRunsPerChatPerHour; i++)
+      env.repos.rate.record('llm_chat', String(chat.id), ANCHOR_MS);
+    expect(s0(input({ message: own, selfTrigger: true }))).toEqual({ kind: 'held', reason: 'budget' });
+    env.repos.chats.setPolicy(chat.id, 'never');
+    expect(s0(input({ message: own, selfTrigger: true }))).toEqual({ kind: 'no_item' });
   });
 
   it('rule 2: a backlog row is context only', () => {
@@ -177,15 +234,15 @@ describe('createStage0 gate order (ARCHITECTURE 6.1)', () => {
   it('rule 5b: a cloud provider without a CURRENT consent record is held (defence in depth)', () => {
     env.patchSettings((s) => void (s.llm.provider = 'claude'));
     expect(createStage0(deps)(input())).toEqual({ kind: 'held', reason: 'waiting_llm' });
-    env.repos.consents.accept('cloud_claude', 1, ANCHOR_MS);
+    env.repos.consents.accept('cloud_claude', CONSENT_VERSIONS.cloud_claude, ANCHOR_MS);
     expect(createStage0(deps)(input())).toEqual({ kind: 'queued' });
   });
 
   it('rule 5b: the gemini consent is checked for the gemini provider', () => {
     env.patchSettings((s) => void (s.llm.provider = 'gemini'));
-    env.repos.consents.accept('cloud_claude', 1, ANCHOR_MS); // the wrong consent does not help
+    env.repos.consents.accept('cloud_claude', CONSENT_VERSIONS.cloud_claude, ANCHOR_MS); // the wrong consent does not help
     expect(createStage0(deps)(input())).toEqual({ kind: 'held', reason: 'waiting_llm' });
-    env.repos.consents.accept('cloud_gemini', 1, ANCHOR_MS);
+    env.repos.consents.accept('cloud_gemini', CONSENT_VERSIONS.cloud_gemini, ANCHOR_MS);
     expect(createStage0(deps)(input())).toEqual({ kind: 'queued' });
   });
 
@@ -211,7 +268,7 @@ describe('createStage0 gate order (ARCHITECTURE 6.1)', () => {
     tokensLeft = 0;
     expect(createStage0(deps)(input())).toEqual({ kind: 'queued' }); // provider 'local': no token budget
     env.patchSettings((s) => void (s.llm.provider = 'claude'));
-    env.repos.consents.accept('cloud_claude', 1, ANCHOR_MS);
+    env.repos.consents.accept('cloud_claude', CONSENT_VERSIONS.cloud_claude, ANCHOR_MS);
     expect(createStage0(deps)(input())).toEqual({ kind: 'held', reason: 'budget' });
     tokensLeft = 1;
     expect(createStage0(deps)(input())).toEqual({ kind: 'queued' });
