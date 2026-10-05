@@ -20,13 +20,16 @@ import {
   buildRunFileMcpConfig,
   checkClaudeInit,
   nameSha8,
+  unwrapWrappedStructured,
   type ClaudeRunRequestExt,
 } from './claudeCli';
 import {
   agyEventResult,
+  agyStepVerdict,
   buildAgentFile,
   buildAgyArgs,
   checkAgyInit,
+  checkAgyPolicy,
   classifyAgyExit,
   classifyAgyResult,
   planAgyHome,
@@ -93,6 +96,9 @@ export interface CliRunFs {
   readdirSync(p: string): string[];
   writeFileSync(p: string, text: string): void;
   rmSync(p: string, o: { recursive: true; force: true }): void;
+  /** [agy-provider-fix A] re-reads the isolated agy settings.json before every agy spawn (utf8). A seam without it cannot verify the
+   *  deny-all policy, so every agy job is refused (fail closed); Claude jobs never read anything. */
+  readFileSync?(p: string): string;
 }
 /** Extra members of the runner object (the provider and cli:test read them); the CliRunner interface stays the frozen one. */
 export interface CliRunnerExt extends CliRunner {
@@ -256,8 +262,21 @@ interface ParseState {
   usageWindowHit: boolean;
   overageKill: boolean;
   result: Record<string, unknown> | null;
+  /** [claude-extract-debug] Claude schema runs: the answer of the LAST StructuredOutput call that wrapped it under one made-up key
+   *  (unwrapWrappedStructured). Used only when the result carries no structured_output; memory only, never logged or audited. */
+  schemaWrapped: Record<string, unknown> | null;
   agyErrorLine: string | null;
   agyAuthRequired: boolean;
+  /** [agy-provider-fix C] the runtime tool watch saw a step that is not manage_task {"Action":"list"}: the job was killed at once. */
+  agyToolBlocked: boolean;
+}
+
+/** [agy-provider-fix A] The isolated settings.json did not carry exactly the deny-all permissions policy after the write: no spawn. */
+class AgyPolicyRefusal extends Error {
+  constructor(public readonly verdict: 'missing' | 'altered') {
+    super('agy_policy_refused');
+    this.name = 'AgyPolicyRefusal';
+  }
 }
 
 export function createCliRunner(deps: {
@@ -292,6 +311,7 @@ export function createCliRunner(deps: {
     readdirSync: (p) => fs.readdirSync(p),
     writeFileSync: (p, t) => fs.writeFileSync(p, t, { encoding: 'utf8', mode: 0o600 }),
     rmSync: (p, o) => fs.rmSync(p, o),
+    readFileSync: (p) => fs.readFileSync(p, 'utf8'),
   };
   const newId = deps.randomId ?? ((): string => randomUUID());
 
@@ -377,14 +397,19 @@ export function createCliRunner(deps: {
       usageWindowHit: false,
       overageKill: false,
       result: null,
+      schemaWrapped: null,
       agyErrorLine: null,
       agyAuthRequired: false,
+      agyToolBlocked: false,
     };
+    /** [agy-provider-fix A] agy only: the policy verdict of this job (deny_all, or why it was refused before the spawn). */
+    let agyPolicy: 'deny_all' | 'missing' | 'altered' | null = null;
     let outcome: CliRunResult;
     try {
       rfs.mkdirSync(runDir, { recursive: true });
       if (rfs.readdirSync(runDir).length !== 0) throw new Error('cli_run_dir_not_empty'); // fresh + empty, or no run at all
       const spec = prepare(req, runDir);
+      if (req.provider === 'antigravity_cli') agyPolicy = 'deny_all'; // prepare() throws AgyPolicyRefusal otherwise
       const done = await deps.jobs.run(spec, (job) => consume(job, req, st), signal);
       outcome = classify(req, st, done, signal);
     } catch (e) {
@@ -401,6 +426,17 @@ export function createCliRunner(deps: {
                 ? 'not_ready'
                 : 'not_ready',
       );
+      if (e instanceof AgyPolicyRefusal) {
+        // [agy-provider-fix A] fail closed BEFORE the spawn: the stdin line (message text) never leaves the app. Same handling as a failed
+        // init proof ('sandbox' = CLI_TOOLSET_MISMATCH, never retried with looser settings), with the exact reason in the audit.
+        agyPolicy = e.verdict;
+        deps.audit('toolset_mismatch', ref, {
+          provider: req.provider,
+          stage: req.stage,
+          reason: `policy_${e.verdict}`,
+        });
+        outcome = refusal('sandbox');
+      }
     } finally {
       try {
         rfs.rmSync(runDir, { recursive: true, force: true });
@@ -421,6 +457,8 @@ export function createCliRunner(deps: {
       ms: outcome.ms,
       usageWindowHit: st.usageWindowHit,
       ...(st.errorBeforeInitCode === null ? {} : { errorBeforeInit: st.errorBeforeInitCode }),
+      // [agy-provider-fix] what an agy proof rests on: the policy verdict of this job and the runtime tool watch (enums/booleans only)
+      ...(req.provider === 'antigravity_cli' ? { policy: agyPolicy ?? 'not_checked', runtimeWatch: true } : {}),
     });
     return outcome;
   };
@@ -454,21 +492,30 @@ export function createCliRunner(deps: {
         env: buildClaudeEnv({ processEnv, tempDir: runDir, token }),
       };
     }
-    // antigravity_cli (lane L10 bodies): agent file + schema.json in the run dir, isolated profile env (F3). Never an MCP config.
+    // antigravity_cli (lane L10 bodies): agent file (schema in its body) in the run dir, isolated profile env (F3). Never an MCP config.
     const stage = req.stage as 'extract' | 'draft' | 'smoke';
     const plan = planAgyHome(deps.userDataDir, path.join(deps.userDataDir, 'agy-workspace'));
     for (const f of plan.files) {
       rfs.mkdirSync(path.dirname(f.path), { recursive: true });
       rfs.writeFileSync(f.path, f.text);
     }
+    // [agy-provider-fix A] re-read the isolated settings.json AFTER the write and refuse to spawn unless it carries exactly the deny-all
+    // permissions policy (a lost / tampered write, an fs seam that cannot read, an unreadable file => no job at all).
+    const settingsFile = plan.files.find((f) => path.win32.basename(f.path).toLowerCase() === 'settings.json');
+    let settingsText: string | null;
+    try {
+      settingsText =
+        settingsFile === undefined || rfs.readFileSync === undefined ? null : rfs.readFileSync(settingsFile.path);
+    } catch {
+      settingsText = null;
+    }
+    const policy = checkAgyPolicy(settingsText);
+    if (policy !== 'deny_all') throw new AgyPolicyRefusal(policy);
     const agentDir = path.join(runDir, '.agents', 'agents');
     rfs.mkdirSync(agentDir, { recursive: true });
-    rfs.writeFileSync(path.join(agentDir, `wca-${stage}.md`), buildAgentFile(stage, req.system));
-    let schemaPath: string | null = null;
-    if (req.jsonSchema !== null) {
-      schemaPath = path.join(runDir, 'schema.json');
-      rfs.writeFileSync(schemaPath, JSON.stringify(req.jsonSchema));
-    }
+    // [agy-schema-loop] the schema rides in the agent body, never as --json-schema (agy then loops until its print timeout: see
+    // agySchemaInstruction). No schema.json is written.
+    rfs.writeFileSync(path.join(agentDir, `wca-${stage}.md`), buildAgentFile(stage, req.system, req.jsonSchema));
     const sysRoot = processEnv.SystemRoot ?? processEnv.SYSTEMROOT ?? 'C:\\Windows';
     const env: Record<string, string> = {
       SystemRoot: sysRoot,
@@ -484,7 +531,7 @@ export function createCliRunner(deps: {
       AGY_CLI_DISABLE_AUTO_UPDATE: 'true',
       ...(plan.env as Record<string, string>), // typed wide on purpose: it overrides the defaults above
     };
-    return { ...base, args: [...argsPrefix(req.exePath), ...buildAgyArgs({ ...req, stage }, schemaPath)], env };
+    return { ...base, args: [...argsPrefix(req.exePath), ...buildAgyArgs({ ...req, stage }, null)], env };
   };
 
   /** Reads the NDJSON stream. The init proof is asserted on the FIRST event, before any later line is looked at (I11). */
@@ -549,6 +596,9 @@ export function createCliRunner(deps: {
           job.kill();
           break;
         }
+        // [agy-provider-fix B/C] an agy init passes on its shape only (init.tools lists ALL available tools on 1.2.16): the proof rests on
+        // the deny-all policy prepare() verified before this spawn and on the runtime tool watch below - recorded on the proof itself.
+        if (!isClaude) st.proof = { ...st.proof, policy: 'deny_all', runtimeWatch: true };
         continue;
       }
       if (isClaude) {
@@ -565,9 +615,11 @@ export function createCliRunner(deps: {
               (req.exposedNames ?? []).includes(name.slice(CLI_MCP_TOOL_PREFIX.length))
             )
               st.toolCalls += 1;
-            else if (req.jsonSchema !== null && name === CLI_SCHEMA_TOOL)
-              continue; // F13: never a strike
-            else strike(name);
+            else if (req.jsonSchema !== null && name === CLI_SCHEMA_TOOL) {
+              // F13: never a strike. [claude-extract-debug] keep a wrapped answer (the CLI rejects that call itself).
+              st.schemaWrapped = unwrapWrappedStructured(block.input, req.jsonSchema) ?? st.schemaWrapped;
+              continue;
+            } else strike(name);
           }
         } else if (ev.type === 'system' && ev.subtype === 'api_retry') {
           st.lastApiRetry = mapApiRetryError(ev.error) ?? st.lastApiRetry;
@@ -594,7 +646,30 @@ export function createCliRunner(deps: {
             for (const d of denials) strike(isRecord(d) && typeof d.tool_name === 'string' ? d.tool_name : '');
         }
       } else {
-        // agy stream-json ends with {"event":"result","result":{status, structured_output, denied_actions, ...}} (research 5.3).
+        // [agy-provider-fix C] runtime tool watch: EVERY step_update is judged on its own (a DONE step counts even when its ACTIVE step was
+        // missed). Anything but manage_task {"Action":"list"} kills the job at once - the run fails, its answer is never used, the strike
+        // is audited with the hashed name only (B26) and counts for the breaker (classify).
+        const step = agyStepVerdict(ev);
+        if (step.kind === 'blocked') {
+          st.blocked += 1;
+          st.agyToolBlocked = true;
+          st.strikeAbort = true;
+          deps.audit('tool_blocked', req.auditRef ?? null, {
+            nameSha8: nameSha8(step.name),
+            nameLen: step.name.length,
+            verdict: 'blocked_unknown_tool',
+            runId: req.runId ?? null,
+          });
+          deps.audit('run_aborted', req.auditRef ?? null, {
+            provider: req.provider,
+            stage: req.stage,
+            blockedCalls: st.blocked,
+          });
+          job.kill();
+          break;
+        }
+        // agy 1.2.16 ends with {"event":"result","result":{conversation_id, status, response (the answer as a STRING), ...}} - no
+        // structured_output (orchestrator capture 2026-10-05); classifyAgyResult parses result.response.
         const r = agyEventResult(ev);
         if (r !== null) st.result = r;
       }
@@ -645,6 +720,12 @@ export function createCliRunner(deps: {
       breakerStrike();
       return { ...out('sandbox', 'killed'), sandbox: st.initSeen ? st.proof : NO_PROOF };
     }
+    // [agy-provider-fix C] a tool step the watch blocked: a FAILED run (sandbox_ok = 0, CLI_TOOLSET_MISMATCH), never its answer, and a
+    // breaker strike (3 in the window => CLI_UNSTABLE until the user's "Test again").
+    if (req.provider === 'antigravity_cli' && st.agyToolBlocked) {
+      breakerStrike();
+      return { ...out('sandbox', 'killed'), sandbox: { ...st.proof, initOk: false, mismatch: 'extra_tool' } };
+    }
     if (st.strikeAbort) return out(null, 'killed');
     if (st.overageKill) return out('overage', 'killed');
     if (signal.aborted) return out('aborted', 'aborted');
@@ -664,6 +745,11 @@ export function createCliRunner(deps: {
       ? { inputTokens: num(r.usage.input_tokens) ?? 0, outputTokens: num(r.usage.output_tokens) ?? 0 }
       : undefined;
     const u = usage === undefined ? {} : { usage };
+    // 1b. [claude-extract-debug] live 2.1.258: every StructuredOutput attempt wrapped the answer under one made-up key, the CLI
+    // rejected each and ended with error_max_turns + is_error true (no structured_output). That subtype - and only that one, never a
+    // usage-window hit - yields the wrapped object; the caller zod-validates it like any structured_output.
+    if (req.jsonSchema !== null && r.subtype === 'error_max_turns' && st.schemaWrapped !== null && !st.usageWindowHit)
+      return out(null, 'end', { ...u, structured: st.schemaWrapped });
     // 2. is_error FIRST (issue #79500: subtype 'success' + is_error true is a failure).
     if (r.is_error === true) {
       const text = typeof r.result === 'string' ? r.result : '';
@@ -680,6 +766,7 @@ export function createCliRunner(deps: {
     if (req.jsonSchema !== null) {
       const structured = r.structured_output;
       if (structured !== undefined && structured !== null) return out(null, 'end', { ...u, structured });
+      if (st.schemaWrapped !== null) return out(null, 'end', { ...u, structured: st.schemaWrapped });
       if (text !== null && text.trim().length > 0) return out(null, 'end', { ...u, text }); // fence-strip path (P2 6.3)
       return out('bad_output', 'bad_output', u);
     }
@@ -702,11 +789,18 @@ export function createCliRunner(deps: {
     if (fromStderr !== null) return out(fromStderr, 'bad_output');
     if (done.exitCode === 3 && st.agyErrorLine !== null) return out(mapAgyError(st.agyErrorLine), 'bad_output');
     if (done.exitCode === 1 && st.agyAuthRequired) return out('not_logged_in', 'bad_output');
+    // [agy-provider-fix] "[agy] print timeout after ... returning partial output" (stderr, 1.2.16): whatever came back is partial - never
+    // used, even when it happens to parse. Treated like our own wall-clock timeout (CLOUD_UNAVAILABLE + a breaker strike).
+    if (done.stderrMarkers.includes('print_timeout')) {
+      breakerStrike();
+      return out('network', 'killed');
+    }
     if (done.exitCode !== 0 || st.result === null) {
       breakerStrike();
       return out('network', 'killed');
     }
-    // Result table (B14, C2 9.2): SUCCESS + structured_output + empty denied_actions => ok; anything else => bad_output, never retried.
+    // Result table (B14, C2 9.2): SUCCESS + an answer (structured_output, or result.response parsed - D) + empty denied_actions => ok;
+    // anything else => bad_output, never retried.
     const verdict = classifyAgyResult(st.result);
     if (!verdict.ok) return out(verdict.error, 'bad_output');
     return out(null, 'end', { structured: verdict.structured });

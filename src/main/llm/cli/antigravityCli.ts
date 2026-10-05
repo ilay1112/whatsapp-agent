@@ -17,7 +17,7 @@ import type { AgyRunningFn, HomeDirFn } from '../../deps';
 import type { JobRunner } from '../../proc/jobRunner';
 import { AGY_ENV_KEYS } from '../../proc/jobRunner';
 import { CLI_SMOKE_SCHEMA, CLI_SMOKE_SYSTEM, CLI_SMOKE_USER } from './claudeCli';
-import { AGY_HOME_DIR, AGY_WORKSPACE_DIR, planAgyHome } from './claudeCli.env';
+import { AGY_DENY_ALL, AGY_HOME_DIR, AGY_WORKSPACE_DIR, checkAgyPolicy, planAgyHome } from './claudeCli.env';
 
 // ---------------- antigravityCli.ts (lane L10, built last, release-gated on M-AGY-1) ----------------
 export const AGY_MIN_VERSION = '1.2.11';
@@ -67,6 +67,8 @@ export function buildAgyStdinLine(text: string): string {
 /** [F3] Isolated profile (default): planAgyHome lives in claudeCli.env.ts since cli-sandbox-3 (the locator's probes use the same profile
  *  and must not import this file - import cycle); re-exported here unchanged for every existing importer. */
 export { planAgyHome };
+/** [agy-provider-fix A] The deny-all permissions policy written into the isolated profile and its checker (claudeCli.env.ts, re-exported). */
+export { AGY_DENY_ALL, checkAgyPolicy };
 /** [F3] Global-profile FALLBACK mode only (chosen by M-AGY-1 if isolation breaks auth): run before EVERY job. Any enabled server in
  *  ~/.gemini/config/mcp_config.json, any hook in hooks.json, or an unparsable file => 'unsafe' (provider not_ready, CLI_UNSAFE_CONFIG, no spawn). */
 export function preflightAgyGlobalConfig(mcpConfigText: string | null, hooksText: string | null): 'safe' | 'unsafe' {
@@ -93,7 +95,11 @@ export function preflightAgyGlobalConfig(mcpConfigText: string | null, hooksText
 export const AGY_PROFILE_MODE: 'isolated' | 'global_checked' = 'isolated'; // flipped only by a decision after M-AGY-1
 /** The per-run agent file .agents\agents\wca-<stage>.md: frontmatter {name, description, tools: [], commandExecutionPolicy: off,
  *  excludeDefaultComponents: true, mainAgent: true, subagent: false, model: inherit} + body = the verbatim constant. Pure; no untrusted parameter (I4'). */
-export function buildAgentFile(stage: 'extract' | 'draft' | 'smoke', systemConstant: string): string {
+export function buildAgentFile(
+  stage: 'extract' | 'draft' | 'smoke',
+  systemConstant: string,
+  schema: object | null = null,
+): string {
   const s = agyStageOf(stage);
   if (typeof systemConstant !== 'string' || systemConstant.length === 0) throw new Error('agy_empty_system');
   const frontmatter = [
@@ -109,11 +115,27 @@ export function buildAgentFile(stage: 'extract' | 'draft' | 'smoke', systemConst
     '---',
     '',
   ].join('\n');
-  // Body = the verbatim S1 / S3 / smoke constant, byte for byte (no trailing newline added: the fake hashes exactly this).
-  return `${frontmatter}${systemConstant}`;
+  // Body = the verbatim S1 / S3 / smoke constant, byte for byte (no trailing newline added: the fake hashes exactly this), plus - for a
+  // structured stage - the schema instruction (agySchemaInstruction; the schema is a code constant, never message text).
+  return `${frontmatter}${systemConstant}${schema === null ? '' : agySchemaInstruction(schema)}`;
 }
-/** init.agent === 'wca-<stage>' && init.tools empty && init.permission_mode === 'request-review' ; status 'WAITING', non-empty denied_actions or
- *  a missing structured_output => bad_output (LLM_BAD_OUTPUT), never a permissions retry ; exit 3 + AGY_ERROR: -> regex classification. */
+/** [agy-schema-loop] The answer format, appended to the agent body of a structured stage. agy 1.2.16 with `--json-schema` only accepts
+ *  the answer through its built-in `finish` tool; an agent with `tools: []` cannot call it, so agy re-prompts after every valid answer
+ *  until its print timeout (live capture 2026-10-05: smoke 4 turns + "print timeout", S1 the same object 4x in result.response). The
+ *  app therefore never passes `--json-schema` to agy: the schema travels in the instructions, the answer is the JSON text in
+ *  result.response (parseAgyResponse) and the caller zod-validates it like every provider's answer. The marker line is fixed and the
+ *  schema is its LAST line (one JSON line), so the fake can read it back. */
+export const AGY_SCHEMA_MARKER =
+  'Answer format: reply with exactly ONE JSON object that validates against the JSON Schema on the next line, and nothing else (no prose, no code fence, no tool call).';
+export function agySchemaInstruction(schema: object): string {
+  return `\n\n${AGY_SCHEMA_MARKER}\n${JSON.stringify(schema)}`;
+}
+/** init.agent === 'wca-<stage>' && init.tools an array && no MCP server && init.permission_mode === 'request-review'.
+ *  [agy-provider-fix B] agy 1.2.16 ALWAYS lists every available tool (60) in init.tools - Google's docs define it as "names of all available
+ *  tools" - while the agent file's `tools: []` is enforced at call time. The list is therefore recorded as information only (toolsCount);
+ *  the I11 proof of an agy run rests on (A) the deny-all permissions policy the runner re-reads before every spawn, (C) the runner's runtime
+ *  tool watch (agyStepVerdict on every step_update), and the agent file. A missing / non-array list is still no proof (fail closed).
+ *  Result: status 'WAITING', non-empty denied_actions or no parseable answer => bad_output (LLM_BAD_OUTPUT), never a permissions retry. */
 export function checkAgyInit(init: unknown, stage: 'extract' | 'draft' | 'smoke'): CliSandboxProof {
   const fail = (mismatch: CliSandboxProof['mismatch'], toolsCount = 0, mcpServers = 0): CliSandboxProof => ({
     initOk: false,
@@ -129,8 +151,8 @@ export function checkAgyInit(init: unknown, stage: 'extract' | 'draft' | 'smoke'
   const toolsCount = Array.isArray(tools) ? tools.length : 0;
   const servers = i.mcp_servers;
   const mcpServers = Array.isArray(servers) ? servers.length : 0;
-  // I11: no tools at all (a missing / non-array list is not a proof of "none").
-  if (!Array.isArray(tools) || tools.length !== 0) return fail('extra_tool', toolsCount, mcpServers);
+  // A missing / non-array list is not the documented init: no proof. Its LENGTH is information only (agy-provider-fix B).
+  if (!Array.isArray(tools)) return fail('extra_tool', toolsCount, mcpServers);
   if (servers !== undefined && (!Array.isArray(servers) || servers.length !== 0))
     return fail('extra_server', toolsCount, mcpServers);
   let expected: string;
@@ -141,8 +163,49 @@ export function checkAgyInit(init: unknown, stage: 'extract' | 'draft' | 'smoke'
   }
   if (i.agent !== expected) return fail('agent_mismatch', toolsCount, mcpServers);
   if (i.permission_mode !== 'request-review') return fail('permission_mode', toolsCount, mcpServers);
-  // agy reports no credential source; the provider is never proven better than 'cli_unproven' in v2.0 anyway (B14/C4).
-  return { initOk: true, toolsCount: 0, mcpServers: 0, apiKeySource: 'unknown', mismatch: null };
+  // agy reports no credential source; the provider is never proven better than 'cli_unproven' in v2.0 anyway (B14/C4). The runner adds
+  // policy:'deny_all' + runtimeWatch:true to this proof (it verified the policy before the spawn and watches every step after it).
+  return { initOk: true, toolsCount, mcpServers: 0, apiKeySource: 'unknown', mismatch: null };
+}
+
+/** [agy-provider-fix C] The one tool step agy 1.2.16 makes by itself even in a plain run (orchestrator capture): manage_task with
+ *  parameters EXACTLY {"Action":"list"} (output "No background tasks are currently running."). Nothing else is ever tolerated. */
+export const AGY_TOLERATED_TOOL = 'manage_task';
+export type AgyStepVerdict = { kind: 'none' } | { kind: 'allowed' } | { kind: 'blocked'; name: string };
+const AGY_NON_TOOL_STEPS: readonly unknown[] = ['agent_response', 'user_input'];
+/**
+ * [agy-provider-fix C] The runtime tool watch over ONE stream-json event (pure). Non-step events => none. A step_update whose step_type
+ * is 'agent_response' / 'user_input' and that carries no tool field => none. Every other step_update is a tool step (an unknown step kind
+ * or a malformed payload too - fail closed): 'allowed' only for tool_name 'manage_task' (tool_info.name absent or equal) with
+ * tool_info.parameters exactly {"Action":"list"}, in ANY state (ACTIVE / DONE / ERROR); everything else => blocked with the name the
+ * runner hashes for the audit (B26: never stored in clear). A DONE step is judged on its own, so a missed ACTIVE step changes nothing.
+ */
+export function agyStepVerdict(ev: unknown): AgyStepVerdict {
+  if (!isRecord(ev) || ev.event !== 'step_update') return { kind: 'none' };
+  const s = ev.step_update;
+  if (!isRecord(s)) return { kind: 'blocked', name: '' };
+  const info = s.tool_info;
+  const hasToolFields = s.tool_name !== undefined || info !== undefined;
+  if (AGY_NON_TOOL_STEPS.includes(s.step_type) && !hasToolFields) return { kind: 'none' };
+  const name =
+    typeof s.tool_name === 'string'
+      ? s.tool_name
+      : isRecord(info) && typeof info.name === 'string'
+        ? info.name
+        : s.step_type !== 'tool' && typeof s.step_type === 'string'
+          ? `step:${s.step_type}`
+          : '';
+  if (
+    s.step_type === 'tool' &&
+    s.tool_name === AGY_TOLERATED_TOOL &&
+    isRecord(info) &&
+    (info.name === undefined || info.name === AGY_TOLERATED_TOOL) &&
+    isRecord(info.parameters) &&
+    Object.keys(info.parameters).length === 1 &&
+    info.parameters.Action === 'list'
+  )
+    return { kind: 'allowed' };
+  return { kind: 'blocked', name };
 }
 /** cli:allowWorkspace (AGY_PROFILE_MODE 'global_checked' ONLY; in 'isolated' mode the app-owned profile already trusts the workspace and the
  *  channel answers BAD_REQUEST): read-merge-write of ONLY `trustedWorkspaces` in %USERPROFILE%\.gemini\antigravity-cli\settings.json (backup
@@ -529,8 +592,11 @@ export function agyEventResult(ev: unknown): Record<string, unknown> | null {
   if (!isRecord(ev) || ev.event !== 'result' || !isRecord(ev.result)) return null;
   return ev.result;
 }
-/** Result table (B14, C2 9.2): exit 0 + status SUCCESS + structured_output + empty denied_actions => ok; WAITING, non-empty
- *  denied_actions or a missing structured_output (bug #794) => bad_output (never a permissions retry). */
+/** Result table (B14, C2 9.2): exit 0 + status SUCCESS + empty denied_actions + no error + an answer => ok; WAITING, non-empty
+ *  denied_actions, an error or no parseable answer (bug #794) => bad_output (never a permissions retry).
+ *  [agy-provider-fix D] agy 1.2.16 prints NO structured_output, even with --json-schema: the answer is the JSON STRING in result.response
+ *  (parseAgyResponse: one code fence stripped, JSON.parse). A structured_output, if a later version adds it, still wins. The value is
+ *  UNTRUSTED either way - the caller validates it with the stage's strict zod schema. */
 export function classifyAgyResult(
   result: Record<string, unknown> | null,
 ): { ok: true; structured: unknown } | { ok: false; error: 'bad_output' } {
@@ -539,9 +605,33 @@ export function classifyAgyResult(
   if (result.status !== 'SUCCESS') return { ok: false, error: 'bad_output' };
   if (denied !== undefined && !(Array.isArray(denied) && denied.length === 0))
     return { ok: false, error: 'bad_output' };
+  if (result.error !== undefined && result.error !== null && result.error !== '')
+    return { ok: false, error: 'bad_output' };
   const structured = result.structured_output;
-  if (structured === undefined || structured === null) return { ok: false, error: 'bad_output' };
-  return { ok: true, structured };
+  if (structured !== undefined && structured !== null) return { ok: true, structured };
+  const parsed = parseAgyResponse(result.response);
+  if (parsed === null) return { ok: false, error: 'bad_output' };
+  return { ok: true, structured: parsed };
+}
+/** One whole-text code fence (```json ... ``` / ``` ... ```), CRLF tolerated; a second fence inside means "not one block". */
+const AGY_FENCE_RE = /^```[A-Za-z]*[ \t]*\r?\n([\s\S]*?)\r?\n?```$/;
+/** [agy-provider-fix D] result.response (a STRING) -> the parsed JSON value, or null when it is not exactly one JSON value (optionally in
+ *  ONE code fence). A truncated (print-timeout partial) or prose answer is null; JSON `null` is null too. Pure. */
+export function parseAgyResponse(response: unknown): unknown {
+  if (typeof response !== 'string') return null;
+  let text = response.trim();
+  const fence = AGY_FENCE_RE.exec(text);
+  if (fence !== null) {
+    text = (fence[1] ?? '').trim();
+    if (text.includes('```')) return null;
+  }
+  if (text.length === 0) return null;
+  try {
+    const v: unknown = JSON.parse(text);
+    return v === undefined ? null : v;
+  } catch {
+    return null;
+  }
 }
 /** `AGY_ERROR: {...}` (exit 3) text -> ProviderErrorCode: RESOURCE_EXHAUSTED|429|quota => usage_limit (CLOUD_QUOTA), authentication =>
  *  not_logged_in (CLI_NOT_SIGNED_IN), else network (CLOUD_UNAVAILABLE). Field names // ASSUMED (U-A3): only substrings are used. */

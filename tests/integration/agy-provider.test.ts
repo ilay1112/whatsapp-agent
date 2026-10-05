@@ -254,7 +254,7 @@ describe('prefetch loop (B14, P2 13.2): the app prefetches, the model gets ONE n
 
 describe('every mode of T2 3.2 through the production runner', () => {
   // Expected provider-level outcome of one S1 structured() call per mode (C2 9.2 binding tables).
-  const EXPECT: Record<FakeAgyMode, { ok: true } | { code: string; turnStarted: boolean }> = {
+  const EXPECT: Record<FakeAgyMode, { ok: true } | { code: string; turnStarted: boolean; spawns?: 0 }> = {
     ok: { ok: true },
     waiting: { code: 'bad_output', turnStarted: true },
     denied: { code: 'bad_output', turnStarted: true },
@@ -262,7 +262,18 @@ describe('every mode of T2 3.2 through the production runner', () => {
     exit3: { code: 'usage_limit', turnStarted: true },
     exit3_auth: { code: 'not_logged_in', turnStarted: true },
     exit3_other: { code: 'network', turnStarted: true },
-    extra_tools: { code: 'sandbox', turnStarted: false },
+    // [agy-provider-fix B] agy 1.2.16 lists every available tool in init.tools: an init listing tools is information, not a failure;
+    // the proof rests on the deny-all policy (A) + the runtime tool watch (C) + the agent file.
+    extra_tools: { ok: true },
+    // [agy-provider-fix C] a real tool step => killed at once, the run failed, its answer never used
+    forbidden_tool_step: { code: 'sandbox', turnStarted: true },
+    forbidden_tool_done_only: { code: 'sandbox', turnStarted: true },
+    manage_task_other_action: { code: 'sandbox', turnStarted: true },
+    // [agy-provider-fix A] the deny-all policy is missing / altered after the write => refused BEFORE any spawn
+    policy_missing: { code: 'sandbox', turnStarted: false, spawns: 0 },
+    policy_altered: { code: 'sandbox', turnStarted: false, spawns: 0 },
+    // a print timeout returns partial output: never used
+    print_timeout_partial: { code: 'network', turnStarted: true },
     agent_mismatch: { code: 'sandbox', turnStarted: false },
     perm_mode: { code: 'sandbox', turnStarted: false },
     not_signed_in: { code: 'not_logged_in', turnStarted: false },
@@ -324,12 +335,74 @@ describe('every mode of T2 3.2 through the production runner', () => {
         }
         const j = runsOf(w)[0];
         if (j !== undefined) expect(j.turnStarted).toBe(want.turnStarted);
+        if (j !== undefined) expect(j.toolStepCompleted).toBe(false); // a forbidden step never got further than its first event
       }
-      expect(w.spawnedArgs).toHaveLength(1); // never a retry, never a second run with other flags
+      // never a retry, never a second run with other flags (and no run at all without the deny-all policy)
+      expect(w.spawnedArgs).toHaveLength('spawns' in want ? 0 : 1);
       for (const argv of w.spawnedArgs) expect(argv).not.toContain('-p');
     },
     20_000,
   );
+});
+
+describe('[agy-provider-fix] the agy 1.2.16 stream end to end (60 init tools, manage_task list, nested result without structured_output)', () => {
+  it('provider-start smoke passes; S1 answer parsed from result.response; the proof records policy deny_all + runtimeWatch', async () => {
+    const w = world({
+      script: [{ when: { purpose: 'extract' }, respond: { structured: { intent: 'meeting', confidence: 0.8 } } }],
+    });
+    const p = w.provider();
+    expect(await p.validate(new AbortController().signal)).toEqual({ ok: true, model: 'gemini-3.8-flash-high' });
+    const proofs: unknown[] = [];
+    const out = await p.structured(S1, AGY_S1_SCHEMA, opts({ onSandbox: (x) => proofs.push(x) }));
+    expect(out).toEqual({ intent: 'meeting', confidence: 0.8 });
+    expect(proofs).toEqual([
+      {
+        initOk: true,
+        toolsCount: 60,
+        mcpServers: 0,
+        apiKeySource: 'unknown',
+        mismatch: null,
+        policy: 'deny_all',
+        runtimeWatch: true,
+      },
+    ]);
+    const rows = w.audits.filter((a) => a.kind === 'cli_run');
+    expect(rows).toHaveLength(2);
+    for (const r of rows) expect(r.detail).toMatchObject({ initOk: true, policy: 'deny_all', runtimeWatch: true });
+    expect(w.audits.filter((a) => a.kind === 'tool_blocked')).toEqual([]);
+    for (const j of runsOf(w)) {
+      expect(j.violations).toEqual([]);
+      expect(j.policyDenyAll).toBe(true);
+    }
+  });
+
+  it('S3 prefetch draft with a forbidden tool step: the draft fails (sandbox), nothing of the run is used, the breaker counts it', async () => {
+    const w = world({
+      state: { modeByStage: { draft: 'forbidden_tool_step' } },
+      script: [{ when: { stage: 'draft' }, respond: { structured: { reply: 'SHOULD NEVER BE USED' } } }],
+    });
+    const gate = { prefetchWaContext: vi.fn(async () => null) } as unknown as ToolGate;
+    const ctx = { signal: new AbortController().signal, blockedCalls: 0 } as unknown as RunCtx;
+    const out = await runDraft(w.provider(), {
+      messages: [
+        { role: 'system', content: 'S3 CONSTANT (agy test)' },
+        { role: 'user', content: AGY_S1_USER },
+      ],
+      ctx,
+      gate,
+      maxOutputTokens: 256,
+      wallClockMs: 120_000,
+    });
+    expect(out).toMatchObject({ ok: false, reason: 'sandbox' });
+    expect(JSON.stringify(out)).not.toContain('SHOULD NEVER BE USED');
+    expect(w.spawnedArgs).toHaveLength(1);
+    const [j] = runsOf(w);
+    expect(j?.toolStepEmitted).toBe('run_command');
+    expect(j?.toolStepCompleted).toBe(false);
+    expect(j?.exit).toBe(-1);
+    expect(w.audits.map((a) => a.kind)).toEqual(['tool_blocked', 'run_aborted', 'cli_run']);
+    expect(w.runner.breakerOpen()).toBe(false); // one strike of three
+  }, 20_000);
 });
 
 describe('pictures never go to agy (U-A2): readImage routes antigravity_cli to Local', () => {

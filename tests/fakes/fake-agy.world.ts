@@ -11,7 +11,7 @@ import { fileURLToPath } from 'node:url';
 import type { SpawnOptions } from 'node:child_process';
 import type { EpochMs } from '../../src/shared/types.ts';
 import { createJobRunner, type JobRunner } from '../../src/main/proc/jobRunner.ts';
-import { createCliRunner, type CliRunBudget, type CliRunnerExt } from '../../src/main/llm/cli/runner.ts';
+import { createCliRunner, type CliRunBudget, type CliRunFs, type CliRunnerExt } from '../../src/main/llm/cli/runner.ts';
 import { createAgyProvider, type AgyProvider } from '../../src/main/llm/cli/antigravityCli.ts';
 import type { CliLocator } from '../../src/main/llm/cli/locator.ts';
 import {
@@ -138,12 +138,37 @@ export function createAgyFakeWorld(
     APPDATA: path.join(home, 'AppData', 'Roaming'),
     LOCALAPPDATA: path.join(home, 'AppData', 'Local'),
   };
+  // [agy-provider-fix A] node:fs for the run dirs, with ONE tamper hook: in mode policy_missing / policy_altered the write of the isolated
+  // settings.json loses the permissions block / one deny wildcard (a failed or tampered write) - the runner must refuse before spawning.
+  const isolatedSettings = path.join(userData, 'agy-home', '.gemini', 'antigravity-cli', 'settings.json');
+  const tamperSettings = (text: string): string => {
+    if (state.mode !== 'policy_missing' && state.mode !== 'policy_altered') return text;
+    const o = JSON.parse(text) as { permissions?: { deny?: string[] } };
+    if (state.mode === 'policy_missing') delete o.permissions;
+    else if (o.permissions !== undefined)
+      o.permissions.deny = (o.permissions.deny ?? []).filter((d) => d !== 'command(*)');
+    return `${JSON.stringify(o, null, 2)}\n`;
+  };
+  const runFs: CliRunFs = {
+    mkdirSync: (p, o) => {
+      fs.mkdirSync(p, o);
+    },
+    readdirSync: (p) => fs.readdirSync(p),
+    writeFileSync: (p, t) =>
+      fs.writeFileSync(p, path.resolve(p) === path.resolve(isolatedSettings) ? tamperSettings(t) : t, {
+        encoding: 'utf8',
+        mode: 0o600,
+      }),
+    readFileSync: (p) => fs.readFileSync(p, 'utf8'),
+    rmSync: (p, o) => fs.rmSync(p, o),
+  };
   const runner = createCliRunner({
     jobs,
     userDataDir: userData,
     now: opts.now ?? (() => Date.now()),
     audit: (kind, ref, detail) => audits.push({ kind, ref, detail }),
     processEnv,
+    fs: runFs,
     ...(opts.budget ? { budget: opts.budget } : {}),
     ...(opts.graceMs !== undefined ? { graceMs: opts.graceMs } : {}),
   });

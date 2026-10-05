@@ -605,6 +605,10 @@ export interface CliSandboxProof {
     | 'agent_mismatch'
     | 'permission_mode'
     | null;
+  /** [agy-provider-fix] antigravity_cli only: what the proof rests on now that init.tools lists every available tool - the deny-all
+   *  permissions policy verified before the spawn ('deny_all') and the runtime tool watch over every step (true). Absent on Claude runs. */
+  policy?: 'deny_all';
+  runtimeWatch?: boolean;
 }
 export interface QueueEntry {
   chatId: ChatRef;

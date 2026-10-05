@@ -14,6 +14,7 @@ import {
   CLI_OAUTH_API_KEY_SOURCE,
   CLI_SMOKE_SCHEMA,
   CLI_SMOKE_SYSTEM,
+  CLAUDE_EXTRACT_MAX_TURNS,
   buildClaudeArgs,
   buildClaudeStdinLine,
 } from '../../src/main/llm/cli/claudeCli.ts';
@@ -90,7 +91,7 @@ describe('argv + env literal per stage (production builders, fake witness)', () 
         system: S1_MESSAGES[0]!.content,
         stdinLine: '',
         jsonSchema: S1_SCHEMA,
-        maxTurns: 1,
+        maxTurns: CLAUDE_EXTRACT_MAX_TURNS, // [claude-extract-debug] bounded: one in-run StructuredOutput retry
         wallClockMs: LIMITS.cliWallClockExtractMs,
         toolServer: null,
         observedVersion: '2.1.258',
@@ -149,6 +150,7 @@ describe('argv + env literal per stage (production builders, fake witness)', () 
     const [e] = w.journal();
     expect(e!.stage).toBe('read_image');
     expect(e!.argv).not.toContain('--mcp-config');
+    expect(e!.argv[e!.argv.indexOf('--max-turns') + 1]).toBe('1'); // I12: only S1 got the bounded extra turn
     expect(e!.argv[e!.argv.indexOf('--tools') + 1]).toBe('');
     expect(JSON.parse(e!.argv[e!.argv.indexOf('--json-schema') + 1] as string)).toEqual(IMAGE_READ_SCHEMA);
     expect(e!.violations).toEqual([]);

@@ -182,6 +182,36 @@ describe('A. claude_cli end to end over the spawned fake (production modules)', 
     20_000,
   );
 
+  // [claude-extract-debug] the live 2.1.258 S1 failure (6 of 8 runs LLM_BAD_OUTPUT): StructuredOutput called with ONE `$PARAMETER_NAME`
+  // key wrapping the whole answer, rejected by the CLI, run ends error_max_turns + is_error. The answer is recovered and the CLI gets
+  // one in-run retry (--max-turns 2); a split answer still fails closed.
+  it.each(['placeholder_keys', 'tool_name_wrapper', 'placeholder_then_heal'] as const)(
+    'mode %s => the S1 answer is recovered (bounded --max-turns 2, tool-less, no strike)',
+    async (mode) => {
+      const w = world({ state: { modeByStage: { extract: mode } } });
+      const out = await w.provider().structured(S1_MESSAGES, S1_SCHEMA as never, extractOpts());
+      expect(out).toMatchObject({ intent: 'meeting' });
+      const [e] = w.journal();
+      expect(e!.stage).toBe('extract');
+      expect(e!.argv[e!.argv.indexOf('--max-turns') + 1]).toBe('2');
+      expect(e!.argv[e!.argv.indexOf('--tools') + 1]).toBe('');
+      expect(e!.violations).toEqual([]);
+      expect(w.audits.filter((a) => a.kind === 'tool_blocked')).toEqual([]);
+      expect(cliRunsEmpty(w)).toBe(true);
+    },
+    20_000,
+  );
+
+  it('mode placeholder_split => LLM_BAD_OUTPUT (never a partial answer)', async () => {
+    const w = world({ state: { modeByStage: { extract: 'placeholder_split' } } });
+    const err = await w
+      .provider()
+      .structured(S1_MESSAGES, S1_SCHEMA as never, extractOpts())
+      .catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(LlmError);
+    expect(providerErrorToErrorCode('claude_cli', (err as LlmError).code)).toBe('LLM_BAD_OUTPUT');
+  }, 20_000);
+
   it('garbage_lines and stderr_flood are tolerated; nothing of stdout/stderr reaches an audit row', async () => {
     for (const mode of ['garbage_lines', 'stderr_flood'] as const) {
       const w = world({ state: { modeByStage: { extract: mode } } });

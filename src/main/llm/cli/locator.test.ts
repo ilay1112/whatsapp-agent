@@ -330,7 +330,23 @@ describe('createCliLocator - antigravity_cli', () => {
     }
     for (const s of seenAtSpawn) {
       expect(s.workspaceExists).toBe(true);
-      expect(JSON.parse(s.settings ?? 'null')).toEqual({ trustedWorkspaces: [workspace] });
+      // [agy-provider-fix A] the shared isolated profile also carries the deny-all permissions policy
+      expect(JSON.parse(s.settings ?? 'null')).toEqual({
+        trustedWorkspaces: [workspace],
+        permissions: {
+          allow: [],
+          ask: [],
+          deny: [
+            'read_file(*)',
+            'write_file(*)',
+            'read_url(*)',
+            'execute_url(*)',
+            'command(*)',
+            'unsandboxed(*)',
+            'mcp(*)',
+          ],
+        },
+      });
     }
   });
 

@@ -13,13 +13,19 @@ import type { CliRunRequest, CliRunResult, CliRunner } from './runner';
 import type { CliLocator } from './locator';
 import { CLI_SMOKE_SCHEMA, CLI_SMOKE_SYSTEM, CLI_SMOKE_USER } from './claudeCli';
 import {
+  AGY_DENY_ALL,
   AGY_ENV_KEY_SET,
   AGY_MIN_VERSION,
   AGY_PROFILE_MODE,
   agyEventResult,
   agyModelEffort,
+  agyStepVerdict,
+  checkAgyPolicy,
+  parseAgyResponse,
   agyPrintTimeout,
   buildAgentFile,
+  AGY_SCHEMA_MARKER,
+  agySchemaInstruction,
   buildAgyArgs,
   buildAgyEnv,
   buildAgyStdinLine,
@@ -177,7 +183,7 @@ describe('buildAgyStdinLine (F20: agy envelope, text only, one line)', () => {
 });
 
 describe('planAgyHome (F3 isolated profile)', () => {
-  it('only settings.json with trustedWorkspaces, env overrides under <userData>\\agy-home', () => {
+  it('only settings.json with trustedWorkspaces + the deny-all permissions policy, env overrides under <userData>\\agy-home', () => {
     const ws = `${USERDATA}\\agy-workspace`;
     const p = planAgyHome(USERDATA, ws);
     const home = `${USERDATA}\\agy-home`;
@@ -185,9 +191,29 @@ describe('planAgyHome (F3 isolated profile)', () => {
     expect(p.files).toEqual([
       {
         path: `${home}\\.gemini\\antigravity-cli\\settings.json`,
-        text: `${JSON.stringify({ trustedWorkspaces: [ws] }, null, 2)}\n`,
+        text: `${JSON.stringify(
+          {
+            trustedWorkspaces: [ws],
+            permissions: {
+              allow: [],
+              ask: [],
+              deny: [
+                'read_file(*)',
+                'write_file(*)',
+                'read_url(*)',
+                'execute_url(*)',
+                'command(*)',
+                'unsandboxed(*)',
+                'mcp(*)',
+              ],
+            },
+          },
+          null,
+          2,
+        )}\n`,
       },
     ]);
+    expect(checkAgyPolicy(p.files[0]?.text ?? null)).toBe('deny_all');
     expect(p.env).toEqual({
       USERPROFILE: home,
       HOME: home,
@@ -197,6 +223,51 @@ describe('planAgyHome (F3 isolated profile)', () => {
     // nothing under .gemini\config (the user's mcp_config.json / hooks.json never exist in the app profile), no mcp_config anywhere
     expect(p.files.some((f) => /mcp_config|hooks\.json|[\\/]config[\\/]/i.test(f.path))).toBe(false);
     expect(planAgyHome(USERDATA, ws)).toEqual(p); // idempotent, pure
+  });
+});
+
+describe('[agy-provider-fix A] checkAgyPolicy: the deny-all permissions policy re-read before every job (fail closed)', () => {
+  const settings = (permissions: unknown): string =>
+    JSON.stringify({ trustedWorkspaces: ['C:\\x'], ...(permissions === undefined ? {} : { permissions }) });
+  const DENY = [...AGY_DENY_ALL];
+  it('the deny list is exactly the 7 namespace wildcards', () => {
+    expect(DENY).toEqual([
+      'read_file(*)',
+      'write_file(*)',
+      'read_url(*)',
+      'execute_url(*)',
+      'command(*)',
+      'unsandboxed(*)',
+      'mcp(*)',
+    ]);
+    expect(Object.isFrozen(AGY_DENY_ALL)).toBe(true);
+  });
+  const cases: Array<[string, string | null, 'deny_all' | 'missing' | 'altered']> = [
+    ['the app-written policy', settings({ allow: [], ask: [], deny: DENY }), 'deny_all'],
+    ['same set, other order', settings({ allow: [], ask: [], deny: [...DENY].reverse() }), 'deny_all'],
+    ['BOM', `\uFEFF${settings({ allow: [], ask: [], deny: DENY })}`, 'deny_all'],
+    ['file absent', null, 'missing'],
+    ['empty text', '', 'missing'],
+    ['unparsable', '{"permissions":', 'missing'],
+    ['an array', '[]', 'missing'],
+    ['no permissions key', settings(undefined), 'missing'],
+    ['permissions null', settings(null), 'missing'],
+    ['deny missing', settings({ allow: [], ask: [] }), 'missing'],
+    ['deny empty', settings({ allow: [], ask: [], deny: [] }), 'altered'],
+    ['one wildcard dropped', settings({ allow: [], ask: [], deny: DENY.slice(1) }), 'altered'],
+    ['a duplicate instead of one', settings({ allow: [], ask: [], deny: [...DENY.slice(1), DENY[1]] }), 'altered'],
+    ['an extra deny entry', settings({ allow: [], ask: [], deny: [...DENY, 'command(rm)'] }), 'altered'],
+    ['an allow entry', settings({ allow: ['command(*)'], ask: [], deny: DENY }), 'altered'],
+    ['an ask entry', settings({ allow: [], ask: ['read_url(*)'], deny: DENY }), 'altered'],
+    ['allow missing', settings({ ask: [], deny: DENY }), 'altered'],
+    ['ask not an array', settings({ allow: [], ask: {}, deny: DENY }), 'altered'],
+    ['deny not an array', settings({ allow: [], ask: [], deny: 'command(*)' }), 'altered'],
+    ['an unknown permissions key', settings({ allow: [], ask: [], deny: DENY, mode: 'yolo' }), 'altered'],
+    ['permissions an array', settings([]), 'altered'],
+    ['a non-string deny entry', settings({ allow: [], ask: [], deny: [...DENY.slice(1), 7] }), 'altered'],
+  ];
+  it.each(cases)('%s => %s', (_n, text, want) => {
+    expect(checkAgyPolicy(text)).toBe(want);
   });
 });
 
@@ -248,8 +319,25 @@ describe('buildAgentFile (agent file bytes; no untrusted parameter)', () => {
     expect(buildAgentFile('smoke', CLI_SMOKE_SYSTEM).endsWith(`---\n${CLI_SMOKE_SYSTEM}`)).toBe(true);
     expect(d).not.toMatch(/mcpServers|skills|plugins/);
   });
-  it('type test: exactly (stage literal, constant) - nothing else can be passed in', () => {
-    expectTypeOf(buildAgentFile).parameters.toEqualTypeOf<['extract' | 'draft' | 'smoke', string]>();
+  it('[agy-schema-loop] a structured stage carries its schema in the body: constant + marker line + the schema as the LAST line', () => {
+    const schema = { type: 'object', properties: { ok: { type: 'boolean' } }, required: ['ok'] };
+    const text = buildAgentFile('smoke', CLI_SMOKE_SYSTEM, schema);
+    expect(text.endsWith(`---\n${CLI_SMOKE_SYSTEM}${agySchemaInstruction(schema)}`)).toBe(true);
+    expect(agySchemaInstruction(schema)).toBe(`\n\n${AGY_SCHEMA_MARKER}\n${JSON.stringify(schema)}`);
+    expect(JSON.parse(text.split('\n').at(-1) ?? '')).toEqual(schema);
+    expect(buildAgentFile('smoke', CLI_SMOKE_SYSTEM, null)).toBe(buildAgentFile('smoke', CLI_SMOKE_SYSTEM));
+  });
+  it('[agy-schema-loop] the fake reads the schema back with the SAME marker', async () => {
+    const fake = (await import('../../../../tests/fakes/fake-agy.mjs')) as unknown as {
+      FAKE_AGY_SCHEMA_MARKER: string;
+      splitSchemaFromBody(b: string): { constant: string; schemaText: string | null };
+    };
+    expect(fake.FAKE_AGY_SCHEMA_MARKER).toBe(AGY_SCHEMA_MARKER);
+    const body = `S1 BODY${agySchemaInstruction({ type: 'object' })}`;
+    expect(fake.splitSchemaFromBody(body)).toEqual({ constant: 'S1 BODY', schemaText: '{"type":"object"}' });
+  });
+  it('type test: exactly (stage literal, constant, code schema) - nothing else can be passed in', () => {
+    expectTypeOf(buildAgentFile).parameters.toEqualTypeOf<['extract' | 'draft' | 'smoke', string, (object | null)?]>();
     expectTypeOf(buildAgentFile).returns.toEqualTypeOf<string>();
   });
   it('refuses an empty constant and a foreign stage', () => {
@@ -264,7 +352,7 @@ describe('checkAgyInit (I11 init proof table)', () => {
     conversation_id: 'fake-1',
     init: { cwd: RUNDIR, tools: [], permission_mode: 'request-review', agent: `wca-${stage}`, ...over },
   });
-  it('agent wca-<stage> + no tools + request-review => proven', () => {
+  it('agent wca-<stage> + a tools array + request-review => proven (toolsCount recorded as information only)', () => {
     for (const s of ['extract', 'draft', 'smoke'] as const)
       expect(checkAgyInit(init({}, s), s)).toEqual({
         initOk: true,
@@ -275,8 +363,30 @@ describe('checkAgyInit (I11 init proof table)', () => {
       });
     expect(checkAgyInit(init({ mcp_servers: [] }), 'extract').initOk).toBe(true);
   });
+  it('[agy-provider-fix B] agy 1.2.16 ALWAYS lists every available tool in init.tools: the list is not the proof any more', () => {
+    // Google's docs define init.tools as "names of all available tools"; the agent file's tools: [] is enforced at call time and the
+    // runner's runtime tool watch + the deny-all policy carry the proof (I11).
+    const sixty = Array.from({ length: 60 }, (_, i) =>
+      i === 0 ? 'run_command' : i === 1 ? 'manage_task' : `tool_${i}`,
+    );
+    const p = checkAgyInit(
+      {
+        event: 'init',
+        init: {
+          model: 'gemini-3.8-flash-high',
+          cwd: RUNDIR,
+          agent: 'wca-smoke',
+          tools: sixty,
+          permission_mode: 'request-review',
+          json_schema: { type: 'object' },
+        },
+      },
+      'smoke',
+    );
+    expect(p).toEqual({ initOk: true, toolsCount: 60, mcpServers: 0, apiKeySource: 'unknown', mismatch: null });
+    expect(checkAgyInit(init({ tools: ['run_command'] }), 'extract')).toMatchObject({ initOk: true, toolsCount: 1 });
+  });
   const bad: Array<[string, unknown, 'extract' | 'draft' | 'smoke', string | null, number]> = [
-    ['a tool', init({ tools: ['run_command'] }), 'extract', 'extra_tool', 1],
     ['tools missing', init({ tools: undefined }), 'extract', 'extra_tool', 0],
     ['tools not an array', init({ tools: 'none' }), 'extract', 'extra_tool', 0],
     ['an MCP server', init({ mcp_servers: [{ name: 'whatsapp' }] }), 'extract', 'extra_server', 0],
@@ -584,6 +694,83 @@ describe('createAgyWorkspace (fallback mode only; S-HOME, S-PROC)', () => {
   });
 });
 
+describe('[agy-provider-fix C] agyStepVerdict: the runtime tool watch (only manage_task {"Action":"list"} is tolerated)', () => {
+  const step = (s: Record<string, unknown>): unknown => ({
+    event: 'step_update',
+    step_update: { conversation_id: 'c-1', step_index: 1, ...s },
+  });
+  const tool = (name: string, parameters: unknown, state = 'ACTIVE', extra: Record<string, unknown> = {}): unknown =>
+    step({ state, step_type: 'tool', tool_name: name, tool_info: { name, parameters, output: 'x' }, ...extra });
+  it('non-tool events and agent / user steps => none', () => {
+    for (const ev of [
+      { event: 'init', init: {} },
+      { event: 'result', result: { status: 'SUCCESS' } },
+      { event: 'progress' },
+      { type: 'assistant' },
+      null,
+      'x',
+      step({ state: 'ACTIVE', step_type: 'agent_response' }),
+      step({ state: 'DONE', step_type: 'agent_response', text_delta: '{"a":1}' }),
+      step({ state: 'DONE', step_type: 'user_input' }),
+    ])
+      expect(agyStepVerdict(ev)).toEqual({ kind: 'none' });
+  });
+  it('manage_task with parameters EXACTLY {"Action":"list"} => allowed, in every state', () => {
+    for (const state of ['ACTIVE', 'DONE', 'ERROR'])
+      expect(agyStepVerdict(tool('manage_task', { Action: 'list' }, state))).toEqual({ kind: 'allowed' });
+    // the tool_info.name may be absent, never different
+    expect(
+      agyStepVerdict(
+        step({
+          state: 'DONE',
+          step_type: 'tool',
+          tool_name: 'manage_task',
+          tool_info: { parameters: { Action: 'list' } },
+        }),
+      ),
+    ).toEqual({ kind: 'allowed' });
+  });
+  const blocked: Array<[string, unknown, string]> = [
+    ['run_command ACTIVE', tool('run_command', { CommandLine: 'echo hi' }), 'run_command'],
+    ['run_command DONE (ACTIVE missed)', tool('run_command', { CommandLine: 'echo hi' }, 'DONE'), 'run_command'],
+    ['an invented tool in ERROR', tool('bash', { cmd: 'x' }, 'ERROR'), 'bash'],
+    ['read_url_content', tool('read_url_content', { Url: 'https://example.com' }), 'read_url_content'],
+    ['view_file', tool('view_file', { AbsolutePath: 'C:\\x' }, 'DONE'), 'view_file'],
+    ['manage_task create', tool('manage_task', { Action: 'create', Command: 'x' }), 'manage_task'],
+    ['manage_task kill', tool('manage_task', { Action: 'kill', TaskId: '1' }, 'DONE'), 'manage_task'],
+    ['manage_task list + an extra parameter', tool('manage_task', { Action: 'list', Filter: 'x' }), 'manage_task'],
+    ['manage_task lower-case action', tool('manage_task', { action: 'list' }), 'manage_task'],
+    ['manage_task parameters as a string', tool('manage_task', '{"Action":"list"}'), 'manage_task'],
+    ['manage_task parameters missing', tool('manage_task', undefined), 'manage_task'],
+    [
+      'manage_task name but another tool_info name',
+      step({
+        state: 'ACTIVE',
+        step_type: 'tool',
+        tool_name: 'manage_task',
+        tool_info: { name: 'run_command', parameters: { Action: 'list' } },
+      }),
+      'manage_task',
+    ],
+    [
+      'a tool step without tool_name (name from tool_info)',
+      step({ state: 'DONE', step_type: 'tool', tool_info: { name: 'write_to_file', parameters: {} } }),
+      'write_to_file',
+    ],
+    ['a tool step with no name at all', step({ state: 'ACTIVE', step_type: 'tool' }), ''],
+    [
+      'an agent_response step carrying tool fields',
+      step({ state: 'DONE', step_type: 'agent_response', tool_name: 'search_web', tool_info: { name: 'search_web' } }),
+      'search_web',
+    ],
+    ['an unknown step type (fail closed)', step({ state: 'ACTIVE', step_type: 'subagent' }), 'step:subagent'],
+    ['a step_update without a payload object', { event: 'step_update', step_update: 'x' }, ''],
+  ];
+  it.each(blocked)('%s => blocked', (_n, ev, name) => {
+    expect(agyStepVerdict(ev)).toEqual({ kind: 'blocked', name });
+  });
+});
+
 describe('result / error classification (B14, C2 9.2)', () => {
   it('agyEventResult reads only the documented {"event":"result","result":{...}} envelope', () => {
     expect(agyEventResult({ event: 'result', result: { status: 'SUCCESS' } })).toEqual({ status: 'SUCCESS' });
@@ -611,6 +798,58 @@ describe('result / error classification (B14, C2 9.2)', () => {
     ])
       expect(classifyAgyResult(r)).toEqual({ ok: false, error: 'bad_output' });
     expect(classifyAgyResult(null)).toEqual({ ok: false, error: 'bad_output' });
+  });
+  it('[agy-provider-fix D] agy 1.2.16 success: NO structured_output - the answer is parsed from result.response (one fence stripped)', () => {
+    // the exact key set of the captured 1.2.16 success result (values synthetic)
+    const r116 = (response: unknown, over: Record<string, unknown> = {}): Record<string, unknown> => ({
+      conversation_id: 'c-1',
+      status: 'SUCCESS',
+      response,
+      duration_seconds: 3.2,
+      num_turns: 2,
+      json_schema: { type: 'object' },
+      usage: { input_tokens: 10, output_tokens: 5 },
+      ...over,
+    });
+    expect(classifyAgyResult(r116('{"ok":true}'))).toEqual({ ok: true, structured: { ok: true } });
+    expect(classifyAgyResult(r116('  {"intent":"meeting","confidence":0.9}\n'))).toEqual({
+      ok: true,
+      structured: { intent: 'meeting', confidence: 0.9 },
+    });
+    expect(classifyAgyResult(r116('```json\n{"ok":true}\n```'))).toEqual({ ok: true, structured: { ok: true } });
+    expect(classifyAgyResult(r116('```\n{"ok":true}\n```'))).toEqual({ ok: true, structured: { ok: true } });
+    // structured_output (if a later version adds it) still wins over the text
+    expect(classifyAgyResult(r116('{"ok":false}', { structured_output: { ok: true } }))).toEqual({
+      ok: true,
+      structured: { ok: true },
+    });
+    for (const bad of [
+      r116(''),
+      r116('   '),
+      r116('I cannot help with that.'),
+      r116('{"ok":tr'), // a truncated (print-timeout partial) answer
+      r116('null'),
+      r116('```json\n{"ok":true}\n```\n```json\n{"ok":false}\n```'), // two fences: never guess which one
+      r116('```json\n{"ok":true}'), // unterminated fence
+      r116(42),
+      r116({ ok: true }), // response must be the STRING form
+      r116(undefined),
+      r116('{"ok":true}', { status: 'WAITING' }),
+      r116('{"ok":true}', { status: 'ERROR' }),
+      r116('{"ok":true}', { denied_actions: [{ tool: 'run_command' }] }),
+      r116('{"ok":true}', { error: 'something failed' }),
+    ])
+      expect(classifyAgyResult(bad)).toEqual({ ok: false, error: 'bad_output' });
+    // an empty / null error field is not an error
+    expect(classifyAgyResult(r116('{"ok":true}', { error: '' }))).toEqual({ ok: true, structured: { ok: true } });
+    expect(classifyAgyResult(r116('{"ok":true}', { error: null }))).toEqual({ ok: true, structured: { ok: true } });
+  });
+  it('parseAgyResponse: JSON text or exactly one fenced block; anything else => null', () => {
+    expect(parseAgyResponse('{"a":1}')).toEqual({ a: 1 });
+    expect(parseAgyResponse('```JSON\r\n{"a":1}\r\n```')).toEqual({ a: 1 });
+    expect(parseAgyResponse('[1,2]')).toEqual([1, 2]);
+    for (const bad of ['', 'x', 'null', '{"a":', '```\n```', 3, null, undefined, { a: 1 }])
+      expect(parseAgyResponse(bad)).toBeNull();
   });
   it('classifyAgyErrorText: RESOURCE_EXHAUSTED|429|quota => usage_limit, authentication => not_logged_in, else network', () => {
     expect(classifyAgyErrorText('AGY_ERROR: {"status":"RESOURCE_EXHAUSTED","code":429}')).toBe('usage_limit');

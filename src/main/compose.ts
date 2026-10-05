@@ -2,6 +2,7 @@
 // Wave 0 shipped the final types and a throwing body; W2-01 adds the body below the frozen block.
 // sendClient / writeClient VALUES are constructed here and nowhere else; host.callerFor('read'|'write'|'admin') hands out narrowed callers.
 import type { Clock, ClockTimer, ElectronFacade, FetchFn, Logger, ProcessQuery, RandomSource, SpawnFn } from './deps';
+import { redactSettingsForDiagnostics } from './diagnostics';
 import { childAndJobExeRoots } from './paths';
 import type { AppPaths } from './paths';
 import type { Seams } from './testSeams';
@@ -1840,7 +1841,7 @@ export async function compose(deps: ComposeDeps): Promise<AppRuntimeHandle> {
       version,
       generatedAt: now(),
       health: healthHub.get(),
-      settings: settings(),
+      settings: redactSettingsForDiagnostics(settings()), // calendar ids, e-mails and the exe path never leave the PC in clear
       counts: repos.items.counts(),
       recovery: { recovered: opened.recovered, hadBackup: newestBackup(paths.backupsDir) !== null },
       tsFormatBroken,

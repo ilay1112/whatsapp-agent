@@ -41,7 +41,14 @@ export type FakeClaudeMode =
   // [D-080] live diagnostic: the expired OAuth stream (init FIRST) and error events INSTEAD of the init
   | 'oauth_expired'
   | 'auth_error_before_init'
-  | 'model_error_before_init';
+  | 'model_error_before_init'
+  // [claude-extract-debug] live 2.1.258 schema runs: the model wraps the whole answer in ONE placeholder key {"$PARAMETER_NAME": {...}}
+  // (every attempt), under the tool's own name {"StructuredOutput": {...}}, splits it over two placeholder keys, or heals on its second attempt. The CLI rejects each placeholder call with an
+  // is_error tool_result; after --max-turns attempts it ends with result subtype error_max_turns + is_error true.
+  | 'placeholder_keys'
+  | 'tool_name_wrapper'
+  | 'placeholder_split'
+  | 'placeholder_then_heal';
 export const FAKE_CLAUDE_MODES: readonly FakeClaudeMode[] = [
   'ok',
   'attacker',
@@ -72,6 +79,10 @@ export const FAKE_CLAUDE_MODES: readonly FakeClaudeMode[] = [
   'oauth_expired',
   'auth_error_before_init',
   'model_error_before_init',
+  'placeholder_keys',
+  'tool_name_wrapper',
+  'placeholder_split',
+  'placeholder_then_heal',
 ];
 /** Stage detection is from argv only (T2 3.1): --mcp-config => draft; IMAGE_READ_SCHEMA => read_image; smoke schema => smoke. */
 export type FakeClaudeStage = 'extract' | 'draft' | 'read_image' | 'smoke';

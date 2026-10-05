@@ -15,6 +15,7 @@ import {
   CLAUDE_MIN_VERSION,
   CLAUDE_NEVER_ARGS,
   CLAUDE_PERMISSION_PROMPTS_MIN,
+  CLAUDE_EXTRACT_MAX_TURNS,
   CLI_NEUTRAL_INTERNALS,
   CLI_OAUTH_API_KEY_SOURCE,
   CLI_SCHEMA_TOOL,
@@ -35,6 +36,7 @@ import {
   mapApiKeySource,
   nameSha8,
   stripOneCodeFence,
+  unwrapWrappedStructured,
   type ClaudeRunRequestExt,
 } from './claudeCli';
 
@@ -433,6 +435,44 @@ describe('checkClaudeInit - one row per init field and mode', () => {
   });
 });
 
+describe('[claude-extract-debug] unwrapWrappedStructured (live 2.1.258 single-key wrappers)', () => {
+  const S = {
+    type: 'object',
+    properties: { a: { type: 'string' }, nested: { type: 'object' } },
+    required: ['a'],
+  };
+  it.each(['$PARAMETER_NAME', '$PARAMETER_NAME2', 'StructuredOutput'])(
+    'unwraps {"%s": {...}} - exactly one key, not a schema property, plain-object value',
+    (key) => {
+      expect(unwrapWrappedStructured({ [key]: { a: 'x' } }, S)).toEqual({ a: 'x' });
+    },
+  );
+  it.each<[string, unknown]>([
+    ['two wrapper keys (split answer)', { $PARAMETER_NAME: { a: 'x' }, $PARAMETER_NAME2: { b: 1 } }],
+    ['a wrapper next to a real key', { $PARAMETER_NAME: { a: 'x' }, a: 'y' }],
+    ['a declared property holding an object', { nested: { a: 'x' } }],
+    ['a partial answer (one declared field)', { a: 'x' }],
+    ['a string value', { $PARAMETER_NAME: '{"a":"x"}' }],
+    ['an array value', { $PARAMETER_NAME: [{ a: 'x' }] }],
+    ['a null value', { $PARAMETER_NAME: null }],
+    ['an empty input', {}],
+    ['not an object', 'x'],
+    ['null', null],
+  ])('%s => undefined', (_n, input) => {
+    expect(unwrapWrappedStructured(input, S)).toBeUndefined();
+  });
+  it('a schema without properties: any single key with an object value is a wrapper', () => {
+    expect(unwrapWrappedStructured({ x: { a: 1 } }, null)).toEqual({ a: 1 });
+  });
+});
+
+describe('[claude-extract-debug] CLAUDE_EXTRACT_MAX_TURNS', () => {
+  it('is bounded: room for one in-run StructuredOutput retry on S1, never more than 3', () => {
+    expect(CLAUDE_EXTRACT_MAX_TURNS).toBe(2);
+    expect(CLAUDE_EXTRACT_MAX_TURNS).toBeLessThanOrEqual(3);
+  });
+});
+
 describe('stripOneCodeFence', () => {
   it('strips exactly one fence', () => {
     expect(stripOneCodeFence('```json\n{"a":1}\n```')).toBe('{"a":1}');
@@ -570,7 +610,7 @@ describe('createClaudeCliProvider', () => {
       stage: 'extract',
       system: SYS,
       jsonSchema: SCHEMA,
-      maxTurns: 1,
+      maxTurns: CLAUDE_EXTRACT_MAX_TURNS, // [claude-extract-debug] room for the CLI's own StructuredOutput retry
       toolServer: null,
       wallClockMs: LIMITS.cliWallClockExtractMs,
     });
@@ -605,6 +645,7 @@ describe('createClaudeCliProvider', () => {
     );
     const r = calls[0]!.req;
     expect(r.stage).toBe('read_image');
+    expect(r.maxTurns).toBe(1); // I12: V1 stays at --max-turns 1
     expect(r.system).toBe('V1\n\nFACTS');
     expect(r.wallClockMs).toBe(LIMITS.readImageWallClockCliMs);
     expect(JSON.parse(r.stdinLine).message.content).toEqual([

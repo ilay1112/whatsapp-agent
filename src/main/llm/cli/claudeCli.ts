@@ -40,6 +40,13 @@ export const CLI_SCHEMA_TOOL = 'StructuredOutput';
  *  'run_file' = --mcp-config <runDir>\wca.mcp.json holding the literal token (user-only ACL, deleted in the run's finally) - pinned by M-CLI-1. */
 export const CLAUDE_MCP_CONFIG_MODE: 'inline_env' | 'run_file' = 'inline_env';
 export const CLAUDE_PERMISSION_PROMPTS_MIN = '2.1.259';
+/** [claude-extract-debug] --max-turns of the S1 extract schema run (structured(), purpose extract). Each StructuredOutput attempt is one
+ *  turn; with 1 the CLI has no room to retry a rejected attempt (live 2.1.258: the model wraps the whole answer under one made-up key such as
+ *  `$PARAMETER_NAME`, research bug #87234), so the run ended error_max_turns. 2 = one in-run retry; bounded (never > 3): the run still has no tool
+ *  but StructuredOutput (init proof unchanged), the wall clock is the same LIMITS value, and a run is at most two short answers. The
+ *  provider-start smoke (B13) and V1 read_image (I12 pins --max-turns 1) stay at 1; the wrapper
+ *  unwrap in the runner applies to every schema run. */
+export const CLAUDE_EXTRACT_MAX_TURNS = 2;
 
 // ---------------- pinned-after-M-CLI-1 constants (UNVERIFIED register; fail closed until pinned) ----------------
 /** [U-C2] The `system/init.apiKeySource` literal of a subscription (OAuth) run, pinned by M-CLI-1. While null, a deny list applies:
@@ -161,6 +168,25 @@ export function mapApiKeySource(value: unknown): CliSandboxProof['apiKeySource']
 }
 
 const isRecord = (v: unknown): v is Record<string, unknown> => v !== null && typeof v === 'object' && !Array.isArray(v);
+
+/**
+ * [claude-extract-debug] The answer inside a StructuredOutput input that WRAPS it under one made-up key - live 2.1.258 (synthetic S1
+ * capture): {"$PARAMETER_NAME": {...}} (the placeholder of the tool-call format, research bug #87234) and {"StructuredOutput": {...}}
+ * (the tool's own name). Unwrapped only when the input has EXACTLY one key, that key is NOT a declared property of the run's schema, and
+ * its value is a plain object; anything else (a split answer over two keys, a string, an array, a real field) => undefined, never
+ * guessed at. The result is model output exactly like structured_output (UNTRUSTED): every caller zod-validates it strictly
+ * (ExtractionSchema / ImageReadSchema / the smoke's `ok` boolean). Pure.
+ */
+export function unwrapWrappedStructured(input: unknown, schema: unknown): Record<string, unknown> | undefined {
+  if (!isRecord(input)) return undefined;
+  const keys = Object.keys(input);
+  if (keys.length !== 1) return undefined;
+  const key = keys[0] as string;
+  const declared = isRecord(schema) && isRecord(schema.properties) ? schema.properties : {};
+  if (Object.prototype.hasOwnProperty.call(declared, key)) return undefined;
+  const inner = input[key];
+  return isRecord(inner) ? inner : undefined;
+}
 
 /** Init proof (U-C1 / U-C2 / U-C8 pinned after M-CLI-1): mcp_servers exactly [] (S1/V1/smoke) or [{name:'wca', status:'connected'|'pending'}] (S3)
  *  - a claude.ai connector server therefore always fails (U-C7); mcp_server_errors absent; plugins empty; tools ⊆ [CLI_SCHEMA_TOOL] (S1/V1/smoke,
@@ -363,7 +389,7 @@ export function createClaudeCliProvider(deps: {
           system,
           stdinLine: buildClaudeStdinLineParts(texts, image),
           jsonSchema: schema,
-          maxTurns: 1,
+          maxTurns: stage === 'extract' ? CLAUDE_EXTRACT_MAX_TURNS : 1, // V1 stays at 1 (I12)
           wallClockMs: stage === 'read_image' ? LIMITS.readImageWallClockCliMs : LIMITS.cliWallClockExtractMs,
           toolServer: null,
           observedVersion: deps.observedVersion,

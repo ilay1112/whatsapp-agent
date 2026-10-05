@@ -37,7 +37,16 @@ export type FakeAgyMode =
   // [D-080] an error result event INSTEAD of the init (agy 1.2.16 shape)
   | 'result_error_auth'
   | 'result_error_quota'
-  | 'result_error_other';
+  | 'result_error_other'
+  // [agy-provider-fix] the runtime tool watch (C): a real tool step (ACTIVE then DONE, or only the DONE step), manage_task with an
+  // action other than "list"; the deny-all policy (A): the world's fs seam loses / alters the isolated settings.json write (the runner
+  // must refuse BEFORE any spawn); the print timeout of agy 1.2.16 ("returning partial output").
+  | 'forbidden_tool_step'
+  | 'forbidden_tool_done_only'
+  | 'manage_task_other_action'
+  | 'policy_missing'
+  | 'policy_altered'
+  | 'print_timeout_partial';
 export const FAKE_AGY_MODES: readonly FakeAgyMode[] = [
   'ok',
   'waiting',
@@ -56,6 +65,12 @@ export const FAKE_AGY_MODES: readonly FakeAgyMode[] = [
   'result_error_auth',
   'result_error_quota',
   'result_error_other',
+  'forbidden_tool_step',
+  'forbidden_tool_done_only',
+  'manage_task_other_action',
+  'policy_missing',
+  'policy_altered',
+  'print_timeout_partial',
 ];
 export const FAKE_AGY_DEFAULT_STATE: FakeAgyState = {
   version: '1.2.12',
@@ -92,6 +107,16 @@ export interface FakeAgyJournalEntry {
   /** an ENABLED server in <USERPROFILE>\.gemini\config\mcp_config.json (the real agy would start it - F3). */
   globalMcpVisible?: boolean;
   envChecks?: { pathIsSystem32: boolean; tempIsCwd: boolean; autoUpdateOff: boolean; forbiddenKeys: string[] };
+  // ---- [agy-provider-fix] additive ----
+  /** the isolated settings.json under USERPROFILE carries the app's deny-all permissions policy (A). */
+  policyDenyAll?: boolean;
+  /** the name of the non-allow-listed tool step the fake emitted (forbidden modes), null when none. */
+  toolStepEmitted?: string | null;
+  /** true only when the fake got PAST its forbidden tool step (the app failed to kill it in time). */
+  toolStepCompleted?: boolean;
+  // ---- [agy-schema-loop] additive ----
+  /** sha256 of the schema line the fake read back from the agent body (null when the body carries none). */
+  bodySchemaSha256?: string | null;
 }
 /** Parses a fake-agy JSONL journal; unparsable lines are ignored; lines sharing an `invocation` collapse to the LAST one (start order). */
 export function readFakeAgyJournal(text: string): FakeAgyJournalEntry[] {

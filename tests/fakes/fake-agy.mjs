@@ -8,6 +8,9 @@
 //
 // Everything about the real agy that is not documented is modelled from antigravity.google/docs/cli/headless as read on 2026-09-28 and
 // marked // ASSUMED (U-A1 / U-A3 / U-A6 / U-A7); M-AGY-1 replaces those blocks from a scrubbed capture (never "corrected" to pass a test).
+// [agy-provider-fix] The default success stream follows the orchestrator's agy 1.2.16 capture (2026-10-05, synthetic prompts): init lists ALL
+// 60 available tools (agent loaded, request-review), agy's own manage_task {"Action":"list"} tool step, and a nested result whose answer is
+// the JSON STRING in result.response with NO structured_output. Each run checks the isolated settings.json carries the deny-all policy.
 import { createHash, randomBytes } from 'node:crypto';
 import { appendFileSync, existsSync, readFileSync, readdirSync } from 'node:fs';
 import path from 'node:path';
@@ -95,8 +98,57 @@ export const FAKE_AGY_MODES = [
   'result_error_auth',
   'result_error_quota',
   'result_error_other',
+  // [agy-provider-fix] runtime tool watch, deny-all policy (the world's fs seam), print timeout
+  'forbidden_tool_step',
+  'forbidden_tool_done_only',
+  'manage_task_other_action',
+  'policy_missing',
+  'policy_altered',
+  'print_timeout_partial',
 ];
-const INIT_FAILURE_MODES = new Set(['extra_tools', 'agent_mismatch', 'perm_mode']);
+/** [agy-provider-fix] agy 1.2.16 lists ALL available tools in init.tools even when the agent file says `tools: []` (Google's docs:
+ *  "names of all available tools"); the agent file is enforced at call time. 'extra_tools' is therefore no longer an init failure. */
+const INIT_FAILURE_MODES = new Set(['agent_mismatch', 'perm_mode']);
+/** [agy-provider-fix] The init.tools list of agy 1.2.16: 60 names. Only the first 7 names were seen in the orchestrator's capture
+ *  (2026-10-05); the rest is // ASSUMED filler (the app records only the COUNT, never a name). */
+export const AGY_1216_TOOLS = [
+  'manage_task',
+  'run_command',
+  'write_to_file',
+  'read_url_content',
+  'search_web',
+  'send_message',
+  'view_file',
+  ...Array.from({ length: 53 }, (_, i) => `assumed_tool_${String(i + 8).padStart(2, '0')}`),
+];
+/** = AGY_DENY_ALL of src/main/llm/cli/claudeCli.env.ts (duplicated: a spawnable fake may not import app source, T10; pinned by a test). */
+export const EXPECTED_DENY_ALL = [
+  'read_file(*)',
+  'write_file(*)',
+  'read_url(*)',
+  'execute_url(*)',
+  'command(*)',
+  'unsandboxed(*)',
+  'mcp(*)',
+];
+/** agy 1.2.16 calls this by itself even in a plain run (orchestrator capture): the only tool step the app tolerates. */
+export const MANAGE_TASK_LIST_OUTPUT = 'No background tasks are currently running.';
+/** // ASSUMED wording beyond the captured prefix "[agy] print timeout after". */
+export const PRINT_TIMEOUT_LINE = '[agy] print timeout after 50s, returning partial output';
+/** The forbidden tool step each mode emits (tool name + parameters; synthetic). */
+const FORBIDDEN_STEPS = {
+  forbidden_tool_step: { name: 'run_command', parameters: { CommandLine: 'echo fake', Cwd: '.' }, activeFirst: true },
+  forbidden_tool_done_only: {
+    name: 'run_command',
+    parameters: { CommandLine: 'echo fake', Cwd: '.' },
+    activeFirst: false,
+  },
+  manage_task_other_action: {
+    name: 'manage_task',
+    parameters: { Action: 'create', Command: 'echo fake' },
+    activeFirst: true,
+  },
+};
 /** // ASSUMED (U-A3): the AGY_ERROR payloads (field names unverified; the app classifies by substrings only). */
 export const AGY_ERROR_LINES = {
   exit3: 'AGY_ERROR: {"status":"RESOURCE_EXHAUSTED","code":429,"retryable":false,"error_id":"fake-quota"}',
@@ -203,6 +255,24 @@ export function parseAgentFile(text) {
   }
   return { frontmatter: fm, body: lines.slice(end + 1).join('\n') };
 }
+/** [agy-schema-loop] = AGY_SCHEMA_MARKER of antigravityCli.ts (a test pins the two equal). */
+export const FAKE_AGY_SCHEMA_MARKER =
+  'Answer format: reply with exactly ONE JSON object that validates against the JSON Schema on the next line, and nothing else (no prose, no code fence, no tool call).';
+/** Splits an agent body into the stage constant and the schema line after the marker (null when the body carries no schema). */
+export function splitSchemaFromBody(body) {
+  const sep = `\n\n${FAKE_AGY_SCHEMA_MARKER}\n`;
+  const at = body.lastIndexOf(sep);
+  if (at === -1) return { constant: body, schemaText: null };
+  return { constant: body.slice(0, at), schemaText: body.slice(at + sep.length) };
+}
+const readJsonText = (text) => {
+  try {
+    const v = JSON.parse(text);
+    return v !== null && typeof v === 'object' ? v : null;
+  } catch {
+    return null;
+  }
+};
 /** Exactly {tools: [], commandExecutionPolicy: off, excludeDefaultComponents: true, mainAgent: true} + name, and nothing that adds power
  *  (no mcpServers, skills, plugins, other tools). description / subagent:false / model:inherit are tolerated. */
 export function frontmatterOk(fm, agentName) {
@@ -355,6 +425,19 @@ export function workspaceTrusted(userProfile, cwd) {
   });
 }
 
+/** [agy-provider-fix] The isolated settings.json carries exactly the app's deny-all policy: {allow:[], ask:[], deny: EXPECTED_DENY_ALL}. */
+export function policyDenyAll(userProfile) {
+  if (!userProfile) return false;
+  const s = readJson(path.join(userProfile, '.gemini', 'antigravity-cli', 'settings.json'));
+  if (!isObj(s) || !isObj(s.permissions)) return false;
+  const p = s.permissions;
+  const keys = Object.keys(p).sort().join(',');
+  if (keys !== 'allow,ask,deny') return false;
+  if (!Array.isArray(p.allow) || p.allow.length !== 0 || !Array.isArray(p.ask) || p.ask.length !== 0) return false;
+  if (!Array.isArray(p.deny)) return false;
+  return [...p.deny].sort().join('\n') === [...EXPECTED_DENY_ALL].sort().join('\n');
+}
+
 function readState(file) {
   try {
     return { ...DEFAULT_STATE, ...JSON.parse(readFileSync(file, 'utf8')) };
@@ -399,6 +482,7 @@ async function main() {
     agentFile: { exists: false, frontmatterOk: false, bodySha256: null },
     mcpConfigPresent: false,
     schemaFilePresent: false,
+    bodySchemaSha256: null,
     envKeys: [],
     envChecks: { pathIsSystem32: false, tempIsCwd: false, autoUpdateOff: false, forbiddenKeys: [] },
     home: { userProfile: env.USERPROFILE ?? null, home: env.HOME ?? null },
@@ -411,6 +495,9 @@ async function main() {
     turnStarted: false,
     workspaceTrusted: false,
     globalMcpVisible: false,
+    policyDenyAll: false,
+    toolStepEmitted: null,
+    toolStepCompleted: false,
     exit: -1, // -1 until the process ends (a killed run keeps -1)
     violations: [...parsed.violations],
   };
@@ -497,12 +584,22 @@ async function main() {
   if (!RUN_DIR_RE.test(cwd)) entry.violations.push('cwd_not_run_dir');
   const workspaceRoot = path.resolve(cwd, '..', '..');
   const agentPath = path.join(cwd, '.agents', 'agents', `${agentName}.md`);
+  let bodySchema = null;
   if (existsSync(agentPath)) {
     entry.agentFile.exists = true;
     const text = readFileSync(agentPath, 'utf8');
     const p = parseAgentFile(text);
     entry.agentFile.frontmatterOk = p !== null && frontmatterOk(p.frontmatter, agentName);
-    entry.agentFile.bodySha256 = p === null ? null : createHash('sha256').update(p.body, 'utf8').digest('hex');
+    // [agy-schema-loop] the body = the stage constant [+ "\n\n<AGY_SCHEMA_MARKER>\n<schema JSON>"]; the hash covers the constant only,
+    // the schema is read back from the last line (the app never passes --json-schema: real agy then loops until its print timeout).
+    const split = p === null ? null : splitSchemaFromBody(p.body);
+    if (split !== null && split.schemaText !== null) {
+      bodySchema = readJsonText(split.schemaText);
+      entry.bodySchemaSha256 = createHash('sha256').update(split.schemaText, 'utf8').digest('hex');
+      if (bodySchema === null) entry.violations.push('schema_unparsable');
+    }
+    entry.agentFile.bodySha256 =
+      split === null ? null : createHash('sha256').update(split.constant, 'utf8').digest('hex');
     if (!entry.agentFile.frontmatterOk) entry.violations.push('agent_frontmatter');
     const want = state.expectedPromptSha256?.[runStage];
     if (typeof want === 'string' && want !== entry.agentFile.bodySha256) entry.violations.push('agent_body_mismatch');
@@ -512,19 +609,11 @@ async function main() {
   if (entry.mcpConfigPresent) entry.violations.push('mcp_config_present');
   for (const f of ['GEMINI.md', 'AGENTS.md'])
     if (existsSync(path.join(cwd, f))) entry.violations.push('context_file_present');
-  const schemaInCwd = path.join(cwd, 'schema.json');
-  entry.schemaFilePresent = existsSync(schemaInCwd);
-  let schema = null;
-  const schemaArg = parsed.opts['--json-schema'];
-  if (typeof schemaArg === 'string') {
-    if (path.resolve(schemaArg).toLowerCase() !== path.resolve(schemaInCwd).toLowerCase())
-      entry.violations.push('schema_path');
-    else if (!entry.schemaFilePresent) entry.violations.push('schema_missing');
-    else {
-      schema = readJson(schemaInCwd) ?? null;
-      if (schema === null) entry.violations.push('schema_unparsable');
-    }
-  } else if (entry.schemaFilePresent) entry.violations.push('schema_unexpected');
+  entry.schemaFilePresent = existsSync(path.join(cwd, 'schema.json'));
+  if (entry.schemaFilePresent) entry.violations.push('schema_unexpected');
+  const schemaFlag = parsed.opts['--json-schema'] !== undefined;
+  if (schemaFlag) entry.violations.push('json_schema_flag');
+  const schema = bodySchema;
 
   // ---- a run: profile (F3) ----
   const userProfile = env.USERPROFILE ?? '';
@@ -538,6 +627,9 @@ async function main() {
   if (entry.globalMcpVisible) entry.violations.push('global_config_loaded');
   entry.workspaceTrusted = workspaceTrusted(userProfile, cwd);
   if (!entry.workspaceTrusted) entry.violations.push('workspace_untrusted'); // the real agy would stop at the trust gate (U-A1)
+  // [agy-provider-fix A] the runner must never spawn without the deny-all permissions policy in the isolated profile
+  entry.policyDenyAll = policyDenyAll(userProfile);
+  if (!entry.policyDenyAll) entry.violations.push('policy_not_deny_all');
 
   // ---- a run: stdin (F20, U-A6) ----
   const raw = await readStdin();
@@ -582,24 +674,34 @@ async function main() {
     return;
   }
 
-  // ---- output ----
+  // ---- output (agy 1.2.16 shapes, orchestrator capture 2026-10-05; values synthetic) ----
   const conversationId = `fake-${invocation}`;
+  const step = (s) => out({ event: 'step_update', step_update: { conversation_id: conversationId, ...s } });
+  const toolStep = (index, state, name, parameters, output) =>
+    step({
+      step_index: index,
+      state,
+      step_type: 'tool',
+      tool_name: name,
+      tool_info: { name, parameters, ...(output === undefined ? {} : { output }) },
+    });
   if (mode === 'garbage_lines') {
     out('not json at all');
     out('x'.repeat(1024 * 1024 + 16));
     out('\ud800 lone surrogate');
     out('{"broken":');
   }
+  // init: the agent IS loaded (agent = wca-<stage>) but init.tools lists ALL available tools (60 on 1.2.16) - never the agent's
+  // `tools: []`. No top-level conversation_id on the init event (capture).
   out({
     event: 'init',
-    conversation_id: conversationId,
     init: {
-      cwd,
-      tools: mode === 'extra_tools' ? ['run_command'] : [],
-      permission_mode: mode === 'perm_mode' ? 'always-proceed' : 'request-review',
       model: parsed.opts['--model'],
+      cwd,
       agent: mode === 'agent_mismatch' ? 'default' : agentName,
-      ...(schema === null ? {} : { json_schema: schema }),
+      tools: mode === 'extra_tools' ? [...AGY_1216_TOOLS, 'mcp_whatsapp_send_message'] : [...AGY_1216_TOOLS],
+      permission_mode: mode === 'perm_mode' ? 'always-proceed' : 'request-review',
+      ...(schema === null || !schemaFlag ? {} : { json_schema: schema }), // real agy echoes it only for --json-schema
     },
   });
   // An init the app must reject: give it time to kill us BEFORE the first turn (the journal keeps turnStarted:false when it does).
@@ -609,11 +711,23 @@ async function main() {
     return;
   }
   entry.turnStarted = true;
-  out({
-    event: 'step_update',
-    step_update: { conversation_id: conversationId, step_index: 0, state: 'DONE', step_type: 'user_input' },
-  });
+  // agy calls manage_task {"Action":"list"} by itself even in a plain run (capture): the one tolerated tool step.
+  toolStep(0, 'ACTIVE', 'manage_task', { Action: 'list' });
+  toolStep(0, 'DONE', 'manage_task', { Action: 'list' }, MANAGE_TASK_LIST_OUTPUT);
   if (mode === 'garbage_lines') out('<<not json between events>>');
+
+  // [agy-provider-fix C] a real tool step the app must kill at once: the fake journals what it emitted, then waits so the app can kill
+  // it BEFORE it gets further (toolStepCompleted stays false when it does).
+  const forbidden = FORBIDDEN_STEPS[mode];
+  if (forbidden !== undefined) {
+    if (forbidden.activeFirst) toolStep(1, 'ACTIVE', forbidden.name, forbidden.parameters);
+    else toolStep(1, 'DONE', forbidden.name, forbidden.parameters, 'fake output');
+    entry.toolStepEmitted = forbidden.name;
+    journal(); // phase 'started', with the emitted step recorded
+    await sleep(3000);
+    entry.toolStepCompleted = true;
+    if (forbidden.activeFirst) toolStep(1, 'DONE', forbidden.name, forbidden.parameters, 'fake output');
+  }
 
   // the answer: script rule, or a minimal valid answer per stage
   const rules = (() => {
@@ -640,11 +754,9 @@ async function main() {
     await hangForever();
     return;
   }
+  const answerIndex = forbidden === undefined ? 1 : 2;
   if (errorMode !== null) {
-    out({
-      event: 'step_update',
-      step_update: { conversation_id: conversationId, step_index: 1, state: 'ACTIVE', step_type: 'agent_response' },
-    });
+    step({ step_index: answerIndex, state: 'ACTIVE', step_type: 'agent_response' });
     process.stderr.write(`${AGY_ERROR_LINES[errorMode]}\n`);
     finish(3);
     return;
@@ -658,26 +770,25 @@ async function main() {
   else structured = minimalFor(schema);
   if (respond && Array.isArray(respond.toolCalls)) entry.violations.push('script_tool_calls_on_agy'); // agy runs have no tools at all
 
-  out({
-    event: 'step_update',
-    step_update: {
-      conversation_id: conversationId,
-      step_index: 1,
-      state: 'DONE',
-      step_type: 'agent_response',
-      text_delta: JSON.stringify(structured),
-    },
-  });
+  // the answer as agy 1.2.16 prints it: a JSON STRING in result.response - there is NO structured_output field, even with --json-schema
+  let response = JSON.stringify(structured);
+  if (mode === 'no_structured') response = 'I could not produce the requested JSON.';
+  if (mode === 'print_timeout_partial') {
+    // ASSUMED (only the stderr prefix was captured): agy prints the timeout on stderr and returns what it had - a truncated answer
+    response = response.slice(0, Math.max(1, Math.floor(response.length / 2)));
+    process.stderr.write(`${PRINT_TIMEOUT_LINE}\n`);
+  }
+  step({ step_index: answerIndex, state: 'ACTIVE', step_type: 'agent_response' });
+  if (mode !== 'print_timeout_partial') step({ step_index: answerIndex, state: 'DONE', step_type: 'agent_response' });
   const result = {
     conversation_id: conversationId,
     status: mode === 'waiting' ? 'WAITING' : 'SUCCESS',
-    response: JSON.stringify(structured),
+    response,
     duration_seconds: 1.5,
-    num_turns: 1,
-    denied_actions: mode === 'denied' ? [{ tool: 'run_command' }] : [], // ASSUMED (U-A3): denied_actions entry shape
+    num_turns: 2,
+    ...(schema === null || !schemaFlag ? {} : { json_schema: schema }), // real agy echoes it only for --json-schema
     usage: { input_tokens: 120, output_tokens: 30, thinking_tokens: 0, cache_read_tokens: 0, total_tokens: 150 },
-    ...(schema === null ? {} : { json_schema: schema }),
-    ...(mode === 'no_structured' || mode === 'waiting' ? {} : { structured_output: structured }),
+    ...(mode === 'denied' ? { denied_actions: [{ tool: 'run_command' }] } : {}), // ASSUMED (U-A3): denied_actions entry shape
   };
   out({ event: 'result', result });
   finish(0);

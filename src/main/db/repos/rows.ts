@@ -375,12 +375,17 @@ export function cleanSandboxProof(p: unknown): T.CliSandboxProof | null {
   if (typeof o.initOk !== 'boolean' || !isCount(o.toolsCount) || !isCount(o.mcpServers)) return null;
   if (!(API_KEY_SOURCES as readonly unknown[]).includes(o.apiKeySource)) return null;
   if (o.mismatch !== null && !(SANDBOX_MISMATCHES as readonly unknown[]).includes(o.mismatch)) return null;
+  // [agy-provider-fix] optional antigravity_cli keys: only their closed values survive; anything else refuses the proof
+  if (o.policy !== undefined && o.policy !== 'deny_all') return null;
+  if (o.runtimeWatch !== undefined && typeof o.runtimeWatch !== 'boolean') return null;
   return {
     initOk: o.initOk,
     toolsCount: o.toolsCount,
     mcpServers: o.mcpServers,
     apiKeySource: o.apiKeySource as T.CliSandboxProof['apiKeySource'],
     mismatch: o.mismatch as T.CliSandboxProof['mismatch'],
+    ...(o.policy === undefined ? {} : { policy: 'deny_all' as const }),
+    ...(o.runtimeWatch === undefined ? {} : { runtimeWatch: o.runtimeWatch as boolean }),
   };
 }
 

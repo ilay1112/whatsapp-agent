@@ -11,8 +11,10 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { AGY_ENV_KEYS } from '../../src/main/proc/jobRunner.ts';
 import {
+  AGY_DENY_ALL,
   AGY_PROFILE_MODE,
   agyEventResult,
+  agyStepVerdict,
   buildAgentFile,
   buildAgyArgs,
   buildAgyEnv,
@@ -110,7 +112,7 @@ const sandboxSink = (): { proofs: CliSandboxProof[]; onSandbox: (p: CliSandboxPr
 };
 
 describe('argv + env literal (production builders, fake witness)', () => {
-  it('S1: argv == buildAgyArgs() with <runDir>\\schema.json, never -p / a positional / message text; env == AGY_ENV_KEYS with secrets planted', async () => {
+  it('S1: argv == buildAgyArgs() with NO --json-schema (schema in the agent body), never -p / a positional / message text; env == AGY_ENV_KEYS with secrets planted', async () => {
     const wp = world({ state: { expectedPromptSha256: { extract: sha256(AGY_S1_SYSTEM) } } });
     // the runner reads the SAME processEnv object: poison the app's parent env before the run
     Object.assign(wp.processEnv, poisonedEnv(wp));
@@ -118,8 +120,7 @@ describe('argv + env literal (production builders, fake witness)', () => {
     await p.structured(S1, AGY_S1_SCHEMA, opts()).catch((e: unknown) => e);
     expect(wp.spawnedArgs).toHaveLength(1);
     const argv = wp.spawnedArgs[0] ?? [];
-    const schemaPath = argv[argv.indexOf('--json-schema') + 1] ?? '';
-    const runDir = path.dirname(schemaPath);
+    const runDir = runs(wp)[0]?.cwd ?? '';
     expect(path.dirname(runDir)).toBe(path.join(wp.userData, 'agy-workspace', 'runs'));
     expect(argv).toEqual(
       buildAgyArgs(
@@ -136,7 +137,7 @@ describe('argv + env literal (production builders, fake witness)', () => {
           toolServer: null,
           observedVersion: '1.2.12',
         },
-        path.join(runDir, 'schema.json'),
+        null,
       ),
     );
     expect(argv).toEqual([
@@ -151,9 +152,7 @@ describe('argv + env literal (production builders, fake witness)', () => {
       '--print-timeout',
       '50s',
       '--disable-slash-commands',
-      '--json-schema',
-      path.join(runDir, 'schema.json'),
-    ]);
+    ]); // [agy-schema-loop] never --json-schema: agy 1.2.16 / 1.2.17 then loops until its print timeout
     for (const bad of ['-p', '--print', '--prompt', '--dangerously-skip-permissions', '--sandbox', '--mcp-config'])
       expect(argv).not.toContain(bad);
     expect(argv.join('\u0000')).not.toContain('<<DATA-');
@@ -188,17 +187,24 @@ describe('argv + env literal (production builders, fake witness)', () => {
     expect(j?.stdinSha256).toBe(sha256(`${buildAgyStdinLine(AGY_S1_USER)}\n`));
     expect(j?.agentFile).toEqual({ exists: true, frontmatterOk: true, bodySha256: sha256(AGY_S1_SYSTEM) });
     expect(j?.mcpConfigPresent).toBe(false);
-    expect(j?.schemaFilePresent).toBe(true);
+    expect(j?.schemaFilePresent).toBe(false);
+    expect(j?.bodySchemaSha256).toBe(sha256(JSON.stringify(AGY_S1_SCHEMA))); // the schema rides in the agent body
     expect(j?.workspaceTrusted).toBe(true);
     expect(j?.globalMcpVisible).toBe(false);
-    // the run dir (agent file, schema.json) and the pid file are gone
+    // the run dir (agent file) and the pid file are gone
     expect(leftovers(wp)).toEqual([]);
     // only the app-written isolated settings.json exists in the agy profile - nothing of the user's profile was copied
     const profileFiles = wp.allFiles().filter((f) => f.startsWith(agyHome));
     expect(profileFiles).toEqual([path.join(agyHome, '.gemini', 'antigravity-cli', 'settings.json')]);
+    // [agy-provider-fix A] trustedWorkspaces + the deny-all permissions policy, byte for byte what planAgyHome() plans
+    expect(fs.readFileSync(profileFiles[0] ?? '', 'utf8')).toBe(
+      planAgyHome(wp.userData, path.join(wp.userData, 'agy-workspace')).files[0]?.text,
+    );
     expect(JSON.parse(fs.readFileSync(profileFiles[0] ?? '', 'utf8'))).toEqual({
       trustedWorkspaces: [path.join(wp.userData, 'agy-workspace')],
+      permissions: { allow: [], ask: [], deny: [...AGY_DENY_ALL] },
     });
+    expect(j?.policyDenyAll).toBe(true);
   });
 
   it('smoke (provider start): the constant prompt, wca-smoke agent, --print-timeout 20s, the 1-field schema', async () => {
@@ -220,7 +226,8 @@ describe('argv + env literal (production builders, fake witness)', () => {
       '20s',
       '--disable-slash-commands',
     ]);
-    expect(argv[11]).toBe('--json-schema');
+    expect(argv).toHaveLength(11); // [agy-schema-loop] no --json-schema
+    expect(runs(w)[0]?.bodySchemaSha256).not.toBeNull();
     const [j] = runs(w);
     expect(j?.stage).toBe('smoke');
     expect(j?.agentFile.bodySha256).toBe(sha256(CLI_SMOKE_SYSTEM));
@@ -277,7 +284,6 @@ describe("F3 isolated profile vs the user's global Antigravity config (mode glob
 
 describe('init proof: each failure mode killed BEFORE any turn, toolset_mismatch, no retry', () => {
   it.each([
-    ['extra_tools', 'extra_tool'],
     ['agent_mismatch', 'agent_mismatch'],
     ['perm_mode', 'permission_mode'],
   ] as const)(
@@ -317,8 +323,17 @@ describe('init proof: each failure mode killed BEFORE any turn, toolset_mismatch
       .provider()
       .structured(S1, AGY_S1_SCHEMA, opts({ onSandbox: sink.onSandbox }))
       .catch((e: unknown) => e);
+    // [agy-provider-fix B] agy 1.2.16 lists its 60 tools: recorded as information; the proof says it rests on the policy + the watch
     expect(sink.proofs).toEqual([
-      { initOk: true, toolsCount: 0, mcpServers: 0, apiKeySource: 'unknown', mismatch: null },
+      {
+        initOk: true,
+        toolsCount: 60,
+        mcpServers: 0,
+        apiKeySource: 'unknown',
+        mismatch: null,
+        policy: 'deny_all',
+        runtimeWatch: true,
+      },
     ]);
     const okRuns = sink.proofs.map((p) => p.initOk);
     expect(providerClassOf('antigravity_cli', [...okRuns, ...okRuns])).toBe('cli_unproven');
@@ -550,7 +565,7 @@ describe('fake-agy.mjs self-test (T2 3.2)', () => {
 });
 
 describe('the fake speaks the documented stream-json; the W1-09 classifiers read it (runner-independent cross-check)', () => {
-  // Prepares a run dir EXACTLY like the CliRunner's agy branch (planAgyHome files, agent file, schema.json, buildAgyEnv) and runs the
+  // Prepares a run dir EXACTLY like the CliRunner's agy branch (planAgyHome files, agent file with the schema in its body, buildAgyEnv) and runs the
   // fake directly. This pins the fake's output against agyEventResult / classifyAgyResult / checkAgyInit / classifyAgyErrorText, so the
   // same bytes that the production runner reads are proven classifiable (C2 9.2 result + error tables).
   const runDirect = (w: AgyFakeWorld, mode: FakeAgyMode) => {
@@ -565,9 +580,8 @@ describe('the fake speaks the documented stream-json; the W1-09 classifiers read
     fs.mkdirSync(path.join(runDir, '.agents', 'agents'), { recursive: true });
     fs.writeFileSync(
       path.join(runDir, '.agents', 'agents', 'wca-extract.md'),
-      buildAgentFile('extract', AGY_S1_SYSTEM),
+      buildAgentFile('extract', AGY_S1_SYSTEM, AGY_S1_SCHEMA),
     );
-    fs.writeFileSync(path.join(runDir, 'schema.json'), JSON.stringify(AGY_S1_SCHEMA));
     const env = buildAgyEnv({ processEnv: w.processEnv, tempDir: runDir, home: home.env });
     const args = buildAgyArgs(
       {
@@ -583,7 +597,7 @@ describe('the fake speaks the documented stream-json; the W1-09 classifiers read
         toolServer: null,
         observedVersion: '1.2.12',
       },
-      path.join(runDir, 'schema.json'),
+      null,
     );
     const r = cp.spawnSync(
       process.execPath,
@@ -614,10 +628,11 @@ describe('the fake speaks the documented stream-json; the W1-09 classifiers read
         .map(agyEventResult)
         .filter((x) => x !== null)
         .at(-1) ?? null;
-    return { status: r.status, stderr: r.stderr, first: events[0], result };
+    return { status: r.status, stderr: r.stderr, first: events[0], result, events };
   };
   const RESULT_MODES: Record<string, 'ok' | 'bad_output'> = {
     ok: 'ok',
+    extra_tools: 'ok', // [agy-provider-fix B] an init listing tools passes; the watch + policy carry the proof
     garbage_lines: 'ok',
     global_mcp_present: 'ok',
     waiting: 'bad_output',
@@ -647,7 +662,6 @@ describe('the fake speaks the documented stream-json; the W1-09 classifiers read
     expect(classifyAgyErrorText(line)).toBe(code);
   });
   it.each([
-    ['extra_tools', 'extra_tool'],
     ['agent_mismatch', 'agent_mismatch'],
     ['perm_mode', 'permission_mode'],
   ] as const)('mode %s => the first event fails checkAgyInit (%s)', (mode, mismatch) => {
@@ -655,6 +669,57 @@ describe('the fake speaks the documented stream-json; the W1-09 classifiers read
     const r = runDirect(w, mode);
     expect(checkAgyInit(r.first, 'extract')).toMatchObject({ initOk: false, mismatch });
   });
+  it('[agy-provider-fix E] the default stream is the captured agy 1.2.16 shape', () => {
+    const w = world();
+    const r = runDirect(w, 'ok');
+    expect(r.status).toBe(0);
+    type Ev = { event?: unknown; init?: Record<string, unknown>; step_update?: Record<string, unknown> };
+    const [init, ...rest] = r.events as Ev[];
+    // init: no top-level conversation_id; agent loaded; ALL 60 tools listed; request-review; no json_schema (the app never passes --json-schema)
+    expect(Object.keys(init ?? {}).sort()).toEqual(['event', 'init']);
+    expect(Object.keys(init?.init ?? {}).sort()).toEqual(['agent', 'cwd', 'model', 'permission_mode', 'tools'].sort());
+    expect(init?.init).toMatchObject({ agent: 'wca-extract', permission_mode: 'request-review' });
+    expect(init?.init?.tools).toHaveLength(60);
+    expect(init?.init?.tools).toEqual(expect.arrayContaining(['run_command', 'manage_task', 'read_url_content']));
+    // agy calls manage_task {"Action":"list"} by itself: ACTIVE then DONE, both tolerated by the watch
+    const steps = rest.filter((e) => e.event === 'step_update' && e.step_update?.step_type === 'tool');
+    expect(steps.map((s) => [s.step_update?.state, s.step_update?.tool_name])).toEqual([
+      ['ACTIVE', 'manage_task'],
+      ['DONE', 'manage_task'],
+    ]);
+    expect(steps[1]?.step_update?.tool_info).toEqual({
+      name: 'manage_task',
+      parameters: { Action: 'list' },
+      output: 'No background tasks are currently running.',
+    });
+    for (const e of rest) expect(agyStepVerdict(e).kind).not.toBe('blocked');
+    // the nested result: the answer is a STRING in result.response, there is NO structured_output
+    expect(Object.keys(r.result ?? {}).sort()).toEqual(
+      ['conversation_id', 'duration_seconds', 'num_turns', 'response', 'status', 'usage'].sort(),
+    );
+    expect(r.result?.structured_output).toBeUndefined();
+    expect(typeof r.result?.response).toBe('string');
+    expect(classifyAgyResult(r.result)).toEqual({ ok: true, structured: { intent: 'meeting', confidence: 0 } });
+  });
+
+  it.each([
+    ['forbidden_tool_step', 'run_command'],
+    ['forbidden_tool_done_only', 'run_command'],
+    ['manage_task_other_action', 'manage_task'],
+  ] as const)('mode %s => the stream carries a step the watch blocks (%s)', (mode, name) => {
+    const w = world();
+    const r = runDirect(w, mode);
+    const blocked = r.events.map(agyStepVerdict).filter((v) => v.kind === 'blocked');
+    expect(blocked[0]).toEqual({ kind: 'blocked', name });
+  });
+
+  it('mode print_timeout_partial => the "[agy] print timeout" stderr line and a truncated answer the parser refuses', () => {
+    const w = world();
+    const r = runDirect(w, 'print_timeout_partial');
+    expect(r.stderr).toMatch(/^\[agy\] print timeout after/m);
+    expect(classifyAgyResult(r.result)).toEqual({ ok: false, error: 'bad_output' });
+  });
+
   it('mode not_signed_in => exit 1 before any event, stderr "authentication required"', () => {
     const w = world();
     const r = runDirect(w, 'not_signed_in');
@@ -680,9 +745,8 @@ describe('[D-080] model / effort conflict and error events before init (fake = a
     fs.mkdirSync(path.join(runDir, '.agents', 'agents'), { recursive: true });
     fs.writeFileSync(
       path.join(runDir, '.agents', 'agents', 'wca-extract.md'),
-      buildAgentFile('extract', AGY_S1_SYSTEM),
+      buildAgentFile('extract', AGY_S1_SYSTEM, AGY_S1_SCHEMA),
     );
-    fs.writeFileSync(path.join(runDir, 'schema.json'), JSON.stringify(AGY_S1_SCHEMA));
     const args = [
       ...buildAgyArgs(
         {
@@ -698,7 +762,7 @@ describe('[D-080] model / effort conflict and error events before init (fake = a
           toolServer: null,
           observedVersion: '1.2.16',
         },
-        path.join(runDir, 'schema.json'),
+        null,
       ),
       ...extra,
     ];
@@ -782,5 +846,153 @@ describe('[D-080] model / effort conflict and error events before init (fake = a
     const w = world({ state: { mode: 'result_error_auth' } });
     expect(await w.provider().validate(new AbortController().signal)).toEqual({ ok: false, reason: 'not_logged_in' });
     expect(w.audits.filter((a) => a.kind === 'toolset_mismatch')).toEqual([]);
+  });
+});
+
+// [agy-provider-fix] agy 1.2.16 lists all 60 available tools in init.tools, so an agy run's I11 proof rests on: (A) the app-owned isolated
+// settings.json carries the deny-all permissions policy and is RE-READ before every spawn (fail closed: no spawn without it); (C) the
+// runner's runtime tool watch kills the job on the first step_update that is a tool other than manage_task {"Action":"list"}; and the
+// agent file's tools: []. A run killed by the watch is a failed run: its answer is never used, the strike is audited (hashed name only)
+// and counted for the breaker. Every proposal stays cli_unproven (B14/C4).
+describe('[agy-provider-fix C] runtime tool watch: a forbidden tool step kills the run, nothing of it is used', () => {
+  it.each([
+    ['forbidden_tool_step', 'run_command'],
+    ['forbidden_tool_done_only', 'run_command'],
+    ['manage_task_other_action', 'manage_task'],
+  ] as const)(
+    '%s => killed at once (tree), LlmError sandbox, no answer, tool_blocked {nameSha8} + run_aborted, ONE spawn',
+    async (mode, toolName) => {
+      const w = world({
+        state: { mode },
+        script: [{ when: { purpose: 'extract' }, respond: { structured: { intent: 'meeting', confidence: 0.99 } } }],
+      });
+      const sink = sandboxSink();
+      const got = await w
+        .provider()
+        .structured(S1, AGY_S1_SCHEMA, opts({ onSandbox: sink.onSandbox }))
+        .then(
+          (v) => ({ ok: true as const, v }),
+          (e: unknown) => ({ ok: false as const, e }),
+        );
+      expect(got.ok).toBe(false); // the scripted answer {intent:'meeting'} must never come back
+      if (!got.ok) {
+        expect(got.e).toBeInstanceOf(LlmError);
+        expect((got.e as LlmError).code).toBe('sandbox');
+      }
+      // the recorded proof is a FAILED proof (runs.sandbox_ok = 0), saying what carried it
+      expect(sink.proofs).toEqual([
+        {
+          initOk: false,
+          toolsCount: 60,
+          mcpServers: 0,
+          apiKeySource: 'unknown',
+          mismatch: 'extra_tool',
+          policy: 'deny_all',
+          runtimeWatch: true,
+        },
+      ]);
+      expect(w.spawnedArgs).toHaveLength(1); // never a retry
+      const [j] = runs(w);
+      expect(j?.toolStepEmitted).toBe(toolName);
+      expect(j?.toolStepCompleted).toBe(false); // killed while the fake waited after the forbidden step
+      expect(j?.exit).toBe(-1);
+      expect(w.taskkills.length).toBeGreaterThanOrEqual(1);
+      expect(w.taskkills.every((k) => k.tree)).toBe(true);
+      // B26: the tool name reaches the audit only as sha8 + length
+      const blocked = w.audits.filter((a) => a.kind === 'tool_blocked');
+      expect(blocked).toEqual([
+        {
+          kind: 'tool_blocked',
+          ref: null,
+          detail: {
+            nameSha8: crypto.createHash('sha256').update(toolName, 'utf8').digest('hex').slice(0, 8),
+            nameLen: toolName.length,
+            verdict: 'blocked_unknown_tool',
+            runId: null,
+          },
+        },
+      ]);
+      expect(JSON.stringify(w.audits)).not.toContain(toolName);
+      expect(w.audits.filter((a) => a.kind === 'run_aborted')).toHaveLength(1);
+      expect(w.audits.find((a) => a.kind === 'cli_run')?.detail).toMatchObject({
+        initOk: false,
+        blockedCalls: 1,
+        stopReason: 'killed',
+      });
+      expect(leftovers(w)).toEqual([]);
+    },
+    20_000,
+  );
+
+  it('three blocked runs open the breaker (CLI_UNSTABLE): the 4th job is never spawned', async () => {
+    const w = world({ state: { mode: 'forbidden_tool_done_only' } });
+    const p = w.provider();
+    for (let i = 0; i < 3; i += 1) {
+      const e = await p.structured(S1, AGY_S1_SCHEMA, opts()).catch((x: unknown) => x);
+      expect((e as LlmError).code).toBe('sandbox');
+    }
+    expect(w.runner.breakerOpen()).toBe(true);
+    const e4 = await p.structured(S1, AGY_S1_SCHEMA, opts()).catch((x: unknown) => x);
+    expect(e4).toBeInstanceOf(LlmError);
+    expect(w.spawnedArgs).toHaveLength(3);
+  }, 30_000);
+
+  it('the provider-start smoke with a forbidden step fails (sandbox) - a provider that runs tools never becomes ready', async () => {
+    const w = world({ state: { mode: 'forbidden_tool_step' } });
+    expect(await w.provider().validate(new AbortController().signal)).toEqual({ ok: false, reason: 'sandbox' });
+  }, 20_000);
+});
+
+describe('[agy-provider-fix A] the deny-all permissions policy is re-read before every spawn (fail closed)', () => {
+  it.each([
+    ['policy_missing', 'policy_missing'],
+    ['policy_altered', 'policy_altered'],
+  ] as const)(
+    '%s => refused BEFORE any spawn: LlmError sandbox, no process, no journal, audited %s',
+    async (mode, reason) => {
+      const w = world({ state: { mode } });
+      const sink = sandboxSink();
+      const err = await w
+        .provider()
+        .structured(S1, AGY_S1_SCHEMA, opts({ onSandbox: sink.onSandbox }))
+        .catch((e: unknown) => e);
+      expect(err).toBeInstanceOf(LlmError);
+      expect((err as LlmError).code).toBe('sandbox');
+      expect(sink.proofs).toEqual([
+        { initOk: false, toolsCount: 0, mcpServers: 0, apiKeySource: 'unknown', mismatch: null },
+      ]);
+      expect(w.spawnedArgs).toEqual([]); // the stdin line (message text) never left the app
+      expect(w.journal()).toEqual([]);
+      expect(w.audits.filter((a) => a.kind === 'toolset_mismatch')).toEqual([
+        { kind: 'toolset_mismatch', ref: null, detail: { provider: 'antigravity_cli', stage: 'extract', reason } },
+      ]);
+      // the smoke is refused the same way; nothing spawned either
+      expect(await w.provider().validate(new AbortController().signal)).toEqual({ ok: false, reason: 'sandbox' });
+      expect(w.spawnedArgs).toEqual([]);
+      expect(leftovers(w)).toEqual([]);
+    },
+  );
+
+  it('a tampered policy left on disk is rewritten and re-verified on the next job (no stale file is trusted or blocks forever)', async () => {
+    const w = world({ state: { mode: 'policy_altered' } });
+    const p = w.provider();
+    expect(((await p.structured(S1, AGY_S1_SCHEMA, opts()).catch((e: unknown) => e)) as LlmError).code).toBe('sandbox');
+    w.setState({ mode: 'ok' });
+    expect(await p.structured(S1, AGY_S1_SCHEMA, opts())).toEqual({ intent: 'meeting', confidence: 0 });
+    expect(w.spawnedArgs).toHaveLength(1);
+    expect(runs(w)[0]?.policyDenyAll).toBe(true);
+  });
+});
+
+describe('[agy-provider-fix] print timeout: partial output is never used', () => {
+  it('print_timeout_partial => LlmError network, no answer, ONE spawn', async () => {
+    const w = world({ state: { mode: 'print_timeout_partial' } });
+    const err = await w
+      .provider()
+      .structured(S1, AGY_S1_SCHEMA, opts())
+      .catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(LlmError);
+    expect((err as LlmError).code).toBe('network');
+    expect(w.spawnedArgs).toHaveLength(1);
   });
 });

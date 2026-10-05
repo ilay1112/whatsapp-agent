@@ -254,6 +254,20 @@ test('(c) Antigravity sign-in: the console runs in the isolated agy-home profile
   expect(existsSync(isolated)).toBe(true);
   expect(JSON.parse(readFileSync(isolated, 'utf8'))).toEqual({
     trustedWorkspaces: [join(userDataDir, 'agy-workspace')],
+    // [D-082] the deny-all policy every run re-verifies; the sign-in console runs under the same file
+    permissions: {
+      allow: [],
+      ask: [],
+      deny: [
+        'read_file(*)',
+        'write_file(*)',
+        'read_url(*)',
+        'execute_url(*)',
+        'command(*)',
+        'unsandboxed(*)',
+        'mcp(*)',
+      ],
+    },
   });
   expect(readFileSync(ownFile, 'utf8')).toBe(own);
   expect(readdirSync(ownDir)).toEqual(['settings.json']);

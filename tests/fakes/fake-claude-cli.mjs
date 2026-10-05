@@ -125,6 +125,10 @@ export const FAKE_CLAUDE_MODES = [
   'oauth_expired',
   'auth_error_before_init',
   'model_error_before_init',
+  'placeholder_keys',
+  'tool_name_wrapper',
+  'placeholder_split',
+  'placeholder_then_heal',
 ];
 const INIT_FAILURE_MODES = new Set([
   'extra_tool',
@@ -867,6 +871,71 @@ async function main() {
     } else {
       const structured =
         respond && 'structured' in respond ? respond.structured : stage === 'smoke' ? { ok: true } : minimalFor(schema);
+      if (
+        mode === 'placeholder_keys' ||
+        mode === 'tool_name_wrapper' ||
+        mode === 'placeholder_split' ||
+        mode === 'placeholder_then_heal'
+      ) {
+        // [claude-extract-debug] Live 2.1.258 shape (synthetic capture): each StructuredOutput attempt is one turn; a placeholder input
+        // is answered by an is_error tool_result and the model tries again until --max-turns attempts are used, then the run ends with
+        // subtype error_max_turns + is_error true (num_turns = attempts + 1), no structured_output and no result text.
+        for (let attempt = 0; attempt < maxTurns; attempt += 1) {
+          const healed = mode === 'placeholder_then_heal' && attempt >= 1;
+          const half = Math.ceil(Object.keys(structured ?? {}).length / 2);
+          const entries = Object.entries(structured ?? {});
+          const input = healed
+            ? structured
+            : mode === 'placeholder_split'
+              ? {
+                  $PARAMETER_NAME: Object.fromEntries(entries.slice(0, half)),
+                  $PARAMETER_NAME2: Object.fromEntries(entries.slice(half)),
+                }
+              : mode === 'tool_name_wrapper'
+                ? { StructuredOutput: structured }
+                : { $PARAMETER_NAME: structured };
+          const id = `toolu_structured_${attempt}`;
+          assistant([{ type: 'tool_use', id, name: 'StructuredOutput', input }]);
+          if (healed) {
+            out({
+              type: 'user',
+              message: {
+                role: 'user',
+                content: [{ type: 'tool_result', tool_use_id: id, content: 'Structured output provided successfully' }],
+              },
+            });
+            result({ structured_output: structured, result: '', stop_reason: 'tool_use', num_turns: attempt + 2 });
+            await client?.close().catch(() => undefined);
+            finish(0);
+            return;
+          }
+          out({
+            type: 'user',
+            message: {
+              role: 'user',
+              content: [
+                {
+                  type: 'tool_result',
+                  tool_use_id: id,
+                  is_error: true,
+                  content: "Output does not match required schema: root: must have required property 'x'",
+                },
+              ],
+            },
+          });
+        }
+        result({
+          subtype: 'error_max_turns',
+          is_error: true,
+          result: undefined,
+          stop_reason: 'tool_use',
+          num_turns: maxTurns + 1,
+          errors: [`Reached maximum number of turns (${maxTurns})`],
+        });
+        await client?.close().catch(() => undefined);
+        finish(1);
+        return;
+      }
       assistant([{ type: 'tool_use', id: 'toolu_structured', name: 'StructuredOutput', input: structured }]);
       result({ structured_output: structured, result: '' });
     }

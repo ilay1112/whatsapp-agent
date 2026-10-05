@@ -142,6 +142,8 @@ export const JOB_STDERR_MARKERS: ReadonlyArray<readonly [string, RegExp]> = [
   ['http_429', /\b429\b/],
   // [D-080] the CLI refused the model / flag combination at start (agy 1.2.16: "invalid model selection ... conflicts with --effort=low")
   ['model_rejected', /invalid model selection|conflicts with --|unknown model|issue with the selected model/i],
+  // [agy-provider-fix] agy 1.2.16 "[agy] print timeout after ... returning partial output": the run's output is partial - never used
+  ['print_timeout', /\bprint timeout\b/i],
 ];
 /** Every key set a job env may have. A spec whose key set equals none of them is refused before any spawn (fail closed). */
 const ALLOWED_ENV_KEY_SETS: Readonly<Record<JobKind, ReadonlyArray<readonly string[]>>> = {

@@ -141,6 +141,37 @@ describe('repos.runs - CLI sandbox proof (I11, B25/B26)', () => {
     expect(sandbox(repos, run)).toEqual({ ok: 1, json: JSON.stringify(PROOF) });
   });
 
+  it('[agy-provider-fix] an antigravity_cli proof keeps policy deny_all + runtimeWatch; other values are refused', () => {
+    const { repos } = memRepos();
+    const item = seedOpenItem(repos, seedChat(repos).id);
+    const run = repos.runs.start({
+      itemId: item.id,
+      stage: 'extract',
+      provider: 'antigravity_cli',
+      model: 'gemini-3.8-flash-high',
+      startedAt: T0,
+    });
+    const AGY: T.CliSandboxProof = {
+      initOk: true,
+      toolsCount: 60,
+      mcpServers: 0,
+      apiKeySource: 'unknown',
+      mismatch: null,
+      policy: 'deny_all',
+      runtimeWatch: true,
+    };
+    repos.runs.finishCli(run, { sandboxOk: true, sandboxProof: AGY });
+    expect(sandbox(repos, run)).toEqual({ ok: 1, json: JSON.stringify(AGY) });
+    for (const bad of [
+      { ...AGY, policy: 'allow_all' },
+      { ...AGY, policy: null },
+      { ...AGY, runtimeWatch: 'yes' },
+    ])
+      expect(() => repos.runs.finishCli(run, { sandboxOk: false, sandboxProof: bad as T.CliSandboxProof })).toThrow(
+        RepoContractError,
+      );
+  });
+
   it('fails closed: a proof that contradicts sandboxOk is stored as 0; a malformed proof is refused', () => {
     const { repos } = memRepos();
     const item = seedOpenItem(repos, seedChat(repos).id);

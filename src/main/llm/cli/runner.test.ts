@@ -37,9 +37,17 @@ vi.mock('./antigravityCli', async (importOriginal) => {
     agyEventResult: real.agyEventResult,
     classifyAgyResult: real.classifyAgyResult,
     classifyAgyExit: real.classifyAgyExit,
-    planAgyHome: (userDataDir: string) => ({
+    // [agy-provider-fix] the policy checker and the runtime tool watch are W1-09's real bodies as well
+    checkAgyPolicy: real.checkAgyPolicy,
+    agyStepVerdict: real.agyStepVerdict,
+    planAgyHome: (userDataDir: string, workspaceDir: string) => ({
       homeDir: `${userDataDir}\\agy-home`,
-      files: [{ path: path.join(userDataDir, 'agy-home', '.gemini', 'antigravity-cli', 'settings.json'), text: '{}' }],
+      files: [
+        {
+          path: path.join(userDataDir, 'agy-home', '.gemini', 'antigravity-cli', 'settings.json'),
+          text: real.planAgyHome(userDataDir, workspaceDir).files[0]!.text,
+        },
+      ],
       env: {},
     }),
     buildAgentFile: (stage: string, c: string) => `---\nname: wca-${stage}\n---\n${c}`,
@@ -810,6 +818,122 @@ describe('result classification (is_error FIRST)', () => {
   });
 });
 
+// [claude-extract-debug] Live 2.1.258 (synthetic S1 capture): the model wraps the whole answer in ONE `$PARAMETER_NAME` key of the
+// StructuredOutput call; the CLI rejects it with an is_error tool_result and, once --max-turns is used, ends with subtype
+// error_max_turns + is_error true and NO structured_output. The run's answer is the wrapped object (callers still zod-validate it).
+describe('[claude-extract-debug] StructuredOutput $PARAMETER_NAME wrapper', () => {
+  const soCall = (input: unknown, id = 't'): string =>
+    j({ type: 'assistant', message: { content: [{ type: 'tool_use', id, name: CLI_SCHEMA_TOOL, input }] } });
+  const soReject = (id = 't'): string =>
+    j({
+      type: 'user',
+      message: {
+        content: [
+          { type: 'tool_result', tool_use_id: id, is_error: true, content: 'Output does not match required schema' },
+        ],
+      },
+    });
+  const maxTurnsEnd = (n: number): string =>
+    result({
+      subtype: 'error_max_turns',
+      is_error: true,
+      result: undefined,
+      stop_reason: 'tool_use',
+      num_turns: n + 1,
+      errors: [`Reached maximum number of turns (${n})`],
+    });
+  const run1 = async (lines: string[], r: ClaudeRunRequestExt = req()) => {
+    const { runner } = mk([{ lines }]);
+    return runner.run(r, signal());
+  };
+
+  it('error_max_turns + is_error after a single-key wrapper => the wrapped object, no error, no strike', async () => {
+    const res = await run1([init(), soCall({ $PARAMETER_NAME: { a: 'x' } }), soReject(), maxTurnsEnd(1)]);
+    expect(res).toMatchObject({ error: null, stopReason: 'end', structured: { a: 'x' }, blockedCalls: 0 });
+    expect(res.usage).toEqual({ inputTokens: 11, outputTokens: 22 });
+  });
+
+  it('the tool-name wrapper {"StructuredOutput": {...}} (live variant) is unwrapped the same way', async () => {
+    const res = await run1([init(), soCall({ StructuredOutput: { a: 'x' } }), soReject(), maxTurnsEnd(1)]);
+    expect(res).toMatchObject({ error: null, structured: { a: 'x' } });
+  });
+
+  it('a partial answer (one declared field) is never a wrapper', async () => {
+    const res = await run1([init(), soCall({ a: 'x' }), soReject(), maxTurnsEnd(1)]);
+    expect(res).toMatchObject({ error: 'bad_output', structured: null });
+  });
+
+  it('two attempts: the LAST unwrappable attempt wins', async () => {
+    const res = await run1(
+      [
+        init(),
+        soCall({ $PARAMETER_NAME: { a: 'first' } }, 't1'),
+        soReject('t1'),
+        soCall({ $PARAMETER_NAME: { a: 'second' } }, 't2'),
+        soReject('t2'),
+        maxTurnsEnd(2),
+      ],
+      req({ maxTurns: 2 }),
+    );
+    expect(res).toMatchObject({ error: null, structured: { a: 'second' } });
+  });
+
+  it('a split answer over two placeholder keys is NOT salvaged (bad_output, as before)', async () => {
+    const res = await run1([
+      init(),
+      soCall({ $PARAMETER_NAME: { a: 'x' }, $PARAMETER_NAME2: { b: 1 } }),
+      soReject(),
+      maxTurnsEnd(1),
+    ]);
+    expect(res).toMatchObject({ error: 'bad_output', structured: null });
+  });
+
+  it('structured_output always wins over a wrapper of an earlier attempt', async () => {
+    const res = await run1([
+      init(),
+      soCall({ $PARAMETER_NAME: { a: 'wrapped' } }, 't1'),
+      soReject('t1'),
+      soCall({ a: 'clean' }, 't2'),
+      result({ structured_output: { a: 'clean' }, stop_reason: 'tool_use', num_turns: 3 }),
+    ]);
+    expect(res).toMatchObject({ error: null, structured: { a: 'clean' } });
+  });
+
+  it('success without structured_output falls back to the wrapper before the text path', async () => {
+    const res = await run1([init(), soCall({ $PARAMETER_NAME: { a: 'x' } }), soReject(), result({ result: 'prose' })]);
+    expect(res).toMatchObject({ error: null, structured: { a: 'x' }, text: null });
+  });
+
+  it('never salvages a real error: is_error with another subtype, a usage-window hit, or an S3 draft', async () => {
+    const wrapped = soCall({ $PARAMETER_NAME: { a: 'x' } });
+    expect(
+      await run1([init(), wrapped, result({ is_error: true, result: 'API Error: Rate limit reached' })]),
+    ).toMatchObject({
+      error: 'rate_limited',
+      structured: null,
+    });
+    const rejected = j({ type: 'rate_limit_event', rate_limit_info: { status: 'rejected', resetsAt: null } });
+    expect(await run1([init(), wrapped, rejected, maxTurnsEnd(1)])).toMatchObject({
+      error: 'usage_limit',
+      structured: null,
+    });
+    // S3 (jsonSchema null): StructuredOutput is not an allowed tool there - a strike, never an answer
+    const s3 = await run1([s3init(), wrapped, maxTurnsEnd(1)], s3req());
+    expect(s3.structured).toBeNull();
+    expect(s3.blockedCalls).toBe(1);
+  });
+
+  it('a tool other than StructuredOutput on a schema run is still a strike (multi-turn changes nothing)', async () => {
+    const res = await run1(
+      [init(), soCall({ $PARAMETER_NAME: { a: 'x' } }), toolUse('Bash'), toolUse('Read'), maxTurnsEnd(2)],
+      req({ maxTurns: 2 }),
+    );
+    expect(res.blockedCalls).toBe(2);
+    expect(res.stopReason).toBe('killed');
+    expect(res.structured).toBeNull();
+  });
+});
+
 describe('edge branches', () => {
   it('non-object JSON lines are ignored; a missing isUsingOverage is null; a result without denials; is_error without text', async () => {
     const rle = j({ type: 'rate_limit_event', rate_limit_info: { status: 'allowed', resetsAt: 1 } });
@@ -949,7 +1073,7 @@ describe('antigravity_cli branch (lane L10 builders mocked; W1-09 owns their bod
       ...over,
     });
 
-  it('writes the agent file + schema.json into <userData>\\agy-workspace\\runs\\<id>, never an mcp_config.json; env = AGY list', async () => {
+  it('writes the agent file (schema in its body, no schema.json) into <userData>\\agy-workspace\\runs\\<id>, never an mcp_config.json; env = AGY list', async () => {
     let seen: string[] = [];
     const { runner, jobs } = mk([
       {
@@ -970,12 +1094,7 @@ describe('antigravity_cli branch (lane L10 builders mocked; W1-09 owns their bod
     expect(res).toMatchObject({ error: null, structured: { a: 'x' } });
     const spec = jobs.specs[0]!;
     expect(spec.cwd.startsWith(path.join(userData, 'agy-workspace', 'runs') + path.sep)).toBe(true);
-    expect(seen).toEqual([
-      '.agents',
-      path.join('.agents', 'agents'),
-      path.join('.agents', 'agents', 'wca-extract.md'),
-      'schema.json',
-    ]);
+    expect(seen).toEqual(['.agents', path.join('.agents', 'agents'), path.join('.agents', 'agents', 'wca-extract.md')]); // [agy-schema-loop] no schema.json and no --json-schema
     expect(seen.join()).not.toContain('mcp_config');
     expect(Object.keys(spec.env).sort()).toEqual(
       [
@@ -991,7 +1110,7 @@ describe('antigravity_cli branch (lane L10 builders mocked; W1-09 owns their bod
       ].sort(),
     );
     expect(spec.env.USERPROFILE).toBe(`${userData}\\agy-home`);
-    expect(spec.args).toEqual(['--agent', 'wca-extract', '--json-schema', path.join(spec.cwd, 'schema.json')]);
+    expect(spec.args).toEqual(['--agent', 'wca-extract']);
     expect(fs.existsSync(spec.cwd)).toBe(false);
   });
 
@@ -1070,6 +1189,226 @@ describe('antigravity_cli branch (lane L10 builders mocked; W1-09 owns their bod
     await b.runner.run(agyReq({ jsonSchema: null }), signal());
     expect(b.jobs.specs[0]!.args).toEqual(['--agent', 'wca-extract']);
     expect(b.jobs.specs[0]!.env.SystemRoot).toBe('C:\\Windows');
+  });
+});
+
+// ---------------------------------------------------------------------------------------------------------------------
+// [agy-provider-fix] agy 1.2.16 lists all 60 tools in init.tools, so the I11 proof of an agy run rests on (A) the deny-all permissions
+// policy re-read before every spawn, (C) the runtime tool watch on every step_update, and the agent file's tools: [].
+// ---------------------------------------------------------------------------------------------------------------------
+describe('[agy-provider-fix] deny-all policy (A), runtime tool watch (C), nested 1.2.16 result (D), print timeout', () => {
+  const agyReq = (over: Partial<CliRunRequest> = {}): CliRunRequest =>
+    req({
+      provider: 'antigravity_cli',
+      exePath: 'C:\\fakehome\\AppData\\Local\\agy\\bin\\agy.exe',
+      model: 'gemini-3.8-flash-high',
+      ...over,
+    });
+  const ok0 = j({ agent: 'wca-extract', tools: [] });
+  const step = (s: Record<string, unknown>): string =>
+    j({ event: 'step_update', step_update: { conversation_id: 'c', step_index: 1, ...s } });
+  const toolStep = (name: string, parameters: unknown, state = 'ACTIVE'): string =>
+    step({ state, step_type: 'tool', tool_name: name, tool_info: { name, parameters, output: 'o' } });
+  const listStep = (state: string): string => toolStep('manage_task', { Action: 'list' }, state);
+  const answer = (response: string): string =>
+    j({ event: 'result', result: { conversation_id: 'c', status: 'SUCCESS', response, num_turns: 2, usage: {} } });
+  const settingsPath = (): string => path.join(userData, 'agy-home', '.gemini', 'antigravity-cli', 'settings.json');
+  /** node:fs with one tamper hook on the isolated settings.json (simulates a failed / altered write). */
+  const tamperFs = (tamper: (text: string) => string | null) => ({
+    mkdirSync: (p: string, o: { recursive: true }) => {
+      fs.mkdirSync(p, o);
+    },
+    readdirSync: (p: string) => fs.readdirSync(p),
+    writeFileSync: (p: string, t: string) => {
+      if (p === settingsPath()) {
+        const next = tamper(t);
+        if (next !== null) fs.writeFileSync(p, next);
+        return;
+      }
+      fs.writeFileSync(p, t);
+    },
+    readFileSync: (p: string) => fs.readFileSync(p, 'utf8'),
+    rmSync: (p: string, o: { recursive: true; force: true }) => fs.rmSync(p, o),
+  });
+
+  it('(A) the isolated settings.json carries the deny-all policy; a success proof records policy deny_all + runtimeWatch', async () => {
+    const { runner, jobs } = mk([{ lines: [ok0, listStep('ACTIVE'), listStep('DONE'), answer('{"a":"x"}')] }]);
+    const res = await runner.run(agyReq(), signal());
+    expect(res).toMatchObject({ error: null, structured: { a: 'x' }, stopReason: 'end' });
+    expect(res.sandbox).toEqual({
+      initOk: true,
+      toolsCount: 0,
+      mcpServers: 0,
+      apiKeySource: 'unknown',
+      mismatch: null,
+      policy: 'deny_all',
+      runtimeWatch: true,
+    });
+    expect(jobs.specs).toHaveLength(1);
+    const settings = JSON.parse(fs.readFileSync(settingsPath(), 'utf8')) as { permissions: { deny: string[] } };
+    expect(settings.permissions.deny).toEqual([
+      'read_file(*)',
+      'write_file(*)',
+      'read_url(*)',
+      'execute_url(*)',
+      'command(*)',
+      'unsandboxed(*)',
+      'mcp(*)',
+    ]);
+    const row = audits.find((a) => a.kind === 'cli_run')!;
+    expect(row.detail).toMatchObject({ provider: 'antigravity_cli', policy: 'deny_all', runtimeWatch: true });
+    expect(audits.filter((a) => a.kind === 'tool_blocked')).toEqual([]);
+  });
+
+  it.each<[string, (t: string) => string | null, 'missing' | 'altered']>([
+    ['the write is lost', () => null, 'missing'],
+    ['no permissions block', () => JSON.stringify({ trustedWorkspaces: [] }), 'missing'],
+    [
+      'one deny wildcard dropped',
+      (t) => {
+        const o = JSON.parse(t) as { permissions: { deny: string[] } };
+        o.permissions.deny = o.permissions.deny.filter((d) => d !== 'command(*)');
+        return JSON.stringify(o);
+      },
+      'altered',
+    ],
+    [
+      'an allow entry added',
+      (t) => {
+        const o = JSON.parse(t) as { permissions: { allow: string[] } };
+        o.permissions.allow = ['command(*)'];
+        return JSON.stringify(o);
+      },
+      'altered',
+    ],
+  ])(
+    '(A) %s => refused BEFORE any spawn, error sandbox, audited toolset_mismatch policy_%s',
+    async (_n, tamper, why) => {
+      const { runner, jobs } = mk([{ lines: [ok0, answer('{"a":"x"}')] }], { fs: tamperFs(tamper) });
+      const res = await runner.run(agyReq(), signal());
+      expect(res).toMatchObject({ error: 'sandbox', structured: null, sandbox: NO_PROOF });
+      expect(jobs.specs).toHaveLength(0); // nothing spawned: the stdin line (message text) never left the app
+      expect(audits.filter((a) => a.kind === 'toolset_mismatch')).toEqual([
+        {
+          kind: 'toolset_mismatch',
+          ref: null,
+          detail: { provider: 'antigravity_cli', stage: 'extract', reason: `policy_${why}` },
+        },
+      ]);
+      expect(audits.find((a) => a.kind === 'cli_run')?.detail).toMatchObject({ policy: why, initOk: false });
+      expect(fs.existsSync(path.join(userData, 'agy-workspace', 'runs'))).toBe(true);
+      expect(fs.readdirSync(path.join(userData, 'agy-workspace', 'runs'))).toEqual([]); // run dir removed
+    },
+  );
+
+  it('(A) a CliRunFs seam without readFileSync cannot verify the policy => agy refused (fail closed); claude unaffected', async () => {
+    const { readFileSync: _drop, ...noRead } = tamperFs((t) => t);
+    void _drop;
+    // the refused agy run never reaches the JobRunner, so the ONE script below is the Claude run's
+    const { runner, jobs } = mk([{ lines: [init(), result({ structured_output: { a: 'x' } })] }], { fs: noRead });
+    expect((await runner.run(agyReq(), signal())).error).toBe('sandbox');
+    expect(jobs.specs).toHaveLength(0);
+    expect((await runner.run(req(), signal())).error).toBeNull();
+    expect(jobs.specs).toHaveLength(1);
+  });
+
+  it.each<[string, string[]]>([
+    ['run_command ACTIVE', [toolStep('run_command', { CommandLine: 'echo hi' }), toolStep('run_command', {}, 'DONE')]],
+    ['run_command DONE only (ACTIVE missed)', [toolStep('run_command', { CommandLine: 'echo hi' }, 'DONE')]],
+    ['manage_task with another action', [toolStep('manage_task', { Action: 'create', Command: 'x' })]],
+    ['an invented tool in ERROR', [toolStep('bash', { cmd: 'x' }, 'ERROR')]],
+    ['an unknown step kind', [step({ state: 'ACTIVE', step_type: 'subagent' })]],
+  ])('(C) %s => killed at once, run failed (sandbox), answer never used, tool_blocked hashed', async (_n, steps) => {
+    const lines = [ok0, listStep('ACTIVE'), listStep('DONE'), ...steps, answer('{"a":"x"}')];
+    const { runner, jobs } = mk([{ lines }]);
+    const res = await runner.run(agyReq({ runId: 9, auditRef: '77' } as Partial<CliRunRequest>), signal());
+    expect(res.structured).toBeNull();
+    expect(res.text).toBeNull();
+    expect(res.error).toBe('sandbox');
+    expect(res.stopReason).toBe('killed');
+    expect(res.blockedCalls).toBe(1);
+    expect(res.sandbox).toMatchObject({
+      initOk: false,
+      mismatch: 'extra_tool',
+      policy: 'deny_all',
+      runtimeWatch: true,
+    });
+    expect(jobs.kills).toBe(1);
+    expect(jobs.pulled).toEqual([4]); // nothing after the first forbidden step was read
+    const blocked = audits.filter((a) => a.kind === 'tool_blocked');
+    expect(blocked).toHaveLength(1);
+    const name = (JSON.parse(steps[0]!) as { step_update: { tool_name?: string; step_type?: string } }).step_update;
+    const raw = name.tool_name ?? `step:${name.step_type}`;
+    expect(blocked[0]!.detail).toEqual({
+      nameSha8: nameSha8(raw),
+      nameLen: raw.length,
+      verdict: 'blocked_unknown_tool',
+      runId: 9,
+    });
+    expect(blocked[0]!.ref).toBe('77');
+    expect(JSON.stringify(audits)).not.toContain(raw); // only the hash, never the tool name (B26)
+    expect(audits.filter((a) => a.kind === 'run_aborted')).toEqual([
+      { kind: 'run_aborted', ref: '77', detail: { provider: 'antigravity_cli', stage: 'extract', blockedCalls: 1 } },
+    ]);
+    expect(audits.filter((a) => a.kind === 'toolset_mismatch')).toEqual([]);
+  });
+
+  it('(C) a forbidden step AFTER the result still fails the run (the result is never used)', async () => {
+    const { runner } = mk([{ lines: [ok0, answer('{"a":"x"}'), toolStep('write_to_file', {}, 'DONE')] }]);
+    const res = await runner.run(agyReq(), signal());
+    expect(res).toMatchObject({ error: 'sandbox', structured: null, stopReason: 'killed' });
+  });
+
+  it('(C) every blocked run counts for the breaker: the 3rd opens it (CLI_UNSTABLE), no 4th spawn', async () => {
+    const bad = { lines: [ok0, toolStep('run_command', { CommandLine: 'x' })] };
+    const { runner, jobs } = mk([bad, bad, bad, bad]);
+    for (let i = 0; i < 3; i += 1) expect((await runner.run(agyReq(), signal())).error).toBe('sandbox');
+    expect(runner.breakerOpen()).toBe(true);
+    expect(runner.health()).toEqual({ code: 'CLI_UNSTABLE', retryAtMs: null });
+    expect((await runner.run(agyReq(), signal())).error).toBe('not_ready');
+    expect(jobs.specs).toHaveLength(3);
+  });
+
+  it('(C) manage_task {"Action":"list"} alone (agy calls it by itself) is tolerated; agent_response steps are not tools', async () => {
+    const { runner } = mk([
+      {
+        lines: [
+          ok0,
+          listStep('ACTIVE'),
+          listStep('DONE'),
+          step({ state: 'ACTIVE', step_type: 'agent_response' }),
+          step({ state: 'DONE', step_type: 'agent_response' }),
+          answer('```json\n{"a":"x"}\n```'),
+        ],
+      },
+    ]);
+    const res = await runner.run(agyReq(), signal());
+    expect(res).toMatchObject({ error: null, structured: { a: 'x' }, blockedCalls: 0 });
+    expect(runner.breakerOpen()).toBe(false);
+  });
+
+  it('(D) 1.2.16 nested result without structured_output: response parsed; unparsable / truncated => bad_output', async () => {
+    const cases: Array<[string, string | null, unknown]> = [
+      ['{"a":"x"}', null, { a: 'x' }],
+      ['{"a":"x"', 'bad_output', null],
+      ['sorry', 'bad_output', null],
+      ['', 'bad_output', null],
+    ];
+    for (const [response, code, structured] of cases) {
+      const { runner } = mk([{ lines: [ok0, answer(response)] }]);
+      const r = await runner.run(agyReq(), signal());
+      expect(r.error, response).toBe(code);
+      expect(r.structured, response).toEqual(structured);
+    }
+  });
+
+  it('print timeout ("[agy] print timeout ... returning partial output") => never the partial answer; network + breaker strike', async () => {
+    const { runner } = mk(() => ({ lines: [ok0, answer('{"a":"x"}')], stderrMarkers: ['print_timeout'] }));
+    const r = await runner.run(agyReq(), signal());
+    expect(r).toMatchObject({ error: 'network', structured: null, stopReason: 'killed' });
+    await runner.run(agyReq(), signal());
+    await runner.run(agyReq(), signal());
+    expect(runner.breakerOpen()).toBe(true);
   });
 });
 
