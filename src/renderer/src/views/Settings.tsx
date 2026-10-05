@@ -171,6 +171,8 @@ export function Settings({ initialGroup = 'general' }: SettingsProps) {
       if (r.ok) {
         setPairing(r.value);
         setRelinking(false);
+        // All data is gone: the renderer's own stored voice intent (wca.voiceIntent) goes with it (ux-i18n-v2-4).
+        useSettingsStore.getState().setVoiceIntent(null);
       }
       return;
     }

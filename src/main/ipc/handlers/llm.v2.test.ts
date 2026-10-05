@@ -61,11 +61,52 @@ describe('llm:setProvider - CLI ids', () => {
       expect(f.state.settings.llm.provider).toBe('local');
       expect(invalidate).not.toHaveBeenCalled();
     }
+    // [D-080] 'unknown' is not in the table: "could not tell" is never reported as "not signed in" (B13)
     expect(CLI_STATE_CODE).toEqual({
       not_installed: 'CLI_NOT_INSTALLED',
       too_old: 'CLI_VERSION',
       not_signed_in: 'CLI_NOT_SIGNED_IN',
-      unknown: 'CLI_NOT_SIGNED_IN',
+    });
+  });
+
+  it('[D-080] unknown ("could not tell whether you are signed in"): the smoke decides, after the consent - never a stale test', async () => {
+    const f1 = setup({ status: { state: 'unknown' } });
+    const runCliTest = vi.fn(async () => ({ ok: true as const, value: { ok: true, ms: 900 } }));
+    const h1 = createLlmHandlers(f1.f.deps, { cliStatus: { get: f1.get }, listAgyModels: async () => [], runCliTest });
+    const r1 = await h1['llm:setProvider']({ provider: 'claude_cli' }, CTX);
+    expect(r1.ok && r1.value.provider).toBe('claude_cli');
+    expect(runCliTest).toHaveBeenCalledTimes(1); // even with a fresh passed lastTest: the status cannot tell NOW
+    // the smoke says not signed in => THAT is reported (now it is known)
+    const f2 = setup({ status: { state: 'unknown' } });
+    const failing = vi.fn(async () => ({ ok: false as const, error: { code: 'CLI_NOT_SIGNED_IN' as const } }));
+    const h2 = createLlmHandlers(f2.f.deps, {
+      cliStatus: { get: f2.get },
+      listAgyModels: async () => [],
+      runCliTest: failing,
+    });
+    expect(await h2['llm:setProvider']({ provider: 'claude_cli' }, CTX)).toEqual({
+      ok: false,
+      error: { code: 'CLI_NOT_SIGNED_IN' },
+    });
+    expect(f2.f.state.settings.llm.provider).toBe('local');
+    // no consent => CONSENT_REQUIRED before any smoke
+    const f3 = setup({ status: { state: 'unknown' }, consent: false });
+    const never = vi.fn();
+    const h3 = createLlmHandlers(f3.f.deps, {
+      cliStatus: { get: f3.get },
+      listAgyModels: async () => [],
+      runCliTest: never,
+    });
+    expect(await h3['llm:setProvider']({ provider: 'claude_cli' }, CTX)).toEqual({
+      ok: false,
+      error: { code: 'CONSENT_REQUIRED' },
+    });
+    expect(never).not.toHaveBeenCalled();
+    // without a smoke runner nothing is claimed: CLI_NOT_SIGNED_IN carries params.state 'unknown' (renderer: "Could not tell ...")
+    const f4 = setup({ status: { state: 'unknown' } });
+    expect(await f4.h['llm:setProvider']({ provider: 'claude_cli' }, CTX)).toEqual({
+      ok: false,
+      error: { code: 'CLI_NOT_SIGNED_IN', params: { state: 'unknown' } },
     });
   });
 

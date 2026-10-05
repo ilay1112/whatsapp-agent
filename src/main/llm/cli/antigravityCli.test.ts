@@ -17,6 +17,7 @@ import {
   AGY_MIN_VERSION,
   AGY_PROFILE_MODE,
   agyEventResult,
+  agyModelEffort,
   agyPrintTimeout,
   buildAgentFile,
   buildAgyArgs,
@@ -74,13 +75,12 @@ describe('constants', () => {
 
 describe('buildAgyArgs (B14 argv literal, never -p <text>)', () => {
   it('S1 extract: the literal argv with --json-schema <runDir>\\schema.json and --print-timeout wall-10 s', () => {
+    // [D-080] the default slug carries its effort ('-high'): agy 1.2.16 refuses `--effort` next to it, so none is passed
     expect(buildAgyArgs(req(), SCHEMA_PATH)).toEqual([
       '--agent',
       'wca-extract',
       '--model',
       'gemini-3.8-flash-high',
-      '--effort',
-      'low',
       '--output-format',
       'stream-json',
       '--input-format',
@@ -91,6 +91,32 @@ describe('buildAgyArgs (B14 argv literal, never -p <text>)', () => {
       '--json-schema',
       SCHEMA_PATH,
     ]);
+  });
+  it('[D-080] --effort low only for a slug WITHOUT an effort suffix (agy 1.2.16: "--model X-high conflicts with --effort=low")', () => {
+    for (const model of ['gemini-3.8-flash', 'gemini-3.5-flash-lite', 'gemini-3.1-pro', 'gemini-3.8-highland']) {
+      const a = buildAgyArgs(req({ model }), SCHEMA_PATH);
+      expect(a.slice(2, 6), model).toEqual(['--model', model, '--effort', 'low']);
+      expect(
+        a.filter((x) => x === '--effort'),
+        model,
+      ).toHaveLength(1);
+      expect(agyModelEffort(model), model).toBeNull();
+    }
+    for (const [model, effort] of [
+      ['gemini-3.8-flash-high', 'high'],
+      ['gemini-3.1-pro-low', 'low'],
+      ['gemini-3.1-pro-medium', 'medium'],
+      ['gemini-3.8-flash-minimal', 'minimal'],
+      ['gemini-3.8-flash-xhigh', 'xhigh'],
+      ['Gemini-3.8-Flash-HIGH', 'high'],
+    ] as const) {
+      const a = buildAgyArgs(req({ model }), SCHEMA_PATH);
+      expect(a, model).not.toContain('--effort');
+      expect(a.slice(2, 5), model).toEqual(['--model', model, '--output-format']);
+      expect(agyModelEffort(model), model).toBe(effort);
+    }
+    // the default setting is a suffixed slug: a run of the default configuration never carries --effort
+    expect(agyModelEffort(DEFAULT_SETTINGS.llm.cli.agyModel)).not.toBeNull();
   });
   it('S3 draft (prefetch loop, {reply} schema) and the smoke run', () => {
     const d = buildAgyArgs(req({ stage: 'draft', wallClockMs: LIMITS.cliWallClockDraftMs }), SCHEMA_PATH);

@@ -13,7 +13,7 @@ import { CliLimits, RUNS_PER_HOUR_MAX } from './CliLimits';
 
 beforeEach(() => {
   useSettingsStore.setState({ settings: DEFAULT_SETTINGS });
-  useCliStore.setState({ status: {}, checkedAt: {}, error: {} });
+  useCliStore.setState({ status: {}, checkedAt: {}, error: {}, signInError: {}, signInStartedAt: {} });
   useFocusGuardStore.setState({ activationBlockedUntil: 0 });
   mockInvoke('settings:set', (patch) => ({
     ok: true,

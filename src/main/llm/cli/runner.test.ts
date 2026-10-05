@@ -21,6 +21,7 @@ import {
 import { CLI_SCHEMA_TOOL, buildClaudeStdinLine, nameSha8, type ClaudeRunRequestExt } from './claudeCli';
 import {
   NO_PROOF,
+  classifyErrorBeforeInit,
   createCliRunner,
   mapAgyError,
   mapApiRetryError,
@@ -1069,5 +1070,200 @@ describe('antigravity_cli branch (lane L10 builders mocked; W1-09 owns their bod
     await b.runner.run(agyReq({ jsonSchema: null }), signal());
     expect(b.jobs.specs[0]!.args).toEqual(['--agent', 'wca-extract']);
     expect(b.jobs.specs[0]!.env.SystemRoot).toBe('C:\\Windows');
+  });
+});
+
+// ---------------------------------------------------------------------------------------------------------------------
+// [D-080] An ERROR event that arrives instead of the init (live diagnostic, agy 1.2.16 + Claude Code): classified by its text and the
+// marker-only stderr view - never a toolset mismatch, never proven, never a retry with looser flags, no breaker strike.
+// ---------------------------------------------------------------------------------------------------------------------
+describe('[D-080] error event before init: classified failure, never a pass, never CLI_TOOLSET_MISMATCH', () => {
+  const agyReq = (over: Partial<CliRunRequest> = {}): CliRunRequest =>
+    req({
+      provider: 'antigravity_cli',
+      exePath: 'C:\\fakehome\\AppData\\Local\\agy\\bin\\agy.exe',
+      model: 'gemini-3.8-flash-high',
+      ...over,
+    });
+  /** The FIRST stdout event agy 1.2.16 printed for the refused flag combination (keys from the live capture, D-080). */
+  const agyFirstResult = (error: string): string =>
+    j({
+      event: 'result',
+      conversation_id: 'c-1',
+      status: 'ERROR',
+      response: '',
+      error,
+      duration_seconds: 0.1,
+      num_turns: 0,
+      usage: {},
+    });
+  const CONFLICT =
+    'invalid model selection (--model "gemini-3.8-flash-high" --effort "low"): --model gemini-3.8-flash-high conflicts with --effort=low';
+
+  it.each<[string, string, string]>([
+    ['agy model / flag conflict', CONFLICT, 'model_rejected'],
+    ['agy unknown model', 'unknown model "gemini-9"', 'model_rejected'],
+    ['agy auth', 'authentication required. Run agy once in a terminal to sign in.', 'not_logged_in'],
+    ['agy UNAUTHENTICATED', '{"status":"UNAUTHENTICATED","code":401}', 'not_logged_in'],
+    ['agy quota', '{"status":"RESOURCE_EXHAUSTED","code":429}', 'usage_limit'],
+    ['agy other', 'internal error', 'network'],
+    ['agy empty error', '', 'network'],
+  ])('%s => %s, NO_PROOF, bad_output, one line read, no toolset_mismatch audit', async (_n, text, code) => {
+    const { runner, jobs } = mk([
+      { lines: [agyFirstResult(text), j({ agent: 'wca-extract', tools: [] })], exitCode: 1 },
+    ]);
+    const res = await runner.run(agyReq(), signal());
+    expect(res).toMatchObject({ error: code, stopReason: 'bad_output', structured: null, text: null });
+    expect(res.sandbox).toEqual(NO_PROOF);
+    expect(jobs.pulled).toEqual([1]); // nothing after the first event is ever looked at (I11)
+    expect(audits.some((a) => a.kind === 'toolset_mismatch')).toBe(false);
+    const row = audits.find((a) => a.kind === 'cli_run')?.detail;
+    expect(row).toMatchObject({ initOk: false, errorBeforeInit: code });
+    expect(JSON.stringify(audits)).not.toMatch(/gemini|conflicts|authentication|RESOURCE|internal error/);
+  });
+
+  it('the nested {"event":"result","result":{...}} envelope and an {"event":"error"} event are read the same way', async () => {
+    const { runner } = mk([
+      { lines: [j({ event: 'result', result: { status: 'ERROR', error: CONFLICT } })], exitCode: 1 },
+      { lines: [j({ event: 'error', error: { message: 'authentication required' } })], exitCode: 1 },
+      { lines: [j({ event: 'result', result: { status: 'SUCCESS', structured_output: { a: 1 } } })], exitCode: 0 },
+    ]);
+    expect((await runner.run(agyReq(), signal())).error).toBe('model_rejected');
+    expect((await runner.run(agyReq(), signal())).error).toBe('not_logged_in');
+    // a "successful" result BEFORE any init is still unproven: nothing of it is used (fail closed), classified as an error event
+    const r3 = await runner.run(agyReq(), signal());
+    expect(r3).toMatchObject({ structured: null, sandbox: NO_PROOF });
+    expect(r3.error).not.toBeNull();
+    expect(r3.error).not.toBe('sandbox');
+  });
+
+  it('the stderr markers decide when the event carries no recognisable text', async () => {
+    const { runner } = mk([
+      { lines: [agyFirstResult('')], exitCode: 1, stderrMarkers: ['model_rejected'] },
+      { lines: [agyFirstResult('')], exitCode: 1, stderrMarkers: ['auth_required'] },
+      { lines: [agyFirstResult('')], exitCode: 1, stderrMarkers: ['quota'] },
+      { lines: [agyFirstResult('')], exitCode: 1, stderrMarkers: ['http_429'] },
+      { lines: [agyFirstResult('')], exitCode: 1, stderrMarkers: ['rate_limit'] },
+    ]);
+    for (const code of ['model_rejected', 'not_logged_in', 'usage_limit', 'usage_limit', 'rate_limited'])
+      expect((await runner.run(agyReq(), signal())).error).toBe(code);
+  });
+
+  it('never a breaker strike, never the identity pause, never a retry: six rejected runs, six spawns, breaker closed', async () => {
+    const { runner, jobs } = mk(() => ({ lines: [agyFirstResult(CONFLICT)], exitCode: 1 }));
+    for (let i = 0; i < 6; i += 1) expect((await runner.run(agyReq(), signal())).error).toBe('model_rejected');
+    expect(jobs.specs).toHaveLength(6);
+    expect(runner.breakerOpen()).toBe(false);
+    expect(runner.health()).toBeNull();
+  });
+
+  it('claude: a result / assistant error BEFORE system/init is classified the same way (never a toolset mismatch)', async () => {
+    const { runner, jobs } = mk([
+      {
+        lines: [
+          result({
+            is_error: true,
+            result: 'Failed to authenticate: OAuth session expired and could not be refreshed',
+          }),
+          init(),
+        ],
+        exitCode: 1,
+      },
+      {
+        lines: [
+          j({
+            type: 'assistant',
+            error: 'authentication_failed',
+            message: { content: [{ type: 'text', text: 'Failed to authenticate' }] },
+          }),
+        ],
+        exitCode: 1,
+      },
+      { lines: [result({ is_error: true, result: 'claude-x is not a recognized model id' })], exitCode: 1 },
+      { lines: [result({ is_error: true, result: "You've hit your session limit" })], exitCode: 1 },
+      { lines: [result({ is_error: true, result: 'boom' })], exitCode: 1 },
+    ]);
+    for (const code of ['not_logged_in', 'not_logged_in', 'model_rejected', 'usage_limit', 'network']) {
+      const r = await runner.run(req(), signal());
+      expect(r).toMatchObject({ error: code, sandbox: NO_PROOF, structured: null, stopReason: 'bad_output' });
+    }
+    expect(jobs.pulled).toEqual([1, 1, 1, 1, 1]);
+    expect(audits.some((a) => a.kind === 'toolset_mismatch')).toBe(false);
+    expect(runner.breakerOpen()).toBe(false);
+  });
+
+  it('the D-080 Claude stream (init FIRST, then an assistant auth error, then an is_error result) stays not_logged_in', async () => {
+    const { runner } = mk([
+      {
+        lines: [
+          init(),
+          j({ type: 'assistant', error: 'authentication_failed', message: { content: [] } }),
+          result({
+            is_error: true,
+            result: 'Failed to authenticate: OAuth session expired and could not be refreshed',
+          }),
+        ],
+        exitCode: 1,
+      },
+    ]);
+    const r = await runner.run(req(), signal());
+    expect(r.error).toBe('not_logged_in');
+    expect(r.sandbox.initOk).toBe(true);
+  });
+
+  it('a stream with NO recognisable event keeps reason no_init (fail closed, toolset mismatch)', async () => {
+    const { runner } = mk([
+      { lines: [j({ agent: 'someone-else' })] },
+      { lines: [j({ event: 'progress' })] },
+      { lines: [j({ type: 'assistant', message: { content: [{ type: 'text', text: 'hi' }] } })] },
+    ]);
+    expect((await runner.run(agyReq(), signal())).error).toBe('sandbox');
+    expect((await runner.run(agyReq(), signal())).error).toBe('sandbox');
+    expect((await runner.run(req(), signal())).error).toBe('sandbox');
+    expect(audits.filter((a) => a.kind === 'toolset_mismatch')).toHaveLength(3);
+  });
+
+  it('classifyErrorBeforeInit (pure): text first, then markers, else network', () => {
+    expect(classifyErrorBeforeInit(CONFLICT, [])).toBe('model_rejected');
+    expect(classifyErrorBeforeInit('error: unknown option --effort', [])).toBe('model_rejected');
+    expect(classifyErrorBeforeInit('Not logged in · Please run /login', [])).toBe('not_logged_in');
+    expect(classifyErrorBeforeInit('OAuth session expired', [])).toBe('not_logged_in');
+    expect(classifyErrorBeforeInit('Quota exceeded', [])).toBe('usage_limit');
+    expect(classifyErrorBeforeInit('', ['authentication_failed'])).toBe('not_logged_in');
+    expect(classifyErrorBeforeInit('', ['usage_limit'])).toBe('usage_limit');
+    expect(classifyErrorBeforeInit('', ['model_not_found'])).toBe('model_rejected');
+    expect(classifyErrorBeforeInit('', ['overloaded'])).toBe('overloaded');
+    expect(classifyErrorBeforeInit('', [])).toBe('network');
+    // an auth word inside a model rejection is still the model rejection (the user has to pick another model)
+    expect(classifyErrorBeforeInit('invalid model selection: login model "x" conflicts with --effort=low', [])).toBe(
+      'model_rejected',
+    );
+  });
+});
+
+describe('[D-080] onRunEnd: every finished run is reported to subscribers (the status service flips "signed in")', () => {
+  it('reports provider + error + initOk; unsubscribe stops it', async () => {
+    const { runner } = mk([
+      { lines: [init(), result({ is_error: true, result: 'Not logged in · Please run /login' })], exitCode: 1 },
+      { lines: [init(), result({ structured_output: { a: 'x' } })] },
+      { lines: [init(), result({ structured_output: { a: 'x' } })] },
+    ]);
+    const seen: Array<[string, string | null, boolean]> = [];
+    const off = runner.onRunEnd((provider, r) => seen.push([provider, r.error, r.sandbox.initOk]));
+    await runner.run(req(), signal());
+    await runner.run(req(), signal());
+    off();
+    await runner.run(req(), signal());
+    expect(seen).toEqual([
+      ['claude_cli', 'not_logged_in', true],
+      ['claude_cli', null, true],
+    ]);
+  });
+  it('a throwing subscriber never breaks the run', async () => {
+    const { runner } = mk([{ lines: [init(), result({ structured_output: { a: 'x' } })] }]);
+    runner.onRunEnd(() => {
+      throw new Error('boom');
+    });
+    expect((await runner.run(req(), signal())).error).toBeNull();
   });
 });

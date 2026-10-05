@@ -3,11 +3,11 @@
 // file 1 of 4 of the C2 9.2 block - owner V2-W1-06-claude-cli (the Wave-0 stub bodies are replaced below the frozen declarations).
 import nodeFs from 'node:fs';
 import path from 'node:path';
-import type { CliProviderId, CliState, CliStatus, EpochMs, LlmQuota } from '../../../shared/types';
+import type { CliProviderId, CliSignInSession, CliState, CliStatus, EpochMs, LlmQuota } from '../../../shared/types';
 import { CLI_MIN_VERSION } from '../../../shared/types';
 import { ClaudeExePathSchema } from '../../../shared/settings';
 import type { LocateDeps } from '../../deps';
-import type { CliRunner } from './runner';
+import type { CliRunResult, CliRunner, CliRunnerExt } from './runner';
 import { AGY_WORKSPACE_DIR, buildAgyProbeEnv, buildClaudeEnv, planAgyHome } from './claudeCli.env';
 
 // ---------------- locator.ts ----------------
@@ -84,6 +84,20 @@ export interface CliStatusRecorder extends CliStatusService {
   recordWorkspaceTrusted(trusted: boolean | null): void;
   /** The last computed status without probing (null = never computed). */
   peek(provider: CliProviderId): CliStatusVM | null;
+  /** [D-080] The guided sign-in session of cli:signIn (null = idle: the field is then absent from the status). */
+  recordSignIn(provider: CliProviderId, session: CliSignInSession | null): void;
+}
+
+/**
+ * [D-080] What a finished run says about the SIGN-IN, beyond `auth status` (which kept answering loggedIn:true for an expired OAuth
+ * session): 'signed_out' = the run ended in not_logged_in; 'signed_in' = the account itself answered (a proven run with a result, or
+ * the account's usage window / overage); null = the run proves nothing either way (refusal before a spawn, network, toolset, model ...).
+ */
+export function signInEvidenceOf(result: CliRunResult): 'signed_in' | 'signed_out' | null {
+  if (result.error === 'not_logged_in') return 'signed_out';
+  if (!result.sandbox.initOk) return null;
+  if (result.error === null || result.error === 'usage_limit' || result.error === 'overage') return 'signed_in';
+  return null;
 }
 
 /**
@@ -110,13 +124,27 @@ export function createCliStatus(deps: {
   const tests = new Map<CliProviderId, CliStatus['lastTest']>();
   const quotas = new Map<CliProviderId, LlmQuota | null>();
   let workspaceTrusted: boolean | null = null;
-
-  const decorate = (s: CliStatusVM): CliStatusVM => ({
-    ...s,
-    quota: quotas.get(s.provider) ?? null,
-    lastTest: tests.get(s.provider) ?? null,
-    workspaceTrusted: s.provider === 'antigravity_cli' ? workspaceTrusted : null,
+  /** [D-080] CLIs whose last run PROVED "not signed in" - wins over a probe that still says ready / unknown, until a run or test passes. */
+  const signedOut = new Set<CliProviderId>();
+  const sessions = new Map<CliProviderId, CliSignInSession>();
+  (deps.runner as Partial<Pick<CliRunnerExt, 'onRunEnd'>>).onRunEnd?.((provider, result) => {
+    const evidence = signInEvidenceOf(result);
+    if (evidence === 'signed_out') signedOut.add(provider);
+    else if (evidence === 'signed_in') signedOut.delete(provider);
   });
+
+  const decorate = (s: CliStatusVM): CliStatusVM => {
+    const session = sessions.get(s.provider);
+    return {
+      ...s,
+      // only a "ready" / "unknown" probe is overruled; not installed / too old keep their own (more specific) state
+      state: signedOut.has(s.provider) && (s.state === 'ready' || s.state === 'unknown') ? 'not_signed_in' : s.state,
+      quota: quotas.get(s.provider) ?? null,
+      lastTest: tests.get(s.provider) ?? null,
+      workspaceTrusted: s.provider === 'antigravity_cli' ? workspaceTrusted : null,
+      ...(session === undefined ? {} : { signIn: { phase: session.phase, outcome: session.outcome } }),
+    };
+  };
 
   const probe = async (provider: CliProviderId): Promise<CliStatusVM> => {
     const signal = AbortSignal.timeout(30_000);
@@ -180,6 +208,15 @@ export function createCliStatus(deps: {
     },
     recordTest(provider, t) {
       tests.set(provider, { ok: t.ok, at: t.at, ms: t.ms });
+      if (t.ok) signedOut.delete(provider); // a passed smoke proves the sign-in
+    },
+    recordSignIn(provider, session) {
+      if (session === null) sessions.delete(provider);
+      else
+        sessions.set(provider, {
+          phase: session.phase,
+          outcome: session.outcome === null ? null : { ...session.outcome },
+        });
     },
     recordQuota(provider, q) {
       quotas.set(provider, q === null ? null : { resetsAt: q.resetsAt, usingOverage: q.usingOverage });

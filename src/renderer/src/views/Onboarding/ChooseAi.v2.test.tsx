@@ -37,7 +37,7 @@ const paint = async (props: { embedded?: boolean; onDone?: () => void } = {}) =>
 
 beforeEach(() => {
   useSettingsStore.setState({ voiceIntent: null });
-  useCliStore.setState({ status: {}, checkedAt: {}, error: {} });
+  useCliStore.setState({ status: {}, checkedAt: {}, error: {}, signInError: {}, signInStartedAt: {} });
   useFocusGuardStore.setState({ activationBlockedUntil: 0 });
 });
 

@@ -15,6 +15,9 @@ export interface FakeAgyState {
   modeByStage?: Partial<Record<'extract' | 'draft' | 'smoke', FakeAgyMode>>;
   /** [V2-W1-09] F3: runs must see USERPROFILE = HOME = <userData>\agy-home (default true; false only for the fallback-mode tests). */
   expectIsolatedHome?: boolean;
+  /** [D-080 e2e] `--model` slugs this CLI refuses: stderr `error: invalid model selection (--model "X") ...` + an error result as the
+   *  FIRST stdout event (no init), exit 1 - the shape of the agy 1.2.16 refusal. Not a violation (the app may pick any listed model). */
+  rejectedModels?: string[];
 }
 export type FakeAgyMode =
   | 'ok'
@@ -30,7 +33,11 @@ export type FakeAgyMode =
   | 'not_signed_in'
   | 'hang'
   | 'garbage_lines'
-  | 'global_mcp_present';
+  | 'global_mcp_present'
+  // [D-080] an error result event INSTEAD of the init (agy 1.2.16 shape)
+  | 'result_error_auth'
+  | 'result_error_quota'
+  | 'result_error_other';
 export const FAKE_AGY_MODES: readonly FakeAgyMode[] = [
   'ok',
   'waiting',
@@ -46,6 +53,9 @@ export const FAKE_AGY_MODES: readonly FakeAgyMode[] = [
   'hang',
   'garbage_lines',
   'global_mcp_present',
+  'result_error_auth',
+  'result_error_quota',
+  'result_error_other',
 ];
 export const FAKE_AGY_DEFAULT_STATE: FakeAgyState = {
   version: '1.2.12',

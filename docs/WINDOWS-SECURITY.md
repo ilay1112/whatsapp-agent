@@ -56,16 +56,71 @@ Signing changes a file's bytes, which changes its SHA-256. The app pins the hash
 
 ## 3. Turning signing on (environment variables)
 
-<!-- ORCHESTRATOR: replace this section with the final variable list from ops/agent-notes/signing-pipeline.md
-     (ticket T-800). That file did not exist yet when this page was written (2026-10-04, defender-gate). -->
+The signing pipeline is `scripts/sign-windows.mjs`, wired into `electron-builder.yml` (ticket T-800, hardened by the review fixes of 2026-10-05). It is **off by default**: with `WCA_SIGN_MODE` unset, every hook returns before it reads, hashes, writes or starts anything, and the build is byte-for-byte the unsigned build of before.
 
-> **TO BE COMPLETED BY THE ORCHESTRATOR.** The signing pipeline (ticket T-800) is being built in parallel. Its exact variable names and steps will be copied here from `ops/agent-notes/signing-pipeline.md`.
+### Before you start: what this PC does not have yet
 
-What is already fixed:
+- **A certificate.** Smart App Control accepts only a certificate that chains to a CA in the **Microsoft Trusted Root Program** (section 1), so the certificate must come from a public CA: Certum Open Source cloud (SimplySign), a commercial OV certificate, or Azure Artifact Signing (section 2). A self-signed certificate, or one from your own CA, will never satisfy Smart App Control.
+- **`signtool.exe`.** The **Windows SDK is not installed on this PC** (checked on 2026-10-05: there is no `C:\Program Files (x86)\Windows Kits` folder). Install the "Windows SDK Signing Tools for Desktop Apps" component (version 10.0.22621 or newer if you use Azure), or point `WCA_SIGNTOOL_PATH` at a `signtool.exe` you already have. The pipeline never downloads or installs anything.
+- **Per-file pins for llama.cpp and whisper.cpp.** The signer refuses to put your signature on a file whose origin it cannot prove. Run these once, review the hashes they record in `vendor/llama.pin.json` and `vendor/whisper.pin.json`, then commit them:
 
-- **All signing parameters come from environment variables.** None is ever written into a file in this repository. That includes the certificate's location, the cloud-signing account, any PIN or password, and the certificate thumbprint. Keep them in your own shell session or a password manager, never in a committed file.
-- **`WCA_SIGN_MODE`** switches signing on. When it is unset, empty or `off`, the build is unsigned, which is today's state. It must be set the same way for `npm run build` **and** for packaging: the build compiles it into the app, and packaging refuses a mismatch. Any other value means "this build must be signed". The Defender gate then **fails** (exit code 2) unless every PE file reports Authenticode status `Valid` with a time stamp, and, when `WCA_SIGN_PUBLISHER` is set, is signed by that subject CN. The gate also enforces this on its own when the tree contains `resources\signing-manifest.json`.
-- After signing, check the result with `npm run test:defender` (section 4). The Authenticode list should then say `Valid` for every file.
+  ```powershell
+  node scripts/fetch-llama.mjs --pin-files     # downloads the PINNED llama.cpp zip (~32 MB), checks size + SHA-256, records each file's hash
+  node scripts/fetch-whisper.mjs --pin-files   # the same for the pinned whisper.cpp zip (~9 MB)
+  ```
+
+  If you ship the Microsoft C++ runtime (`VC_REDIST_CRT_DIR`, see README), pin it too with `node scripts/fetch-llama.mjs --pin-crt`. Until these pins are committed, a signed build stops with an error that names the missing pin. Unsigned builds do not need them.
+
+### The environment variables
+
+**All signing parameters come from environment variables.** None is ever written into a file in this repository. That includes the cloud-signing account, any PIN or password, and the certificate thumbprint. Set them only in the PowerShell window that runs the build, and keep them in your own password manager, never in a committed file. The pipeline redacts the thumbprint from every error message it prints.
+
+| Variable | Used in mode | Required? | Meaning |
+|---|---|---|---|
+| `WCA_SIGN_MODE` | all | — | Unset, empty or `off`: unsigned build (today's state). `signtool-cert`: a Trusted Root Program code-signing certificate that `signtool` can reach on this PC, for example Certum Open Source through SimplySign Desktop's virtual smart card. `azure`: Azure Artifact Signing (formerly Trusted Signing). Any other value is refused. |
+| `WCA_SIGN_TIMESTAMP_URL` | all | no | The RFC 3161 time-stamp server. Default: `http://timestamp.digicert.com` (signtool-cert) or `http://timestamp.acs.microsoft.com` (azure). |
+| `WCA_SIGNTOOL_PATH` | all | no | Absolute path to `signtool.exe`. Default: the newest `C:\Program Files (x86)\Windows Kits\10\bin\10.0.*\x64\signtool.exe`. |
+| `WCA_SIGN_CERT_SHA1` | signtool-cert | **yes** | SHA-1 thumbprint (40 hex digits; spaces allowed) of the certificate in your `CurrentUser\My` store. `signtool` selects the certificate by it (`/sha1`). |
+| `WCA_SIGN_PUBLISHER` | signtool-cert: no · azure: **yes** | | The exact subject CN of the signing certificate. Every signature is checked against it after signing, and the Defender gate checks it again. |
+| `WCA_AZURE_ENDPOINT` | azure | **yes** | Account endpoint, https only (for example `https://weu.codesigning.azure.net/`). |
+| `WCA_AZURE_ACCOUNT` | azure | **yes** | Artifact Signing account name. |
+| `WCA_AZURE_PROFILE` | azure | **yes** | Certificate profile name. |
+| `WCA_AZURE_DLIB` | azure | **yes** | Absolute path to `Azure.CodeSigning.Dlib.dll` (Microsoft's Artifact Signing client). |
+
+In `azure` mode, signing in to Azure is done by Microsoft's client library itself (an `az login` session, or the standard `AZURE_TENANT_ID` / `AZURE_CLIENT_ID` / `AZURE_CLIENT_SECRET` variables). The pipeline never reads or stores those.
+
+A half-configured mode is never "partly signed": the build stops before anything is packed and lists **every** missing or invalid variable.
+
+### Rules the pipeline enforces
+
+- **`WCA_SIGN_MODE` must be the same for `npm run build` and for packaging.** The build compiles a "signed build" flag into the app (and writes `out/main/build-flags.json`); packaging refuses a mismatch in either direction. Run both in the same PowerShell window.
+- **Every PE file is signed**, found by its file header rather than its extension: the app exe, Electron's DLLs, `whatsapp-bridge.exe`, every llama.cpp and whisper.cpp file, and the NSIS installer, uninstaller and `elevate.exe`. SHA-256 digests and an RFC 3161 time stamp only. A file left unsigned, or changed after signing, fails the build.
+- **Provenance before signing.** The bridge must match its import pin; llama.cpp, whisper.cpp and runtime DLLs must match their committed per-file pins. The project's signature never lands on a binary it has not verified.
+- **The bridge is re-pinned inside the app.** Signing changes the bridge's bytes and SHA-256. A signed build signs a staged copy of the bridge first and writes its new hash to `out/main/bridge-signed-pin.txt`, which is packed **inside `app.asar`**. Signed builds also switch on Electron's asar integrity check, so that pin cannot be edited on disk. The writable `resources\bridge\SHA256SUMS` is never trusted for this. An unsigned build reads no pin file at all.
+- A failed signed build can leave `dist\win-unpacked` partly signed. It always exits with an error; never ship from it. The Defender gate also fails a mixed set (section 4).
+
+### Checking and running
+
+```powershell
+$env:PATH = "C:\Program Files\nodejs;C:\Program Files\Git\cmd;" + $env:PATH
+cd "C:\dev\whatsapp agent"
+
+# Example: Certum Open Source through SimplySign Desktop (it must be running and logged in, so signtool can see the cloud key)
+$env:WCA_SIGN_MODE      = 'signtool-cert'
+$env:WCA_SIGN_CERT_SHA1 = '<thumbprint, from certmgr.msc>'
+$env:WCA_SIGN_PUBLISHER = '<subject CN of your certificate>'
+
+node scripts/sign-windows.mjs --check-env              # validates the variables; signs nothing
+npm run build                                          # same window, same WCA_SIGN_MODE
+node scripts/hash-bridge.mjs
+npx electron-builder --win --x64                       # signs during packaging; fails on any gap
+node scripts/sign-windows.mjs --plan dist/win-unpacked # optional: lists every PE file in signing order
+npm run test:defender                                  # now ENFORCES: every file must be Valid and time-stamped
+```
+
+With `WCA_SIGN_MODE` set, or when the tree contains `resources\signing-manifest.json` (written by every signed build), the Defender gate **fails** (exit code 2) unless every PE file reports Authenticode status `Valid` with a time stamp, matches the manifest, and, when `WCA_SIGN_PUBLISHER` is set, is signed by that subject CN.
+
+The first real signed build has not happened yet. Watch it closely, and test the result on a PC with Smart App Control on before you share it: the asar integrity check and the NSIS signing order are covered by unit tests but have not yet run against a real certificate.
 
 ---
 
@@ -139,6 +194,6 @@ A signed build (section 2) makes false positives less likely and quicker to clea
 
 ## 6. Summary
 
-- **Today:** the app is unsigned. The Defender gate is clean. Smart App Control on this PC may block the app at first launch (risk R11 in `ops/NOTES.md`).
-- **To fix it properly:** get a Trusted Root Program certificate (Certum Open Source cloud is the cheapest fit). Set the signing environment variables (section 3), rebuild and run `npm run test:defender`.
+- **Today:** the app is unsigned. The Defender gate is clean. Smart App Control is enforcing on this PC and has already refused a freshly packed, unsigned exe (Code Integrity events 3033, 3077 and 3118 during the packaged smoke test, `ops/PROGRESS.md` entry 65; risk R11 in `ops/NOTES.md`). For the same reason `npm run test:smoke` cannot fully pass on this PC until the build is signed.
+- **To fix it properly:** get a Trusted Root Program certificate (Certum Open Source cloud is the cheapest fit). Install the Windows SDK signing tools, commit the per-file pins, set the signing environment variables (section 3), rebuild and run `npm run test:defender`.
 - **Never:** self-sign, add exclusions, or let anyone else switch off Smart App Control for you.

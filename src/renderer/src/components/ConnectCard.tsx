@@ -10,6 +10,10 @@
 //   - "Use {{provider}}" only REPORTS the wish (`onUse`): consent and `llm:setProvider` are the parent's, and main refuses
 //     a CLI provider that is not ready + consented + smoke-tested (B12). Never a silent fallback (A20).
 //   - "Use" and "Allow the app's folder..." are behind the renderer focus-steal guard (UX2 11.5); main gates them again.
+//   - [D-080] the guided sign-in session is MAIN's (it opens the vendor's own login and re-tests when the window closes);
+//     the card only renders the pushed phase (open -> retesting -> done + outcome). A CLI_NOT_SIGNED_IN result from any
+//     source (the last failed "Use", the active provider's health, a test, the session) beats a stale cached "ready"
+//     probe: the card never keeps saying "signed in" after one. Every error row carries its ONE action (cliSignIn.ts).
 import { useCallback, useEffect, useRef, useState, type MouseEvent } from 'react';
 import { Trans, useTranslation } from 'react-i18next';
 import {
@@ -25,6 +29,14 @@ import { CLAUDE_CLI_MODEL_PRESETS, ClaudeCliModelSchema } from '@shared/settings
 import { formatDate, formatElapsed, formatResetTime } from '@shared/i18n/format';
 import { api } from '../api';
 import { useCliStore } from '../store/cli';
+import {
+  SIGNED_OUT_CODES,
+  cliErrorActionLabel,
+  modelControlId,
+  runCliErrorAction,
+  signInBusy,
+  signInSessionOf,
+} from './cliSignIn';
 import { isActivationBlocked, useHealthStore } from '../store/health';
 import { useSettingsStore } from '../store/settings';
 
@@ -33,13 +45,21 @@ export interface ConnectCardProps {
   size: 'full' | 'compact';
   status: CliStatus;
   selected: boolean;
+  /** [D-080] The ErrorCode of this provider's last failed "Use"/"Continue" (ChooseAi shows that card itself). */
+  lastError?: ErrorCode | null;
   onUse(): void;
 }
 
 /** UI-only states on top of CliStatus.state (UX2 7.1). */
-export type ConnectUiState = CliStatus['state'] | 'checking' | 'waiting_sign_in';
+export type ConnectUiState =
+  | CliStatus['state']
+  | 'checking'
+  | 'waiting_sign_in'
+  | 'sign_in_open' // [D-080] main's session: the vendor's sign-in window is open
+  | 'sign_in_retesting'; // [D-080] the window closed; main is testing again
 
-/** Sign-in polling (UX2 7.1): every 10 s for 5 minutes; main answers from its 60 s cache (B13). */
+/** Sign-in polling (UX2 7.1): every 10 s for 5 minutes; main answers from its 60 s cache (B13). Only used when main pushes
+ *  no sign-in session (an older main); with a session, main re-tests by itself and pushes the outcome (D-080). */
 export const SIGN_IN_POLL_MS = 10_000;
 export const SIGN_IN_WAIT_MS = 5 * 60_000;
 const COPIED_MS = 2_000;
@@ -52,7 +72,9 @@ const CARD_CODES: readonly ErrorCode[] = [
   'CLOUD_QUOTA',
   'CLOUD_OVERAGE',
   'CLI_UNSAFE_CONFIG',
+  'CLI_MODEL_REJECTED', // [D-080] action: Choose another model (focus the model control)
 ];
+const MODEL_REJECTED: ErrorCode = 'CLI_MODEL_REJECTED';
 
 /** The vendor command for a state (app constants, UX2 14.6). antigravity has no separate update command. */
 export function commandKeyOf(provider: CliProviderId, state: CliStatus['state']): string | null {
@@ -67,18 +89,18 @@ function guarded(e: MouseEvent): boolean {
   return e.detail > 1 || isActivationBlocked();
 }
 
-export function ConnectCard({ provider, size, status, selected, onUse }: ConnectCardProps) {
+export function ConnectCard({ provider, size, status, selected, lastError = null, onUse }: ConnectCardProps) {
   const { t, i18n } = useTranslation();
   const lang = i18n.language === 'he' ? 'he' : 'en';
   const settings = useSettingsStore((s) => s.settings);
   const health = useHealthStore((s) => s.health);
   const checkedAt = useCliStore((s) => s.checkedAt[provider] ?? null);
   const setStatus = useCliStore((s) => s.setStatus);
+  /** ux-i18n-v2-11: main's refusal of the last Sign in click (CLI_NOT_INSTALLED, CLI_VERSION, ...), shown inline. */
+  const signInError = useCliStore((s) => s.signInError[provider] ?? null);
+  const waiting = useCliStore((s) => s.signInStartedAt[provider] !== undefined);
 
   const [checking, setChecking] = useState(false);
-  const [waiting, setWaiting] = useState(false);
-  /** ux-i18n-v2-11: main's refusal of the last Sign in click (CLI_NOT_INSTALLED, CLI_VERSION, ...), shown inline. */
-  const [signInError, setSignInError] = useState<ErrorCode | null>(null);
   const [copied, setCopied] = useState(false);
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<{ ok: true; ms: number } | { ok: false; code: ErrorCode } | null>(null);
@@ -93,19 +115,46 @@ export function ConnectCard({ provider, size, status, selected, onUse }: Connect
   const cli = t(`cli.name.${provider}`);
   const vendor = t(`cli.vendor.${provider}`);
   const timeZone = settings?.general.timeZone ?? 'Asia/Jerusalem';
-  const ready = status.state === 'ready';
-  const uiState: ConnectUiState = checking ? 'checking' : waiting && !ready ? 'waiting_sign_in' : status.state;
+  const session = signInSessionOf(status);
+  const sessionOk = session?.phase === 'done' && session.outcome?.ok === true;
+  const sessionCode = session?.phase === 'done' && session.outcome && !session.outcome.ok ? session.outcome.code : null;
+  const activeCode = health?.llm.provider === provider ? health.llm.code : undefined;
+  const testCode = testResult && !testResult.ok ? testResult.code : null;
+  // [D-080] A not-signed-in result beats a stale cached "ready" probe. A later successful session wins over the
+  // renderer-held results (the last failed "Use", a failed test); main's health code is cleared by main itself.
+  const signedOut = (sessionOk ? [activeCode] : [lastError, activeCode, testCode, sessionCode]).some(
+    (c) => c != null && SIGNED_OUT_CODES.includes(c),
+  );
+  const ready = status.state === 'ready' && !signedOut;
+  const hasSession = session !== null;
+  const legacyWaiting = !hasSession && waiting;
+  const uiState: ConnectUiState = checking
+    ? 'checking'
+    : session?.phase === 'open'
+      ? 'sign_in_open'
+      : session?.phase === 'retesting'
+        ? 'sign_in_retesting'
+        : legacyWaiting && !ready
+          ? 'waiting_sign_in'
+          : signedOut && (status.state === 'ready' || status.state === 'unknown')
+            ? 'not_signed_in'
+            : status.state;
 
-  // ---- sign-in wait: poll every 10 s, give up after 5 min (falls back to whatever state main reports) --------------
+  // ---- sign-in wait (no session from main): poll every 10 s, give up after 5 min (falls back to main's state) -------
+  // A session pushed by main (or "ready") ends the fallback for good: it must not come back when the session goes idle.
   useEffect(() => {
-    if (!waiting || ready) return;
+    if (!waiting) return;
+    if (hasSession || ready) {
+      useCliStore.getState().clearSignInWait(provider);
+      return;
+    }
     const poll = setInterval(() => void useCliStore.getState().refresh(provider), SIGN_IN_POLL_MS);
-    const stop = setTimeout(() => setWaiting(false), SIGN_IN_WAIT_MS);
+    const stop = setTimeout(() => useCliStore.getState().clearSignInWait(provider), SIGN_IN_WAIT_MS);
     return () => {
       clearInterval(poll);
       clearTimeout(stop);
     };
-  }, [waiting, ready, provider]);
+  }, [waiting, hasSession, ready, provider]);
 
   // "Checked 40 s ago" ticks while the card is on screen.
   useEffect(() => {
@@ -120,22 +169,33 @@ export function ConnectCard({ provider, size, status, selected, onUse }: Connect
     [],
   );
 
-  // Full size + ready: the consent date line and (agy) the model list; the workspace preview for agy.
+  // [D-080] the model control is also shown on the compact card when the CLI refused the chosen model.
+  const modelRejected = [lastError, activeCode, sessionCode].includes(MODEL_REJECTED);
+  const showModel = ready && (size === 'full' || modelRejected);
+
+  // Full size + ready: the consent date line; the workspace preview for agy.
   useEffect(() => {
     if (size !== 'full' || !ready) return;
     let cancelled = false;
     void api.getConsent(CONSENT_KIND_FOR[provider]).then((r) => {
       if (!cancelled && r.ok) setConsent(r.value);
     });
-    if (provider === 'antigravity_cli') {
-      void api.listModels('antigravity_cli').then((r) => {
-        if (!cancelled) setModels(r.ok ? r.value.models : []);
-      });
-    }
     return () => {
       cancelled = true;
     };
   }, [size, ready, provider]);
+
+  // (agy) the model list, wherever the model control is shown.
+  useEffect(() => {
+    if (!showModel || provider !== 'antigravity_cli') return;
+    let cancelled = false;
+    void api.listModels('antigravity_cli').then((r) => {
+      if (!cancelled) setModels(r.ok ? r.value.models : []);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [showModel, provider]);
 
   const needsWorkspace = provider === 'antigravity_cli' && ready && status.workspaceTrusted !== true;
   useEffect(() => {
@@ -152,7 +212,7 @@ export function ConnectCard({ provider, size, status, selected, onUse }: Connect
   // ---- actions -------------------------------------------------------------------------------------------------------
   const checkAgain = useCallback(async () => {
     setChecking(true);
-    setWaiting(false);
+    useCliStore.getState().clearSignInWait(provider);
     await useCliStore.getState().refresh(provider);
     setChecking(false);
     setNow(Date.now());
@@ -169,17 +229,8 @@ export function ConnectCard({ provider, size, status, selected, onUse }: Connect
   }, [provider, status.state, t]);
 
   const signIn = useCallback(async () => {
-    setSignInError(null);
-    const r = await api.cliSignIn(provider);
-    if (r.ok) {
-      setWaiting(true);
-      return;
-    }
-    // The cached status was out of date (the CLI was removed or downgraded) or main refused: say so, and re-read it so
-    // the state line and its action follow (ux-i18n-v2-11).
-    setSignInError(r.error.code);
-    await useCliStore.getState().refresh(provider);
-    setNow(Date.now());
+    // A refusal is recorded in the store (signInError) and the status re-read there (ux-i18n-v2-11).
+    if (!(await useCliStore.getState().signIn(provider))) setNow(Date.now());
   }, [provider]);
 
   const runTest = useCallback(async () => {
@@ -216,19 +267,15 @@ export function ConnectCard({ provider, size, status, selected, onUse }: Connect
   );
 
   const onErrorAction = useCallback(
-    (code: ErrorCode) => {
-      if (code === 'CLI_TOOLSET_MISMATCH') void api.exportDiagnostics();
-      else if (code === 'CLI_UNSTABLE') void runTest();
-      else if (code === 'CLOUD_AUTH') void signIn();
-      else if (code === 'CLOUD_QUOTA' && provider === 'claude_cli') void api.openExternal({ target: 'claude_usage' });
-      else document.querySelector<HTMLElement>('[data-testid="settings-cli-overage"]')?.focus();
-    },
-    [provider, runTest, signIn],
+    (code: ErrorCode) => void runCliErrorAction(t, provider, code, { testAgain: () => void runTest() }),
+    [t, provider, runTest],
   );
 
   // ---- pieces --------------------------------------------------------------------------------------------------------
-  const activeCode = health?.llm.provider === provider ? health.llm.code : undefined;
-  const cardCode = activeCode && CARD_CODES.includes(activeCode) ? activeCode : null;
+  // The row a failed session test shows (a not-signed-in result is the state line + Sign in instead).
+  const sessionRowCode = sessionCode && !SIGNED_OUT_CODES.includes(sessionCode) ? sessionCode : null;
+  const cardCode = sessionRowCode ?? (activeCode && CARD_CODES.includes(activeCode) ? activeCode : null);
+  const sessionBusy = signInBusy(session);
   const overage = status.quota?.usingOverage === true && settings?.llm.cli.allowOverage !== true;
   const busy = health?.llm.provider === provider && (health.queue.running ?? 0) > 0;
   const version = status.version ?? '?';
@@ -250,13 +297,15 @@ export function ConnectCard({ provider, size, status, selected, onUse }: Connect
             })
           : t(`errors.${code}.body`, { cli, vendor })}
       </p>
-      {ERROR_ACTION[code] !== 'none' ? (
-        <button type="button" className="btn btn-outline mt-1" onClick={() => onErrorAction(code)}>
-          {code === 'CLOUD_QUOTA' && provider === 'antigravity_cli'
-            ? t('label.errorAction.open_ai_settings')
-            : code === 'CLOUD_QUOTA'
-              ? t('label.errorAction.open_usage_page')
-              : t(`errors.${code}.action`, { cli, vendor })}
+      {cliErrorActionLabel(t, provider, code) !== '' ? (
+        <button
+          type="button"
+          className="btn btn-outline mt-1"
+          data-testid={`connect-error-action-${provider}`}
+          disabled={sessionBusy && (ERROR_ACTION[code] === 'sign_in' || ERROR_ACTION[code] === 'sign_in_again')}
+          onClick={() => onErrorAction(code)}
+        >
+          {cliErrorActionLabel(t, provider, code)}
         </button>
       ) : null}
     </div>
@@ -340,6 +389,10 @@ export function ConnectCard({ provider, size, status, selected, onUse }: Connect
         return t('cli.notSignedIn', { cli, version });
       case 'waiting_sign_in':
         return t('cli.waitingSignIn');
+      case 'sign_in_open':
+        return t('cli.session.open', { cli });
+      case 'sign_in_retesting':
+        return t('cli.session.retesting', { cli });
       case 'unknown':
         return t('cli.unknown');
       case 'ready':
@@ -347,7 +400,74 @@ export function ConnectCard({ provider, size, status, selected, onUse }: Connect
     }
   })();
   const stateIcon =
-    uiState === 'ready' ? null : uiState === 'not_installed' || uiState === 'too_old' ? 'icon-terminal' : 'icon-alert';
+    uiState === 'ready' || uiState === 'sign_in_open' || uiState === 'sign_in_retesting'
+      ? null
+      : uiState === 'not_installed' || uiState === 'too_old'
+        ? 'icon-terminal'
+        : 'icon-alert';
+
+  // ---- the model control (full: when ready; compact: only after the CLI refused the chosen model, D-080) ------------
+  const modelRow = showModel ? (
+    <div className="flex flex-wrap items-center gap-2">
+      <label htmlFor={modelControlId(provider)} className="font-semibold">
+        {t('cli.model')}
+      </label>
+      {provider === 'claude_cli' ? (
+        <>
+          <input
+            id={modelControlId(provider)}
+            data-testid={modelControlId(provider)}
+            className="field w-52"
+            dir="ltr"
+            list="connect-claude-presets"
+            spellCheck={false}
+            value={modelDraft ?? settings?.llm.cli.claudeModel ?? ''}
+            aria-invalid={modelDraft !== null && !ClaudeCliModelSchema.safeParse(modelDraft.trim()).success}
+            onChange={(e) => setModelDraft(e.target.value)}
+            onBlur={(e) => saveClaudeModel(e.target.value)}
+          />
+          <datalist id="connect-claude-presets">
+            {CLAUDE_CLI_MODEL_PRESETS.map((id) => (
+              <option key={id} value={id}>
+                {id === 'sonnet' ? `${id} (${t('cli.recommended')})` : id}
+              </option>
+            ))}
+          </datalist>
+          <span className="text-sm text-text-muted">{t('cli.modelHintClaude')}</span>
+        </>
+      ) : (
+        <>
+          <select
+            id={modelControlId(provider)}
+            data-testid={modelControlId(provider)}
+            className="field w-60"
+            dir="ltr"
+            value={settings?.llm.cli.agyModel ?? ''}
+            onChange={(e) => void useSettingsStore.getState().set({ llm: { cli: { agyModel: e.target.value } } })}
+          >
+            {agyOptions(models, settings?.llm.cli.agyModel).map((m) => (
+              <option key={m.id} value={m.id}>
+                {m.displayName}
+              </option>
+            ))}
+          </select>
+          <span className="text-sm text-text-muted">{t('cli.modelHintAgy')}</span>
+        </>
+      )}
+    </div>
+  ) : null;
+
+  // ---- the sign-in session's outcome (D-080): a pass, or a failure without a code the app knows ---------------------
+  const sessionLine =
+    sessionOk && uiState === 'ready' ? (
+      <p className="m-0 text-sm text-ok" data-testid={`connect-session-ok-${provider}`}>
+        {t('cli.session.ok', { cli })}
+      </p>
+    ) : session?.phase === 'done' && session.outcome && !session.outcome.ok && session.outcome.code === null ? (
+      <p role="alert" className="m-0 note-amber text-sm" data-testid={`connect-session-failed-${provider}`}>
+        {t('cli.session.failed', { cli })}
+      </p>
+    ) : null;
 
   // ---- compact (onboarding, UX2 7.3): one state line + ONE action --------------------------------------------------
   if (size === 'compact') {
@@ -390,15 +510,17 @@ export function ConnectCard({ provider, size, status, selected, onUse }: Connect
           {stateLine}
         </span>
         {action}
+        {sessionLine}
         {signInErrorRow}
         {cardCode ? errorRow(cardCode) : null}
+        {modelRow}
       </section>
     );
   }
 
   // ---- full (Settings) -----------------------------------------------------------------------------------------------
   const resetsAt = status.quota?.resetsAt ?? null;
-  const useDisabled = !ready || overage || needsWorkspace || cardCode !== null;
+  const useDisabled = uiState !== 'ready' || overage || needsWorkspace || cardCode !== null;
 
   return (
     <section
@@ -487,58 +609,13 @@ export function ConnectCard({ provider, size, status, selected, onUse }: Connect
         checkedLine
       ) : null}
 
+      {sessionLine}
       {signInErrorRow}
       {overage ? errorRow('CLOUD_OVERAGE') : cardCode ? errorRow(cardCode) : null}
 
       {uiState === 'ready' ? (
         <>
-          <div className="flex flex-wrap items-center gap-2">
-            <label htmlFor={`connect-model-${provider}`} className="font-semibold">
-              {t('cli.model')}
-            </label>
-            {provider === 'claude_cli' ? (
-              <>
-                <input
-                  id={`connect-model-${provider}`}
-                  data-testid={`connect-model-${provider}`}
-                  className="field w-52"
-                  dir="ltr"
-                  list="connect-claude-presets"
-                  spellCheck={false}
-                  value={modelDraft ?? settings?.llm.cli.claudeModel ?? ''}
-                  aria-invalid={modelDraft !== null && !ClaudeCliModelSchema.safeParse(modelDraft.trim()).success}
-                  onChange={(e) => setModelDraft(e.target.value)}
-                  onBlur={(e) => saveClaudeModel(e.target.value)}
-                />
-                <datalist id="connect-claude-presets">
-                  {CLAUDE_CLI_MODEL_PRESETS.map((id) => (
-                    <option key={id} value={id}>
-                      {id === 'sonnet' ? `${id} (${t('cli.recommended')})` : id}
-                    </option>
-                  ))}
-                </datalist>
-                <span className="text-sm text-text-muted">{t('cli.modelHintClaude')}</span>
-              </>
-            ) : (
-              <>
-                <select
-                  id={`connect-model-${provider}`}
-                  data-testid={`connect-model-${provider}`}
-                  className="field w-60"
-                  dir="ltr"
-                  value={settings?.llm.cli.agyModel ?? ''}
-                  onChange={(e) => void useSettingsStore.getState().set({ llm: { cli: { agyModel: e.target.value } } })}
-                >
-                  {agyOptions(models, settings?.llm.cli.agyModel).map((m) => (
-                    <option key={m.id} value={m.id}>
-                      {m.displayName}
-                    </option>
-                  ))}
-                </select>
-                <span className="text-sm text-text-muted">{t('cli.modelHintAgy')}</span>
-              </>
-            )}
-          </div>
+          {modelRow}
 
           <div className="flex flex-wrap items-center gap-2">
             <button

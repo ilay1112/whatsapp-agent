@@ -1,6 +1,7 @@
 // src/main/ipc/handlers/settings.ts - handlers for the channels below (build-plan section 3; owner W1-13; v2 V2-W1-10-main-platform).
 // Bodies return Result<T>, never throw.
 import type { IpcHandlers, IpcReq } from '../../../shared/ipc';
+import { applySettingsPatch } from '../../../shared/settings';
 import { CONSENT_KIND_FOR, LIMITS, type ProviderId } from '../../../shared/types';
 import { fail, ok, type HandlerDeps, type SettingsHandlersV2 } from '../register';
 
@@ -109,6 +110,33 @@ export function createSettingsHandlers(
       if (req.llm?.cli?.maxRunsPerHour !== undefined) {
         const clamped = Math.min(req.llm.cli.maxRunsPerHour, LIMITS.cliRunsPerHourMax);
         patch = { ...req, llm: { ...req.llm, cli: { ...req.llm.cli, maxRunsPerHour: clamped } } };
+      }
+
+      // ux-i18n-v2-5: the scope is not a settings:set member, but readTools.enabled is. Turning reading back ON while the
+      // STORED scope is all_chats would re-widen to every chat without wa:setReadScope's consent check and native
+      // confirmation (F11 / B17). Narrow the scope to trigger_chat (the safe, one-click direction) BEFORE enabling, so no
+      // write ever pairs enabled=true with an unconfirmed all_chats; widening again goes through wa:setReadScope.
+      const current = deps.settings.get();
+      const stored = current.whatsapp.readTools;
+      if (req.whatsapp?.readTools?.enabled === true && !stored.enabled && stored.scope === 'all_chats') {
+        const narrowedView = {
+          ...current,
+          whatsapp: { ...current.whatsapp, readTools: { ...stored, scope: 'trigger_chat' as const } },
+        };
+        try {
+          applySettingsPatch(narrowedView, patch); // a patch the merged check rejects must write nothing, narrowing included
+        } catch {
+          return fail('BAD_REQUEST');
+        }
+        const narrowed = deps.settings.setInternal((s) => {
+          s.whatsapp.readTools.scope = 'trigger_chat';
+        });
+        deps.audit(
+          'settings_changed',
+          null,
+          { key: 'whatsapp.readTools.scope', value: narrowed.whatsapp.readTools.scope },
+          deps.clock.now(),
+        );
       }
 
       let next;

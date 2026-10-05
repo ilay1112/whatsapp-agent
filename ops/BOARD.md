@@ -130,13 +130,13 @@ Status: `todo` · `doing` · `review` · `done` · `blocked`. Details in `ops/ti
 | T-800 | Inactive, env-driven Windows signing pipeline (all PE files incl. installer/uninstaller and bundled exes/DLLs) | agent | done |
 | T-801 | Post-signing hash re-pinning for bundled executables (launcher pins stay correct when signing is on) | agent | done |
 | T-802 | Microsoft Defender scan gate on the packaged tree + installer; false-positive submission guide | agent | done |
-| T-803 | README: licence, Smart App Control / signing / Defender section; package.json license MIT | orchestrator | todo |
+| T-803 | README: licence, Smart App Control / signing / Defender section; package.json license MIT | orchestrator | done |
 
 ## Phase 9 — CLI sign-in session + Antigravity fix + final proof (workflow ⑨)
 
 | ID | Title | Owner | Status |
 |---|---|---|---|
-| T-900 | Guided CLI sign-in session in the run environment + automatic re-test (user request) | agents | doing |
-| T-901 | Antigravity: no --effort with effort-suffixed models; error-before-init classified by its text | agent | doing |
-| T-902 | Leftovers: signing docs + README v2 features, Defender gate in verify, midnight flake, settings guard | agent | doing |
-| T-903 | e2e for the sign-in flow + full run; final proof | agents | todo |
+| T-900 | Guided CLI sign-in session in the run environment + automatic re-test (user request) | agents | done |
+| T-901 | Antigravity: no --effort with effort-suffixed models; error-before-init classified by its text | agent | done |
+| T-902 | Leftovers: signing docs + README v2 features, Defender gate in verify, midnight flake, settings guard | agent | done |
+| T-903 | e2e for the sign-in flow + full run; final proof | agents | done |

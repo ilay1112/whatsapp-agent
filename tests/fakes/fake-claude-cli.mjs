@@ -122,6 +122,9 @@ export const FAKE_CLAUDE_MODES = [
   'kill_me',
   'crash_mid_stream',
   'stderr_flood',
+  'oauth_expired',
+  'auth_error_before_init',
+  'model_error_before_init',
 ];
 const INIT_FAILURE_MODES = new Set([
   'extra_tool',
@@ -593,6 +596,21 @@ async function main() {
     });
 
   if (mode === 'init_not_first') assistant([{ type: 'text', text: 'hello before init' }]);
+  // [D-080] an error event INSTEAD of the init: the app must classify it (not signed in / model rejected), never call it a toolset change
+  if (mode === 'auth_error_before_init' || mode === 'model_error_before_init') {
+    result({
+      subtype: 'success',
+      is_error: true,
+      result:
+        mode === 'auth_error_before_init'
+          ? 'Failed to authenticate: OAuth session expired and could not be refreshed'
+          : `There's an issue with the selected model (${parsed.opts['--model'] ?? 'unknown'}). It may not exist or you may not have access to it.`,
+      num_turns: 0,
+      usage: { input_tokens: 0, output_tokens: 0 },
+    });
+    finish(1);
+    return;
+  }
   if (mode !== 'no_init') out(init);
   // The app must kill an unproven run before its first turn: give it the chance (the kill arrives in milliseconds).
   if (INIT_FAILURE_MODES.has(mode)) await sleep(3000);
@@ -670,6 +688,22 @@ async function main() {
     case 'model_not_found':
       retry(mode === 'auth_failed' ? 'authentication_failed' : mode);
       result({ is_error: true, result: mode === 'auth_failed' ? 'Not logged in' : 'API Error' });
+      finish(1);
+      return;
+    case 'oauth_expired':
+      // [D-080] the live stream of an expired subscription session: init FIRST (apiKeySource "none"), then an assistant event with
+      // error "authentication_failed", then an is_error result. Message wording from the diagnostic; the app classifies by substrings.
+      out({
+        type: 'assistant',
+        session_id: sessionId,
+        error: 'authentication_failed',
+        message: { role: 'assistant', content: [{ type: 'text', text: 'Failed to authenticate' }] },
+      });
+      result({
+        is_error: true,
+        result: 'Failed to authenticate: OAuth session expired and could not be refreshed',
+        num_turns: 0,
+      });
       finish(1);
       return;
     case 'is_error_success':

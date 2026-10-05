@@ -73,6 +73,9 @@ export interface Seams {
   whisperCmd: SeamCommand | undefined;
   /** WCA_DIALOG_SCRIPT - FIFO answers for app/autoDialog.ts; an exhausted script answers Cancel. Never for approve/undo/consent. */
   dialogScript: SeamDialogAnswer[] | undefined;
+  /** [D-080] WCA_CONSOLE_DIR - absolute drive path. Set: the e2e S-CONSOLE recorder is TRACKED (writes console-<n>.json with argv / cwd /
+   *  env, never spawns anything; `exited` resolves once console-<n>.exit appears). Unset: record-only, untracked (T2 4.2). */
+  consoleDir?: string | undefined;
 }
 
 export interface ReadSeamsInput {
@@ -183,6 +186,10 @@ export function readSeams(input: ReadSeamsInput): Seams | null {
   const llm = env.WCA_LLM === 'stub' || env.WCA_LLM === 'attacker' ? env.WCA_LLM : undefined;
   const nowMs = env.WCA_NOW ? Date.parse(env.WCA_NOW) : Number.NaN;
   const hw = parseJson<SeamHardware>(env.WCA_HW);
+  // [D-080] an absolute drive path with no `..` segment (no UNC, no relative path), kept verbatim
+  const rawConsoleDir = env.WCA_CONSOLE_DIR ?? '';
+  const consoleDir =
+    /^[A-Za-z]:\\/.test(rawConsoleDir) && !/(^|[\\/])\.\.([\\/]|$)/.test(rawConsoleDir) ? rawConsoleDir : undefined;
   return {
     userDataDir: udd ? udd.slice('--user-data-dir='.length) || undefined : undefined,
     bridgeCmd: parseCommand(env.WCA_BRIDGE_CMD),
@@ -202,6 +209,7 @@ export function readSeams(input: ReadSeamsInput): Seams | null {
     cliCmd: parseCliCmd(env.WCA_CLI_CMD, input.appPath),
     whisperCmd: validFakeCommand(parseCommand(env.WCA_WHISPER_CMD), input.appPath, ['whisper-cli.mjs']),
     dialogScript: parseDialogScript(env.WCA_DIALOG_SCRIPT),
+    ...(consoleDir === undefined ? {} : { consoleDir }),
   };
 }
 

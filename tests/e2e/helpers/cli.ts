@@ -5,7 +5,7 @@
 // launch gets the spec's temp "fake home" as USERPROFILE / HOMEDRIVE+HOMEPATH / APPDATA / LOCALAPPDATA (T9), and a DECOY
 // `<fake home>\.local\bin\claude.exe` (an empty file - not a program) proves that the e2e build resolves the CLI from WCA_CLI_CMD
 // only: a disk probe would find the decoy and report something other than `not_installed`.
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { ElectronApplication, Page } from '@playwright/test';
 import type { ConsentKind, ProviderId } from '../../../src/shared/types.ts';
@@ -42,6 +42,8 @@ export async function launchCliWorld(
     dialog?: Parameters<typeof dialogScript>[0];
     chats?: number[];
     beforeLaunch?: () => void;
+    /** [D-080] extra launch env (e.g. `ConsoleRecorder.env`). */
+    env?: Record<string, string>;
   },
 ): Promise<CliWorld> {
   const userDataDir = e2e.newProfileDir(label);
@@ -78,6 +80,7 @@ export async function launchCliWorld(
       ...(opts.dialog === undefined ? {} : dialogScript(opts.dialog)),
       WCA_TIMERS: FAST_TIMERS_ENV,
       WCA_FOCUS_CHECK: 'visible-only',
+      ...(opts.env ?? {}),
     },
   });
   if (launched.page === null) throw new Error('no window');
@@ -102,4 +105,43 @@ export async function connectState(page: Page, provider: 'claude_cli' | 'antigra
 /** Lines of a fake journal whose stage is one of `stages` (the fakes journal stage from argv, never from the prompt text). */
 export function runsOf(journal: Array<Record<string, unknown>>, ...stages: string[]): Array<Record<string, unknown>> {
   return journal.filter((e) => stages.includes(String(e.stage)));
+}
+
+/** [D-080] One sign-in console the e2e build recorded instead of opening it (S-CONSOLE, `WCA_CONSOLE_DIR`). */
+export interface RecordedConsole {
+  argv: string[];
+  cwd: string | null;
+  env: Record<string, string> | null;
+}
+
+/**
+ * [D-080] The TRACKED S-CONSOLE recorder of the e2e build: with `WCA_CONSOLE_DIR` set, each cli:signIn writes `console-<n>.json`
+ * ({argv, cwd, env} - what production would have spawned; nothing is spawned here) and hands main a console whose `exited` resolves
+ * once the spec writes `console-<n>.exit` (= "the user closed the sign-in window"). Without the variable the recorder stays untracked
+ * (cli-connect (3)).
+ */
+export interface ConsoleRecorder {
+  dir: string;
+  env: Record<string, string>;
+  /** The consoles recorded so far, in order. */
+  calls(): RecordedConsole[];
+  /** Closes console `n` (1-based). */
+  exit(n: number): void;
+}
+
+export function consoleRecorder(e2e: E2eContext, label: string): ConsoleRecorder {
+  const dir = join(e2e.root, 'wca-consoles', label);
+  mkdirSync(dir, { recursive: true });
+  const file = (n: number, ext: string): string => join(dir, `console-${String(n)}.${ext}`);
+  return {
+    dir,
+    env: { WCA_CONSOLE_DIR: dir },
+    calls: () => {
+      const out: RecordedConsole[] = [];
+      for (let n = 1; existsSync(file(n, 'json')); n += 1)
+        out.push(JSON.parse(readFileSync(file(n, 'json'), 'utf8')) as RecordedConsole);
+      return out;
+    },
+    exit: (n) => writeFileSync(file(n, 'exit'), '', 'utf8'),
+  };
 }

@@ -22,7 +22,7 @@ beforeEach(() => {
   useHealthStore.setState({ health: defaultHealth, progress: null, downloads: {} });
   useSettingsStore.setState({ settings: DEFAULT_SETTINGS });
   useAutoStore.setState({ state: null });
-  useCliStore.setState({ status: {}, checkedAt: {}, error: {} });
+  useCliStore.setState({ status: {}, checkedAt: {}, error: {}, signInError: {}, signInStartedAt: {} });
 });
 
 describe('HealthPill v2 - pure sub-line builders', () => {

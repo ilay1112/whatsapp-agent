@@ -76,6 +76,7 @@ export const ERROR_CODES = [
   'VOICE_TIMEOUT',
   'MEDIA_UNAVAILABLE',
   'VOICE_TOO_LONG_FOR_DEVICE', // [F33] predicted transcription time > LIMITS.voiceJobMaxMs on this PC
+  'CLI_MODEL_REJECTED', // [D-080] the CLI refused the selected model / flag combination (agy 1.2.16 "--model X-high conflicts with --effort")
   'CLI_UNSAFE_CONFIG', // [F3] agy global-profile fallback: the user's global mcp_config.json has an enabled server / hooks.json a hook / unparsable
 ] as const;
 export type ErrorCode = (typeof ERROR_CODES)[number];
@@ -186,6 +187,7 @@ export const ERROR_ACTION: Record<ErrorCode, ErrorAction> = {
   MEDIA_UNAVAILABLE: 'try_again',
   VOICE_TOO_LONG_FOR_DEVICE: 'open_ai_settings', // copy "Use Lite" (the Voice notes sub-row)
   CLI_UNSAFE_CONFIG: 'open_ai_settings',
+  CLI_MODEL_REJECTED: 'choose_model', // [D-080] the renderer focuses the model dropdown
 };
 // [V2] CLOUD_QUOTA keeps 'open_ai_settings' (one action per code, v1 rule): for the CLI providers the AI settings row carries the
 //      "usage resets HH:MM" line and the external:open {target:'claude_usage'} link (see Architecture concerns #9).
@@ -220,6 +222,7 @@ export const PROVIDER_ERROR_CODES = [
   'sandbox',
   'account_hold',
   'unsupported',
+  'model_rejected', // [D-080] the CLI refused the model / flag combination before any run (CLI_MODEL_REJECTED)
 ] as const;
 export type ProviderErrorCode = (typeof PROVIDER_ERROR_CODES)[number];
 
@@ -233,6 +236,8 @@ export function providerErrorToErrorCode(
   if (e === 'unsupported') return 'INTERNAL';
   if (provider === 'local') return e === 'not_ready' ? 'LLM_NOT_READY' : 'LLM_LOCAL_FAILED';
   switch (e) {
+    case 'model_rejected':
+      return 'CLI_MODEL_REJECTED';
     case 'not_installed':
       return 'CLI_NOT_INSTALLED';
     case 'version':
@@ -275,4 +280,5 @@ export const NO_RETRY_PROVIDER_ERRORS: readonly ProviderErrorCode[] = [
   'sandbox', // CLI_TOOLSET_MISMATCH: never retried with looser flags (I11)
   'account_hold',
   'unsupported',
+  'model_rejected', // [D-080] the same argv is refused the same way; other flags are never tried (I11)
 ];

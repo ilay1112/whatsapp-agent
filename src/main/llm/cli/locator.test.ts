@@ -8,7 +8,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { CLI_MIN_VERSION } from '../../../shared/types';
 import { AGY_ENV_KEYS, CLAUDE_ENV_KEYS, type JobHandle, type JobRunner, type JobSpec } from '../../proc/jobRunner';
-import type { CliRunner } from './runner';
+import type { CliRunResult, CliRunner, CliRunnerExt } from './runner';
 import {
   cliStateOf,
   compareVersion,
@@ -581,5 +581,121 @@ describe('createCliStatus - closed (the quit sequence began)', () => {
     });
     expect(loc.find).toHaveBeenCalledTimes(1);
     expect(loc.signedIn).toHaveBeenCalledTimes(1);
+  });
+});
+
+// [D-080] `claude auth status --json` kept saying loggedIn:true while every run failed with "OAuth session expired and could not be
+// refreshed": a RUN that ends in not_logged_in is the stronger evidence. The status flips to not_signed_in at once (cache or not) and
+// stays so until a run / test proves the sign-in again. The sign-in session state rides on the same status object.
+describe('[D-080] createCliStatus - a run that proved "not signed in" wins over the cached probe', () => {
+  type Listener = Parameters<CliRunnerExt['onRunEnd']>[0];
+  const READY: CliLocation = { provider: 'claude_cli', exePath: 'C:\\x\\claude.exe', version: '2.1.258' };
+  const mkRunner = (): { runner: CliRunner & Pick<CliRunnerExt, 'onRunEnd'>; fire: Listener } => {
+    const listeners = new Set<Listener>();
+    return {
+      runner: {
+        run: vi.fn(),
+        breakerOpen: () => false,
+        onRunEnd: (l) => {
+          listeners.add(l);
+          return () => listeners.delete(l);
+        },
+      },
+      fire: (provider, res) => {
+        for (const l of listeners) l(provider, res);
+      },
+    };
+  };
+  const res = (error: CliRunResult['error'], initOk: boolean): CliRunResult => ({
+    sandbox: { initOk, toolsCount: 0, mcpServers: 0, apiKeySource: initOk ? 'none' : 'unknown', mismatch: null },
+    structured: null,
+    text: null,
+    toolCalls: 0,
+    blockedCalls: 0,
+    stopReason: error === null ? 'end' : 'bad_output',
+    error,
+    quota: null,
+    usage: null,
+    ms: 1,
+  });
+
+  it('not_logged_in flips a cached "ready" at once; it survives invalidate() and re-probes; a passed run or test clears it', async () => {
+    const { runner, fire } = mkRunner();
+    const loc: CliLocator = { find: vi.fn(async () => READY), version: vi.fn(), signedIn: vi.fn(async () => true) };
+    const svc = createCliStatus({ locator: loc, runner, clock: { now: () => 0 }, cacheMs: 60_000 });
+    expect((await svc.get('claude_cli')).state).toBe('ready');
+    fire('claude_cli', res('not_logged_in', true));
+    expect(svc.peek('claude_cli')?.state).toBe('not_signed_in'); // no new probe needed
+    expect((await svc.get('claude_cli')).state).toBe('not_signed_in');
+    svc.invalidate();
+    expect((await svc.get('claude_cli')).state).toBe('not_signed_in'); // the probe still says loggedIn:true - the run wins
+    // the other CLI is untouched
+    expect((await svc.get('antigravity_cli')).state).toBe('ready');
+    // runs that prove nothing about the sign-in keep it
+    for (const e of ['network', 'sandbox', 'model_rejected', 'not_ready', 'aborted'] as const) {
+      fire('claude_cli', res(e, false));
+      expect(svc.peek('claude_cli')?.state, e).toBe('not_signed_in');
+    }
+    fire('claude_cli', res('usage_limit', false)); // a budget refusal (no spawn, no proof) proves nothing
+    expect(svc.peek('claude_cli')?.state).toBe('not_signed_in');
+    fire('claude_cli', res(null, true));
+    expect(svc.peek('claude_cli')?.state).toBe('ready');
+    fire('claude_cli', res('not_logged_in', false));
+    expect(svc.peek('claude_cli')?.state).toBe('not_signed_in');
+    svc.recordTest('claude_cli', { ok: true, at: 1, ms: 10 });
+    expect(svc.peek('claude_cli')?.state).toBe('ready');
+    fire('claude_cli', res('not_logged_in', true));
+    fire('claude_cli', res('usage_limit', true)); // the account answered with its usage window: signed in
+    expect(svc.peek('claude_cli')?.state).toBe('ready');
+  });
+
+  it('only ready / unknown are downgraded: not installed and too old keep their own state', async () => {
+    const { runner, fire } = mkRunner();
+    const old: CliLocator = {
+      find: vi.fn(async () => ({ ...READY, version: '2.1.200' })),
+      version: vi.fn(),
+      signedIn: vi.fn(async () => true),
+    };
+    const s1 = createCliStatus({ locator: old, runner, clock: { now: () => 0 }, cacheMs: 60_000 });
+    fire('claude_cli', res('not_logged_in', true));
+    expect((await s1.get('claude_cli')).state).toBe('too_old');
+    const unknown: CliLocator = {
+      find: vi.fn(async () => READY),
+      version: vi.fn(),
+      signedIn: vi.fn(async () => 'unknown' as const),
+    };
+    const s2 = createCliStatus({ locator: unknown, runner, clock: { now: () => 0 }, cacheMs: 60_000 });
+    expect((await s2.get('claude_cli')).state).toBe('unknown');
+    fire('claude_cli', res('not_logged_in', true));
+    expect((await s2.get('claude_cli')).state).toBe('not_signed_in');
+  });
+
+  it('recordSignIn decorates the status (absent while idle - the frozen shape is unchanged)', async () => {
+    const { runner } = mkRunner();
+    const loc: CliLocator = { find: vi.fn(async () => READY), version: vi.fn(), signedIn: vi.fn(async () => true) };
+    const svc = createCliStatus({ locator: loc, runner, clock: { now: () => 0 }, cacheMs: 60_000 });
+    expect(await svc.get('claude_cli')).not.toHaveProperty('signIn');
+    svc.recordSignIn('claude_cli', { phase: 'open', outcome: null });
+    expect(svc.peek('claude_cli')?.signIn).toEqual({ phase: 'open', outcome: null });
+    expect(svc.peek('antigravity_cli')).toBeNull();
+    svc.recordSignIn('claude_cli', { phase: 'done', outcome: { ok: false, code: 'CLI_NOT_SIGNED_IN', at: 7 } });
+    svc.invalidate();
+    expect((await svc.get('claude_cli')).signIn).toEqual({
+      phase: 'done',
+      outcome: { ok: false, code: 'CLI_NOT_SIGNED_IN', at: 7 },
+    });
+    svc.recordSignIn('claude_cli', null);
+    expect(svc.peek('claude_cli')).not.toHaveProperty('signIn');
+  });
+
+  it('a runner without onRunEnd (the frozen CliRunner) still builds a working service', async () => {
+    const loc: CliLocator = { find: vi.fn(async () => READY), version: vi.fn(), signedIn: vi.fn(async () => true) };
+    const svc = createCliStatus({
+      locator: loc,
+      runner: { run: vi.fn(), breakerOpen: () => false },
+      clock: { now: () => 0 },
+      cacheMs: 1,
+    });
+    expect((await svc.get('claude_cli')).state).toBe('ready');
   });
 });

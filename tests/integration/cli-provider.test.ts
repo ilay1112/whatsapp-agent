@@ -163,6 +163,10 @@ describe('A. claude_cli end to end over the spawned fake (production modules)', 
     ['extra_tool', 'CLI_TOOLSET_MISMATCH'],
     ['usage_limit', 'CLOUD_QUOTA'],
     ['overage', 'CLOUD_OVERAGE'],
+    // [D-080] the live expired-OAuth stream (init first) and error events INSTEAD of the init: never CLI_TOOLSET_MISMATCH
+    ['oauth_expired', 'CLI_NOT_SIGNED_IN'],
+    ['auth_error_before_init', 'CLI_NOT_SIGNED_IN'],
+    ['model_error_before_init', 'CLI_MODEL_REJECTED'],
   ])(
     'mode %s => %s',
     async (mode, code) => {

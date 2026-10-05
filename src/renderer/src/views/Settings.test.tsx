@@ -174,6 +174,30 @@ describe('Settings - destructive things ask first', () => {
     await waitFor(() => expect(invokeMocks[channel]).toHaveBeenCalledOnce());
   });
 
+  // closeout-renderer REQUEST (ux-i18n-v2-4): "Unlink and erase" deletes all data, so the renderer's own stored voice
+  // intent (a tier id + a timestamp in web storage) must go too - otherwise a later model download switches voice on.
+  it('"Unlink and erase" also clears the stored voice intent (wca.voiceIntent)', async () => {
+    useSettingsStore.getState().setVoiceIntent('voice-hebrew');
+    expect(window.localStorage.getItem('wca.voiceIntent')).not.toBeNull();
+    await paint();
+    await userEvent.click(screen.getByTestId('settings-wipe'));
+    await userEvent.click(screen.getByTestId('settings-confirm-confirm'));
+    await waitFor(() => expect(invokeMocks['pairing:unlinkAndWipe']).toHaveBeenCalledOnce());
+    await waitFor(() => expect(window.localStorage.getItem('wca.voiceIntent')).toBeNull());
+    expect(useSettingsStore.getState().voiceIntent).toBeNull();
+  });
+
+  it('a refused "Unlink and erase" keeps the voice intent (nothing was deleted)', async () => {
+    mockInvoke('pairing:unlinkAndWipe', () => ({ ok: false, error: { code: 'INTERNAL' } }));
+    useSettingsStore.getState().setVoiceIntent('voice-hebrew');
+    await paint();
+    await userEvent.click(screen.getByTestId('settings-wipe'));
+    await userEvent.click(screen.getByTestId('settings-confirm-confirm'));
+    await waitFor(() => expect(invokeMocks['pairing:unlinkAndWipe']).toHaveBeenCalledOnce());
+    expect(useSettingsStore.getState().voiceIntent).toBe('voice-hebrew');
+    useSettingsStore.getState().setVoiceIntent(null);
+  });
+
   it('the dialog opens with the focus on the least destructive button and Escape cancels', async () => {
     await paint();
     await userEvent.click(screen.getByTestId('settings-wipe'));

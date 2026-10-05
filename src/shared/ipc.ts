@@ -291,7 +291,7 @@ export interface IpcResMap {
   'auto:listWrites': { writes: AutoWriteView[] };
   'auto:export': { saved: boolean };
   'cli:getStatus': CliStatus; // [V2 ADD]
-  'cli:signIn': { opened: true };
+  'cli:signIn': { opened: true; alreadyOpen?: true }; // [D-080] alreadyOpen: a session of that CLI is open / re-testing - no second console; its state is pushed (cli:changed)
   'cli:setOverage': CliStatus; // [F11] cancelled confirmation => unchanged
   'cli:test': { ok: true; ms: number }; // failures = Result.ok=false with the mapped ErrorCode
   'cli:pickExe': CliStatus; // cancelled dialog => unchanged status
@@ -314,7 +314,7 @@ export interface IpcEventMap {
   'ui:languageChanged': { lang: Lang; dir: Dir };
   'ui:navigate': { view: View; itemId?: ItemId }; // 'tray_hint' = first-close coach mark
   'auto:changed': AutoState; // [V2 ADD] policy state / AutoStrip ; also after every automatic write, undo and pause
-  'cli:changed': CliStatus; // [V2 ADD] Connect card (sign-in poll, quota line)
+  'cli:changed': CliStatus; // [V2 ADD] Connect card (sign-in poll, quota line) ; [D-080] + every sign-in session phase (CliStatus.signIn)
   'queue:changed': { pending: number; running: number; transcribing: { seconds: number } | null }; // [V2 ADD] header "Transcribing a voice note (0:42)..."
   'voice:progress': { itemId: ItemId; phase: 'fetch' | 'decode' | 'transcribe'; audioSeconds: number }; // [V2 ADD] 2 Hz max ; numbers only
 }

@@ -175,21 +175,57 @@ describe('UndoDismissDrawer - dialog chrome (UX 7, 13.3)', () => {
   });
 
   it('shows a clock time for today and a day label for an older dismissal', async () => {
-    const now = Date.now();
-    mockInvoke('dashboard:getIgnored', () => ({
-      ok: true,
-      value: {
-        items: [
-          dismissed(4, { trigger: { ts: now - 3600_000, text: 'today' } }),
-          dismissed(5, { trigger: { ts: now - 5 * 86_400_000, text: 'last week' } }),
-        ],
-      },
-    }));
-    render(<UndoDismissDrawer open onClose={() => {}} />);
-    const today = (await screen.findByTestId('dismissed-4')).textContent ?? '';
-    const older = screen.getByTestId('dismissed-5').textContent ?? '';
-    expect(today).toMatch(/\d{1,2}:\d{2}/);
-    expect(older).not.toBe(today);
+    // Pin the clock (Date only, so waitFor / user-event timers stay real): "today" = now - 1 h used to fall on YESTERDAY
+    // when the suite ran between 00:00 and 01:00 local. 09:00 UTC on 2026-10-05 is 12:00 in Asia/Jerusalem (the default
+    // zone), so now - 1 h is 11:00 the same day, whatever the time of day of the run.
+    vi.useFakeTimers({ toFake: ['Date'] });
+    try {
+      vi.setSystemTime(new Date('2026-10-05T09:00:00Z'));
+      expect(useSettingsStore.getState().settings?.general.timeZone).toBe('Asia/Jerusalem');
+      const now = Date.now();
+      mockInvoke('dashboard:getIgnored', () => ({
+        ok: true,
+        value: {
+          items: [
+            dismissed(4, { trigger: { ts: now - 3600_000, text: 'today' } }),
+            dismissed(5, { trigger: { ts: now - 5 * 86_400_000, text: 'last week' } }),
+          ],
+        },
+      }));
+      render(<UndoDismissDrawer open onClose={() => {}} />);
+      const today = (await screen.findByTestId('dismissed-4')).textContent ?? '';
+      const older = screen.getByTestId('dismissed-5').textContent ?? '';
+      expect(today).toMatch(/\d{1,2}:\d{2}/);
+      expect(today).toContain('11:00');
+      expect(older).not.toBe(today);
+      expect(older).not.toMatch(/\d{1,2}:\d{2}/);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('keeps "today" a clock time just after local midnight (the case that used to flake)', async () => {
+    // 21:30 UTC on 2026-10-05 = 00:30 on 2026-10-06 in Asia/Jerusalem: a dismissal 10 minutes ago is today (00:20);
+    // one 1 h ago (23:30 on the 5th) is yesterday and gets a day label.
+    vi.useFakeTimers({ toFake: ['Date'] });
+    try {
+      vi.setSystemTime(new Date('2026-10-05T21:30:00Z'));
+      const now = Date.now();
+      mockInvoke('dashboard:getIgnored', () => ({
+        ok: true,
+        value: {
+          items: [
+            dismissed(4, { trigger: { ts: now - 600_000, text: 'just now' } }),
+            dismissed(5, { trigger: { ts: now - 3600_000, text: 'before midnight' } }),
+          ],
+        },
+      }));
+      render(<UndoDismissDrawer open onClose={() => {}} />);
+      expect((await screen.findByTestId('dismissed-4')).textContent ?? '').toContain('00:20');
+      expect(screen.getByTestId('dismissed-5').textContent ?? '').not.toMatch(/\d{1,2}:\d{2}/);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('returns focus to the opener when it closes', async () => {

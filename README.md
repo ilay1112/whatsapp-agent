@@ -7,7 +7,8 @@ A Windows 11 desktop app that watches **your own** WhatsApp chats for plans ("co
 | **Status** | **v2 feature set built, not yet released** (package version still 0.1.0). The automated gates are recorded in [`ops/PROGRESS.md`](ops/PROGRESS.md); the release still waits for the [manual real-world checks](#manual-real-world-checklist), above all the accuracy gate **M-GOLDEN-1**. v0.1.0 (create-only) was the first verified build. |
 | **Platform** | Windows 11 x64 |
 | **Stack** | Electron 44 + TypeScript, React 19, Tailwind 4, `node:sqlite`, llama.cpp, whisper.cpp, Model Context Protocol (MCP) |
-| **Releases** | No installer is published yet — [build it from source](#building-from-source). |
+| **Releases** | No installer is published yet — [build it from source](#building-from-source). The build is **not code-signed**, and Windows 11 **Smart App Control** blocks it where Smart App Control is on — see [Code signing and Windows security](#code-signing-and-windows-security). |
+| **Licence** | [MIT](LICENSE) |
 
 > **Account risk — read this first.** The app talks to WhatsApp through an *unofficial* linked-device client. That violates WhatsApp's terms of service regardless of how little you use it, and your account can be banned. This project is for personal use on your own account, with your eyes open. It is not affiliated with WhatsApp/Meta, Google or Anthropic.
 
@@ -21,8 +22,10 @@ A Windows 11 desktop app that watches **your own** WhatsApp chats for plans ("co
 - [Requirements](#requirements)
 - [Getting started](#getting-started)
 - [Daily use](#daily-use)
+- [Signing in to Claude Code / Antigravity](#signing-in-to-claude-code--antigravity)
 - [Roadmap](#roadmap)
 - [Building from source](#building-from-source)
+- [Code signing and Windows security](#code-signing-and-windows-security)
 - [Tests and checks](#tests-and-checks)
 - [Project structure](#project-structure)
 - [How this project was built](#how-this-project-was-built)
@@ -85,7 +88,7 @@ Lets the app **add and change** calendar events without asking first. **WhatsApp
 |---|---|---|
 | **On this computer** (default) | Your PC, via llama.cpp | Ready to use: on first run the app detects your RAM/GPU and downloads a model (SHA-256 verified). **Gemma 4 E2B** (~3.1 GB, under 12 GB RAM), **Gemma 4 E4B** (~5.0 GB, typical laptop), **Gemma 4 12B** (~6.7 GB, dedicated GPU with ≥ 7.5 GB VRAM or ≥ 30 GB RAM). Nothing leaves your PC. |
 | **Claude (your subscription)** | Anthropic, through the **Claude Code CLI** you installed and signed in to yourself | The app never installs, bundles or signs in to it; it only finds it and runs it headless and locked down — no file, shell or web tools, only the app's read-only tools, and a test run proves that before any message is sent. Paid extra usage stops by default. Blocking consent screen first. |
-| **Antigravity CLI (experimental, opt-in)** | Google, through the Antigravity CLI if you installed it | Off unless you opt in. Google's terms prohibit third-party tools and accounts have been suspended — the consent screen says so. It gets **no** tools, its proposals are never automatic, and pictures go to the local model instead. |
+| **Gemini via the Antigravity CLI (experimental, opt-in)** | Google, through the Antigravity CLI if you installed it | Off unless you opt in. Google's terms prohibit third-party tools and accounts have been suspended — the consent screen says so. It gets **no** tools, its proposals are never automatic, and pictures go to the local model instead. |
 | **Claude / Gemini API key** (under *Advanced*) | Anthropic API / Google API | Your API key, stored encrypted with Windows DPAPI. Blocking consent screen, including Gemini's free-tier training warning. The supported way to use Gemini. |
 
 There is **never** a silent fallback from one provider to another. Dates and times are **never** computed by the model — "Thursday at 5" is resolved by plain TypeScript against your clock, and anything ambiguous gets a visible badge.
@@ -174,7 +177,7 @@ Message snapshots and drafts are kept for 30 days, then deleted.
 There is no published installer yet — [build it](#building-from-source), then run the app. On first launch a short wizard (resumable, with the language toggle always visible) takes you through five steps:
 
 1. **Welcome** — pick Hebrew or English and read/accept the WhatsApp account-risk disclosure.
-2. **Choose your AI** — *On this computer* (the app shows what it detected on your PC and starts the model download in the background), **Claude** through your installed Claude Code CLI (the app finds it, shows its sign-in state and runs a locked-down test before use), or — under *Advanced* — a Claude / Gemini API key (consent screen, then paste your key — it is checked live).
+2. **Choose your AI** — *On this computer* (the app shows what it detected on your PC and starts the model download in the background), **Claude** through your installed Claude Code CLI (the app finds it, shows its sign-in state — with a **Sign in** button that opens the CLI's own login — and runs a locked-down test before use), or — under *Advanced* — a Claude / Gemini API key (consent screen, then paste your key — it is checked live).
 3. **Link WhatsApp** — on your phone open **WhatsApp → Settings → Linked devices → Link a device** and scan the QR code shown by the app. The code refreshes itself; use *New code* if it expires.
 4. **Connect Google Calendar** — *Start* or *Later* (without it the app still drafts replies). The wizard walks you through:
    1. Create a Google Cloud project.
@@ -198,11 +201,23 @@ There is no published installer yet — [build it](#building-from-source), then 
 
 ---
 
+## Signing in to Claude Code / Antigravity
+
+The Claude and Antigravity options use the vendor's own command-line tool and **your own** sign-in to it. The app never signs in for you, and it never sees, reads, stores or forwards a password, token or code.
+
+- **Signing in.** When a CLI is not signed in, its card in Settings offers **Sign in**. The app then opens the CLI's **own login in a visible console window** — the same tool you would run yourself, started directly (never through a shell). You complete the vendor's login there, in the vendor's own words. When you close the window, the app runs its connection test again by itself and shows the result.
+- **Claude sessions can expire.** Claude Code's sign-in does not last forever. When it has expired and could not be refreshed, a run fails with *not signed in* (the app never falls back to another AI on its own). Sign in again from the card; nothing else needs to change.
+- **Antigravity uses its own profile.** The app runs the Antigravity CLI in an isolated profile of its own, separate from any Antigravity setup you use yourself. The sign-in window opens in that same profile, so you sign in once for the app even if your own Antigravity is already signed in.
+- **A refused model.** If the CLI refuses the selected model (for example a model / effort combination that its version does not accept), the app says so and takes you to the model choice, instead of reporting a vague error.
+
+---
+
 ## Roadmap
 
 The v2 features above (events that follow the conversation, automatic mode, Claude on your subscription, the experimental Antigravity option, read-only WhatsApp look-ups, voice notes, events from pictures) are built — see [`docs/ARCHITECTURE-v2.md`](docs/ARCHITECTURE-v2.md) and the decisions log [`ops/DECISIONS.md`](ops/DECISIONS.md) (D-036 onwards). What is still ahead:
 
 - **Release gates** — the user-run checks of the [manual checklist](#manual-real-world-checklist). In particular **M-GOLDEN-1** measures accuracy on your machine and decides when automatic changes and voice/picture-derived automatic events are allowed per provider; **M-AGY-1** decides whether the Antigravity option ships at all.
+- **Code signing** — the signing pipeline is built but switched off until a Microsoft Trusted Root Program certificate is available (D-078); until then Smart App Control blocks the unsigned build. See [Code signing and Windows security](#code-signing-and-windows-security).
 - **Deferred to v2.1** (each a ticket, D-057): more automatic-mode refinements (allow-list mode, re-trial after a provider change), read-only tools and pictures for the Antigravity CLI, a resident `whisper-server` for faster voice notes, two editable events per chat, title changes as change cards, more CLI path overrides, Electron / MCP SDK version bumps.
 - **Not planned:** automatic WhatsApp replies, deleting events, bundling or installing any vendor CLI.
 
@@ -248,7 +263,17 @@ npx electron-vite dev
 npx electron-builder --win --x64
 ```
 
-This writes `dist\WhatsAppCalendarAgent-Setup-<version>.exe`, a one-click per-user NSIS installer of about 200–240 MB. Nothing is code-signed yet, so expect a SmartScreen prompt.
+This writes `dist\WhatsAppCalendarAgent-Setup-<version>.exe`, a one-click per-user NSIS installer of about 200–240 MB. Nothing is code-signed yet: with Smart App Control on, Windows refuses to start the app; otherwise expect a SmartScreen prompt. See the next section.
+
+---
+
+## Code signing and Windows security
+
+The full guide, for the owner of the build, is [`docs/WINDOWS-SECURITY.md`](docs/WINDOWS-SECURITY.md). In short:
+
+- **The build ships unsigned for now** (decision D-078). Windows 11 **Smart App Control** blocks unsigned, unknown programs with no "run anyway" button, and it has already refused the freshly built exe on the development PC. A **self-signed certificate does not help**: Smart App Control accepts only certificates from a CA in the **Microsoft Trusted Root Program** (or programs Microsoft's cloud already knows). Turning Smart App Control off is the PC owner's own decision, and on many Windows 11 builds it cannot be turned back on without reinstalling Windows.
+- **A signing pipeline is built in and switched off.** Set `WCA_SIGN_MODE` (`signtool-cert` for a certificate such as Certum Open Source via SimplySign, or `azure` for Azure Artifact Signing) plus the variables of that mode, and the build signs **every** executable and DLL, the installer and the uninstaller, checks each file's origin before signing, and re-pins the bridge's hash inside `app.asar`. Signing needs `signtool.exe` from the Windows SDK. `WCA_SIGN_MODE` must be the same for `npm run build` and for packaging. All signing parameters come from environment variables — never from a file in this repository — and the exact variable list is in `docs/WINDOWS-SECURITY.md` section 3. Check a configuration with `node scripts/sign-windows.mjs --check-env`.
+- **Microsoft Defender gate.** `npm run test:defender` scans the packed app and the installer with Microsoft Defender (report-only: it never quarantines, never adds exclusions, never changes a setting) and lists every file's Authenticode status. On 2026-10-04 Defender found no threats. When signing is on, the gate fails unless every file is validly signed and time-stamped. If Defender ever flags the app wrongly, the guide explains how to submit a false positive to Microsoft.
 
 ---
 
@@ -262,8 +287,11 @@ This writes `dist\WhatsAppCalendarAgent-Setup-<version>.exe`, a one-click per-us
 | `npm run test:security` | The security gate: approval binding, a prompt-injection corpus (40+ cases, Hebrew and English) run against an "obedient attacker" model, the tool gate, redaction, crash recovery |
 | `npm run test:e2e` | Playwright against the built app with a fake WhatsApp bridge, a fake calendar and a scripted AI — never real accounts |
 | `npm run test:smoke` | Builds an unpacked package and checks what actually ships (bridge hash, the patched calendar server and its eight tools, Electron fuses, the whisper files and their hashes, the model manifest against its pins, no vendor CLI binary, the voice decoder, the licence notices, no forbidden packages) — never executing a bundled binary |
+| `npm run test:defender` | Microsoft Defender scan of the packed app and the installer, plus the Authenticode status of every executable and DLL (report-only; [details](docs/WINDOWS-SECURITY.md#4-the-defender-scan-gate)) |
 | `npm run test:golden:live` | Opt-in accuracy check against a real model on your machine |
 | `npm run audit:prod` | `npm audit` of the production dependencies |
+
+Latest recorded results ([`ops/PROGRESS.md`](ops/PROGRESS.md), entry 69, 2026-10-05): the Vitest suite **7587 passed**, twice in a row; Playwright end-to-end **47/47, none flaky**. The Defender gate found no threats in the 2026-10-04 build ([`docs/WINDOWS-SECURITY.md`](docs/WINDOWS-SECURITY.md) section 4). The packaged smoke test **cannot fully pass on the development PC** while the build is unsigned: Smart App Control refuses to start the freshly packed exe, so the checks that launch it cannot run (entries 65 and 69).
 
 The tests never run the real bridge, the real Claude or Antigravity CLI, whisper or llama.cpp, never contact WhatsApp, Google, Anthropic or any model API, and use only synthetic data (fake CLIs, a fake transcriber and generated audio and pictures).
 
@@ -286,7 +314,7 @@ vendor/        whatsapp-bridge-src (Go source, reference only); pins for llama.c
                and its patch, and the models; llama.cpp and whisper.cpp are fetched here at build time
 build-resources/calendar-mcp/   the pinned Google Calendar MCP server package
 scripts/       import/hash bridge, fetch llama.cpp / whisper.cpp, stage + patch the MCP server, pin models, fixtures,
-               icons, packaged smoke test
+               icons, packaged smoke test, the (switched-off) code-signing pipeline, the Defender scan gate
 docs/          research, architecture, specs, acceptance report
 ops/           context, decisions, progress log, ticket board, per-agent notes, workflow scripts
 ```
@@ -312,7 +340,7 @@ These are real and deliberate. Read them before you install.
 
 - **Other software running as you can read everything.** The WhatsApp session, the message database and your Google tokens sit in your user profile. Windows protects them from other *users*, not from a program you run yourself.
 - **`runAsNode` is enabled.** The bundled calendar server needs the app's own binary to run as Node — a real hardening concession forced by that design.
-- **Nothing is code-signed.** Four unsigned executables (the app, the bridge, the model server, the voice transcriber) mean SmartScreen/Defender friction on first run.
+- **Nothing is code-signed yet.** The app, the bridge, the model server, the voice transcriber and their DLLs are unsigned. Where Smart App Control is on, Windows **blocks** the app outright; elsewhere expect SmartScreen friction on first run. The signing pipeline is ready but needs a Trusted Root Program certificate ([details](docs/WINDOWS-SECURITY.md)).
 - **No auto-update.**
 - **The bridge is an opaque prebuilt binary.** Its Go source is vendored for reference, but when WhatsApp changes its protocol it will eventually fail with "client outdated" until a new build is supplied.
 - **Google setup is fiddly**, and the bundled server asks for the full calendar scope although the app only reads busy/free and creates or changes its own events.
@@ -332,7 +360,8 @@ Every fact not yet verified on real hardware, and the check that closes it, is l
 
 | Symptom | What to do |
 |---|---|
-| SmartScreen or Defender warns about the app or `whatsapp-bridge.exe` | Expected — nothing is signed yet. Check the bridge against `resources/bridge/SHA256SUMS`. |
+| SmartScreen or Defender warns about the app or `whatsapp-bridge.exe` | Expected — nothing is signed yet. Check the bridge against `resources/bridge/SHA256SUMS`. Never add a Defender exclusion; if Defender reports a detection you believe is wrong, follow the false-positive steps in [`docs/WINDOWS-SECURITY.md`](docs/WINDOWS-SECURITY.md) section 5. |
+| Windows says Smart App Control blocked the app (no "run anyway") | Expected for the unsigned build on a PC with Smart App Control on. Only a build signed with a Trusted Root Program certificate fixes this — see [Code signing and Windows security](#code-signing-and-windows-security). Switching Smart App Control off is your own decision and may not be reversible. |
 | "Install Microsoft runtime" error for the local AI | Install the Microsoft Visual C++ 2015–2022 x64 Redistributable (the error's button opens Microsoft's page), or build with `VC_REDIST_CRT_DIR` set. |
 | The QR code never appears | Check the status pill, and make sure your phone has a free linked-device slot (WhatsApp → Settings → Linked devices). |
 | Google sign-in expires after 7 days | Your OAuth consent screen is still in *Testing* — **Publish** it. |
@@ -340,7 +369,8 @@ Every fact not yet verified on real hardware, and the check that closes it, is l
 | "Client outdated" | WhatsApp changed its protocol; the bridge binary needs a newer build. |
 | No card appears for a new contact | By design: people you have never written to are held until you click *Analyse this chat*. |
 | "Changes to events are unavailable (component version)" | The calendar server copy is not the patched one — re-run `npm run stage:mcp` and rebuild. Adding events keeps working. |
-| The Claude CLI is not found or not signed in | Install it and sign in yourself (the Connect card shows the vendor's command and docs link), then run the connection test again; or point Settings at its exe. |
+| The Claude CLI is not found or not signed in | Not found: install it yourself (the Connect card shows the vendor's command and docs link), or point Settings at its exe. Not signed in — including a Claude session that **expired**: click **Sign in** on the card and finish the CLI's own login in the window it opens; the test runs again when you close it. See [Signing in](#signing-in-to-claude-code--antigravity). |
+| Antigravity says the model was refused | Its CLI version does not accept that model / effort combination. Pick another model in Settings. |
 | A voice note says it is too long for this PC | Switch to the *Lite* voice model in Settings, or read the note yourself. |
 
 ---
@@ -367,4 +397,4 @@ The automated suite proves the code does what the design says; it cannot prove t
 
 The installer ships the WhatsApp bridge (a fork of [`verygoodplugins/whatsapp-mcp`](https://github.com/verygoodplugins/whatsapp-mcp), itself a fork of `lharries/whatsapp-mcp`, MIT), llama.cpp `b10964` for Windows/Vulkan (MIT), whisper.cpp `b5130` for Windows x64 CPU (MIT), the LLVM OpenMP runtime (Apache-2.0 with LLVM exception), the Google Calendar MCP server (MIT; shipped with the documented seven-insertion modification), the `opus-decoder` voice decoder chain (MIT / Apache-2.0) with libopus compiled to WebAssembly inside it (BSD-3-Clause, royalty-free patent licences), Electron, and about 146 pure-JavaScript npm packages — **no native Node addon** anywhere, and **no vendor CLI** (Claude Code and Antigravity are never bundled). The full notices are in `resources/licenses/THIRD_PARTY_NOTICES.txt` and are installed alongside the app. Model weights are **not** shipped; you download them on request, under their own licences (Gemma and its picture add-ons: Apache-2.0 with the Gemma terms; ivrit-ai Hebrew Whisper: Apache-2.0; OpenAI Whisper: MIT; Silero VAD: MIT).
 
-This repository does not yet declare a licence for its own code.
+The code in this repository is licensed under the **MIT License** — see [`LICENSE`](LICENSE). The third-party components above keep their own licences.

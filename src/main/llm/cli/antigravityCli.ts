@@ -21,7 +21,14 @@ import { AGY_HOME_DIR, AGY_WORKSPACE_DIR, planAgyHome } from './claudeCli.env';
 
 // ---------------- antigravityCli.ts (lane L10, built last, release-gated on M-AGY-1) ----------------
 export const AGY_MIN_VERSION = '1.2.11';
-/** argv: --agent wca-<stage> --model <slug> --effort low --output-format stream-json --input-format stream-json --print-timeout <wall-10 s>
+/** [D-080] The effort level a model slug carries as its suffix (`gemini-3.8-flash-high` => 'high'), null when it has none
+ *  (`gemini-3.8-flash`, `gemini-3.5-flash-lite`). Such a slug is never combined with `--effort` (agy 1.2.16 refuses the pair). */
+export const AGY_EFFORT_SUFFIX_RE = /-(minimal|low|medium|high|xhigh|max)$/i;
+export function agyModelEffort(model: string): string | null {
+  const m = AGY_EFFORT_SUFFIX_RE.exec(model);
+  return m === null ? null : (m[1] ?? '').toLowerCase();
+}
+/** argv: --agent wca-<stage> --model <slug> [--effort low, only when the slug carries no effort suffix - D-080] --output-format stream-json --input-format stream-json --print-timeout <wall-10 s>
  *  --disable-slash-commands [--json-schema <runDir>\schema.json] ; prompt = ONE stream-json user line on stdin, NEVER -p <text> (C11, U-A6:
  *  a stdin failure => provider not_ready, never an argv fallback). No .agents\mcp_config.json exists in v2. */
 export function buildAgyArgs(
@@ -38,8 +45,9 @@ export function buildAgyArgs(
     agyAgentName(stage),
     '--model',
     req.model,
-    '--effort',
-    'low',
+    // [D-080] live diagnostic (agy 1.2.16): a slug that already carries its effort (`agy models` lists e.g. gemini-3.8-flash-high) refuses
+    // `--effort` ("--model X-high conflicts with --effort=low", exit 1). The slug's own effort is then the run's effort.
+    ...(agyModelEffort(req.model) === null ? ['--effort', 'low'] : []),
     '--output-format',
     'stream-json',
     '--input-format',

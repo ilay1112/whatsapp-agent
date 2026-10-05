@@ -184,6 +184,33 @@ describe('createOpenVisibleConsole (production S-CONSOLE)', () => {
     expect(spawn).toHaveBeenCalledTimes(2);
     expect(typeof createOpenVisibleConsole()).toBe('function');
   });
+  it('[D-080] passes the sign-in env and returns a handle whose `exited` resolves on exit or on a spawn error (never rejects)', async () => {
+    const child = Object.assign(new EventEmitter(), { unref: vi.fn() });
+    const spawn = vi.fn(() => child as unknown as ChildProcess);
+    const open = createOpenVisibleConsole({ spawn });
+    const handle = await open(CLAUDE, ['auth', 'login', '--claudeai'], { env: { USERPROFILE: 'C:\\U' } });
+    expect(spawn).toHaveBeenCalledWith(CLAUDE, ['auth', 'login', '--claudeai'], {
+      shell: false,
+      detached: true,
+      windowsHide: false,
+      stdio: 'ignore',
+      env: { USERPROFILE: 'C:\\U' },
+    });
+    let done = false;
+    void handle?.exited.then(() => {
+      done = true;
+    });
+    await Promise.resolve();
+    expect(done).toBe(false); // the console is still open
+    child.emit('exit', 0);
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(done).toBe(true);
+    const failing = Object.assign(new EventEmitter(), { unref: vi.fn() });
+    const h2 = await createOpenVisibleConsole({ spawn: vi.fn(() => failing as unknown as ChildProcess) })(AGY, [], {});
+    failing.emit('error', new Error('ENOENT'));
+    await expect(h2?.exited).resolves.toBeUndefined();
+  });
 });
 
 describe('cli:getStatus', () => {
@@ -204,19 +231,30 @@ describe('cli:signIn', () => {
       ok: true,
       value: { opened: true },
     });
-    expect(s.cliConsole).toHaveBeenCalledWith(CLAUDE, ['auth', 'login', '--claudeai'], {});
+    // [D-080] + the sign-in env (the run profile vars; cli.signin.test.ts pins it); an untracked console still invalidates the cache
+    expect(s.cliConsole).toHaveBeenCalledWith(CLAUDE, ['auth', 'login', '--claudeai'], { env: expect.any(Object) });
     expect(s.cliStatus.invalidate).toHaveBeenCalled();
   });
-  it('agy: the exe with no args, cwd %USERPROFILE%', async () => {
-    const s = setup({ loc: { provider: 'antigravity_cli', exePath: AGY, version: '1.2.11' } });
-    await s.h['cli:signIn']({ provider: 'antigravity_cli' }, FOCUSED);
-    expect(s.cliConsole).toHaveBeenCalledWith(AGY, [], { cwd: 'C:\\Users\\wca-fake-home' });
-    const noHome = setup({
+  it('[D-080] agy: the exe with no args, cwd = the ISOLATED <userData>\\agy-home (never %USERPROFILE%); no userData => no console', async () => {
+    const writes: string[] = [];
+    const signInFs = { mkdirSync: vi.fn(), writeFileSync: vi.fn((p: string) => writes.push(p)) };
+    const USERDATA = 'C:\\Users\\wca-fake-home\\AppData\\Roaming\\WCA';
+    const s = setup({
       loc: { provider: 'antigravity_cli', exePath: AGY, version: '1.2.11' },
-      extras: { homeDir: undefined },
+      extras: { userDataDir: USERDATA, signInFs },
     });
-    await noHome.h['cli:signIn']({ provider: 'antigravity_cli' }, FOCUSED);
-    expect(noHome.cliConsole).toHaveBeenCalledWith(AGY, [], {});
+    await s.h['cli:signIn']({ provider: 'antigravity_cli' }, FOCUSED);
+    expect(s.cliConsole).toHaveBeenCalledWith(AGY, [], {
+      cwd: `${USERDATA}\\agy-home`,
+      env: expect.objectContaining({ USERPROFILE: `${USERDATA}\\agy-home`, HOME: `${USERDATA}\\agy-home` }),
+    });
+    expect(writes).toEqual([`${USERDATA}\\agy-home\\.gemini\\antigravity-cli\\settings.json`]);
+    const noUserData = setup({ loc: { provider: 'antigravity_cli', exePath: AGY, version: '1.2.11' } });
+    expect(await noUserData.h['cli:signIn']({ provider: 'antigravity_cli' }, FOCUSED)).toEqual({
+      ok: false,
+      error: { code: 'INTERNAL' },
+    });
+    expect(noUserData.cliConsole).not.toHaveBeenCalled();
   });
   it('not installed / too old / unreadable version / hostile located path => refused, console never opened', async () => {
     for (const [loc, code] of [

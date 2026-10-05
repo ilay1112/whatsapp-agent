@@ -133,7 +133,17 @@ export type ShowMessageBoxFn = (
 ) => Promise<{ response: number; checkboxChecked: boolean }>;
 
 /** S-CONSOLE: opens the vendor's own sign-in in a VISIBLE console (cli:signIn); the exe is spawned directly, never cmd.exe (F7). */
-export type OpenVisibleConsoleFn = (exePath: string, args: readonly string[], opts: { cwd?: string }) => Promise<void>;
+/** [D-080, additive] `env` = the sign-in environment (the run profile vars, ipc/handlers/cli.ts buildSignInEnv); the returned handle lets
+ *  cli:signIn notice the console closing (re-probe + one automatic re-test). An implementation that returns nothing is "untracked". */
+export type OpenVisibleConsoleFn = (
+  exePath: string,
+  args: readonly string[],
+  opts: { cwd?: string; env?: Record<string, string> },
+) => Promise<void | VisibleConsoleHandle>;
+/** [D-080] `exited` resolves once the console process ended (exit or spawn error); it never rejects. */
+export interface VisibleConsoleHandle {
+  exited: Promise<void>;
+}
 
 /** S-HOME: the home directory the agy workspace-trust handler resolves `~/.gemini/...` against (tests: mkdtemp). */
 export type HomeDirFn = () => string;

@@ -37,7 +37,11 @@ export type FakeClaudeMode =
   | 'hang'
   | 'kill_me'
   | 'crash_mid_stream'
-  | 'stderr_flood';
+  | 'stderr_flood'
+  // [D-080] live diagnostic: the expired OAuth stream (init FIRST) and error events INSTEAD of the init
+  | 'oauth_expired'
+  | 'auth_error_before_init'
+  | 'model_error_before_init';
 export const FAKE_CLAUDE_MODES: readonly FakeClaudeMode[] = [
   'ok',
   'attacker',
@@ -65,6 +69,9 @@ export const FAKE_CLAUDE_MODES: readonly FakeClaudeMode[] = [
   'kill_me',
   'crash_mid_stream',
   'stderr_flood',
+  'oauth_expired',
+  'auth_error_before_init',
+  'model_error_before_init',
 ];
 /** Stage detection is from argv only (T2 3.1): --mcp-config => draft; IMAGE_READ_SCHEMA => read_image; smoke schema => smoke. */
 export type FakeClaudeStage = 'extract' | 'draft' | 'read_image' | 'smoke';

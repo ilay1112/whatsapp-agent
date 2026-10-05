@@ -102,6 +102,9 @@ export interface CliRunnerExt extends CliRunner {
   resetBreaker(): void;
   /** The last quota the CLI reported (rate_limit_event), for AppHealth.llm.quota. */
   lastQuota(): LlmQuota | null;
+  /** [D-080] Subscribes to every finished run (spawned or refused) - the status service flips "signed in" when a run proves the
+   *  opposite. A throwing listener never affects the run. Returns the unsubscribe function. */
+  onRunEnd(listener: (provider: CliProviderId, result: CliRunResult) => void): () => void;
 }
 
 export const NO_PROOF: CliSandboxProof = {
@@ -169,8 +172,79 @@ export function mapAgyError(line: string): ProviderErrorCode {
   return 'network';
 }
 
+// ---------------- [D-080] an error event INSTEAD of the init ----------------
+/** Cap of the in-memory error text (it is only regex-classified, never stored, logged or audited - B26). */
+const ERROR_TEXT_MAX = 2000;
+const errorPart = (v: unknown): string => {
+  if (v === undefined || v === null) return '';
+  if (typeof v === 'string') return v;
+  if (typeof v === 'number' || typeof v === 'boolean') return String(v);
+  try {
+    return JSON.stringify(v) ?? '';
+  } catch {
+    return '';
+  }
+};
+/**
+ * The error text of a FIRST event that is an error / result event instead of the init, or null when it is not such an event (then the
+ * normal fail-closed "no init" path applies). agy 1.2.16 (D-080 live capture): {"event":"result", conversation_id, status, response,
+ * error, duration_seconds, num_turns, usage} - the nested {"event":"result","result":{...}} envelope and {"event":"error"} are read the
+ * same way. Claude: a `result` event, or an `assistant` event carrying `error` (e.g. "authentication_failed"). Pure.
+ */
+export function errorTextBeforeInit(provider: CliProviderId, ev: Record<string, unknown>): string | null {
+  const parts: unknown[] = [];
+  if (provider === 'antigravity_cli') {
+    if (ev.event !== 'result' && ev.event !== 'error') return null;
+    parts.push(ev.error, ev.message);
+    if (isRecord(ev.result)) parts.push(ev.result.error, ev.result.message);
+  } else if (ev.type === 'result') {
+    parts.push(ev.result, ev.errors, ev.error);
+  } else if (ev.type === 'assistant' && ev.error !== undefined && ev.error !== null) {
+    parts.push(ev.error);
+    if (isRecord(ev.message) && Array.isArray(ev.message.content))
+      for (const b of ev.message.content) if (isRecord(b) && b.type === 'text') parts.push(b.text);
+  } else {
+    return null;
+  }
+  return parts
+    .map(errorPart)
+    .filter((p) => p.length > 0)
+    .join(' ')
+    .slice(0, ERROR_TEXT_MAX);
+}
+const MODEL_REJECTED_RE =
+  /invalid model|model selection|conflicts with --|unknown model|unsupported model|not a recognized model|issue with the selected model|model .{0,60}not (?:found|available|supported)|unknown option|invalid (?:value|argument|option)|invalid effort/i;
+const AUTH_RE =
+  /authenticat|not logged in|please run \/login|login expired|oauth|sign[ -]?in\b|credential|\b401\b|invalid api key/i;
+const QUOTA_RE =
+  /resource_exhausted|quota|usage limit|session limit|weekly limit|hit your .*limit|credit balance|\b429\b/i;
+/**
+ * [D-080] An error before init -> ProviderErrorCode: the error TEXT first, then the JobRunner's marker-only stderr view (B26 - stderr text
+ * never leaves the job). model / flag rejection => model_rejected (CLI_MODEL_REJECTED); sign-in => not_logged_in (CLI_NOT_SIGNED_IN); quota
+ * => usage_limit (CLOUD_QUOTA); rate limit / overload => their codes; anything else => network (CLOUD_UNAVAILABLE) - never 'sandbox'.
+ * A model rejection wins over an auth word in the same text (the user has to pick another model either way). Pure.
+ */
+export function classifyErrorBeforeInit(text: string, stderrMarkers: readonly string[]): ProviderErrorCode {
+  if (MODEL_REJECTED_RE.test(text)) return 'model_rejected';
+  if (AUTH_RE.test(text)) return 'not_logged_in';
+  if (QUOTA_RE.test(text)) return 'usage_limit';
+  if (/rate[_ ]?limit/i.test(text)) return 'rate_limited';
+  if (/overloaded|\b529\b/i.test(text)) return 'overloaded';
+  const has = (m: string): boolean => stderrMarkers.includes(m);
+  if (has('model_rejected') || has('model_not_found')) return 'model_rejected';
+  if (has('authentication_failed') || has('auth_required')) return 'not_logged_in';
+  if (has('usage_limit') || has('quota') || has('http_429')) return 'usage_limit';
+  if (has('rate_limit')) return 'rate_limited';
+  if (has('overloaded')) return 'overloaded';
+  return 'network';
+}
+
 interface ParseState {
   init: unknown;
+  /** [D-080] the error text of an error event that arrived INSTEAD of the init (in memory only, never logged or audited). */
+  errorBeforeInit: string | null;
+  /** [D-080] its classified code (the only form that reaches the audit). */
+  errorBeforeInitCode: ProviderErrorCode | null;
   initSeen: boolean;
   initFailed: boolean;
   proof: CliSandboxProof;
@@ -290,6 +364,8 @@ export function createCliRunner(deps: {
     const ref = req.auditRef ?? null;
     const st: ParseState = {
       init: null,
+      errorBeforeInit: null,
+      errorBeforeInitCode: null,
       initSeen: false,
       initFailed: false,
       proof: NO_PROOF,
@@ -344,6 +420,7 @@ export function createCliRunner(deps: {
       stopReason: outcome.stopReason,
       ms: outcome.ms,
       usageWindowHit: st.usageWindowHit,
+      ...(st.errorBeforeInitCode === null ? {} : { errorBeforeInit: st.errorBeforeInitCode }),
     });
     return outcome;
   };
@@ -453,6 +530,15 @@ export function createCliRunner(deps: {
           ? checkClaudeInit(ev, req, req.exposedNames ?? [])
           : checkAgyInit(ev, req.stage as 'extract' | 'draft' | 'smoke');
         if (!st.proof.initOk) {
+          // [D-080] An ERROR event in place of the init (agy {"event":"result",...,"error"}, Claude result / assistant error): the CLI
+          // refused to start (model / flag, sign-in, quota). Still no proof and nothing later is read (I11) - but it is classified by its
+          // text, never reported as a toolset change (no toolset_mismatch audit, no breaker strike, never a retry with other flags).
+          const errText = errorTextBeforeInit(req.provider, ev);
+          if (errText !== null) {
+            st.errorBeforeInit = errText;
+            job.kill();
+            break;
+          }
           // Fail closed on the init line: kill (async taskkill - the CLI already holds the stdin line), audit, never a retry with looser flags.
           st.initFailed = true;
           deps.audit('toolset_mismatch', req.auditRef ?? null, {
@@ -539,6 +625,12 @@ export function createCliRunner(deps: {
       usage: extra.usage ?? null,
       ms: done.ms,
     });
+    // 0. [D-080] an error event before init: a classified failure (text first, then the marker-only stderr view), never a pass.
+    if (st.errorBeforeInit !== null) {
+      if (signal.aborted) return { ...out('aborted', 'aborted'), sandbox: NO_PROOF };
+      st.errorBeforeInitCode = classifyErrorBeforeInit(st.errorBeforeInit, done.stderrMarkers);
+      return { ...out(st.errorBeforeInitCode, 'bad_output'), sandbox: NO_PROOF };
+    }
     // 1. no proof => nothing of the run is used (I11). A missing init is a failed proof too.
     if (!st.initSeen || st.initFailed) {
       if (signal.aborted && !st.initSeen) return out('aborted', 'aborted');
@@ -620,10 +712,24 @@ export function createCliRunner(deps: {
     return out(null, 'end', { structured: verdict.structured });
   };
 
+  const runEndListeners = new Set<(provider: CliProviderId, result: CliRunResult) => void>();
+  const notifyRunEnd = (provider: CliProviderId, result: CliRunResult): CliRunResult => {
+    for (const l of runEndListeners) {
+      try {
+        l(provider, result);
+      } catch {
+        // a subscriber never affects the run
+      }
+    }
+    return result;
+  };
+
   return {
     run(req: CliRunRequest, signal: AbortSignal): Promise<CliRunResult> {
       // Concurrency 1 over BOTH CLIs (B13/B14): one runner-level chain, on top of the JobRunner 'cli' mutex.
-      const next = chain.then(() => runOnce(req as ClaudeRunRequestExt, signal));
+      const next = chain
+        .then(() => runOnce(req as ClaudeRunRequestExt, signal))
+        .then((res) => notifyRunEnd(req.provider, res));
       chain = next.catch(() => undefined);
       return next;
     },
@@ -640,5 +746,11 @@ export function createCliRunner(deps: {
       proofPaused.clear();
     },
     lastQuota: () => quota,
+    onRunEnd(listener) {
+      runEndListeners.add(listener);
+      return () => {
+        runEndListeners.delete(listener);
+      };
+    },
   };
 }

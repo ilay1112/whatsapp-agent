@@ -1131,6 +1131,19 @@ export interface CliStatus {
   quota: LlmQuota | null;
   lastTest: { ok: boolean; at: EpochMs; ms: number | null } | null; // factory.usable() needs ok within 24 h (B12)
   workspaceTrusted: boolean | null; // antigravity_cli only (cli:allowWorkspace) ; null for claude_cli
+  /** [D-080, additive] the guided sign-in session (cli:signIn). ABSENT = 'idle' (no session since start, or the console could not be
+   *  tracked) - so every status built before D-080 is still a valid CliStatus. Pushed through cli:changed at every phase change. */
+  signIn?: CliSignInSession;
+}
+/** [D-080] 'open' = the vendor's own login console is open; 'retesting' = it closed, the status is re-probed and the provider's smoke
+ *  test re-runs ONCE; 'done' = that re-test finished (outcome). 'idle' = no session (also never shown as a field value today). */
+export const CLI_SIGN_IN_PHASES = ['idle', 'open', 'retesting', 'done'] as const;
+export type CliSignInPhase = (typeof CLI_SIGN_IN_PHASES)[number];
+export interface CliSignInSession {
+  phase: CliSignInPhase;
+  /** The automatic re-test after the console closed: null until phase 'done'. code = the mapped ErrorCode of a failed test (e.g.
+   *  CLI_NOT_SIGNED_IN, CLI_MODEL_REJECTED), null when ok. Never CLI text. */
+  outcome: { ok: boolean; code: import('./errors').ErrorCode | null; at: EpochMs } | null;
 }
 /** [V2 ADD] voice:getState (B18). */
 export interface VoiceState {

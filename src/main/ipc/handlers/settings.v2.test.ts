@@ -167,6 +167,87 @@ describe('settings:set [V2] checks', () => {
     expect(f.state.settings.llm.cli.maxRunsPerHour).toBe(LIMITS.cliRunsPerHourMax);
   });
 
+  // ux-i18n-v2-5: readTools.enabled is a settings:set member, the scope is not. Re-enabling reading while the STORED scope is
+  // all_chats must never bring all-chats reading back without wa:setReadScope's native confirmation (F11 / B17).
+  it('re-enabling read tools over a stored all_chats scope narrows it to trigger_chat first (no silent re-widening)', async () => {
+    const { f, h, confirmSetting } = setup({ provider: 'claude' });
+    f.state.settings.whatsapp.readTools = { enabled: false, scope: 'all_chats', windowDays: 30 };
+    // every write must already carry the narrowed scope: no moment where enabled=true meets all_chats
+    const written: { enabled: boolean; scope: string }[] = [];
+    const record = (s: { whatsapp: { readTools: { enabled: boolean; scope: string } } }) =>
+      written.push({ enabled: s.whatsapp.readTools.enabled, scope: s.whatsapp.readTools.scope });
+    const { patch, setInternal } = f.deps.settings;
+    f.deps.settings.patch = (p) => {
+      const out = patch(p);
+      record(out);
+      return out;
+    };
+    f.deps.settings.setInternal = (mut) => {
+      const out = setInternal(mut);
+      record(out);
+      return out;
+    };
+    const res = await h['settings:set']({ whatsapp: { readTools: { enabled: true } } }, CTX);
+    expect(res.ok && res.value.whatsapp.readTools).toEqual({ enabled: true, scope: 'trigger_chat', windowDays: 30 });
+    expect(f.state.settings.whatsapp.readTools).toEqual({ enabled: true, scope: 'trigger_chat', windowDays: 30 });
+    expect(written).toEqual([
+      { enabled: false, scope: 'trigger_chat' },
+      { enabled: true, scope: 'trigger_chat' },
+    ]);
+    expect(confirmSetting).not.toHaveBeenCalled();
+    expect(f.rec.audits).toEqual([
+      {
+        kind: 'settings_changed',
+        ref: null,
+        detail: { key: 'whatsapp.readTools.scope', value: 'trigger_chat' },
+        now: NOW_0,
+      },
+      { kind: 'settings_changed', ref: null, detail: { groups: 'whatsapp' }, now: NOW_0 },
+    ]);
+  });
+
+  it('the guard is narrow: an already-enabled all_chats, a trigger_chat scope, or turning Off keep the stored scope', async () => {
+    // already on with a confirmed all_chats: re-sending enabled=true (or another readTools member) changes no scope
+    const on = setup();
+    on.f.state.settings.whatsapp.readTools = { enabled: true, scope: 'all_chats', windowDays: 30 };
+    const r1 = await on.h['settings:set']({ whatsapp: { readTools: { enabled: true, windowDays: 7 } } }, CTX);
+    expect(r1.ok && r1.value.whatsapp.readTools).toEqual({ enabled: true, scope: 'all_chats', windowDays: 7 });
+    expect(on.f.rec.audits).toEqual([
+      { kind: 'settings_changed', ref: null, detail: { groups: 'whatsapp' }, now: NOW_0 },
+    ]);
+    // off with trigger_chat: enabling is plain
+    const plain = setup();
+    plain.f.state.settings.whatsapp.readTools = { enabled: false, scope: 'trigger_chat', windowDays: 30 };
+    const r2 = await plain.h['settings:set']({ whatsapp: { readTools: { enabled: true } } }, CTX);
+    expect(r2.ok && r2.value.whatsapp.readTools.scope).toBe('trigger_chat');
+    expect(plain.f.rec.audits).toHaveLength(1);
+    // off with all_chats and a patch that does not enable: the scope stays (nothing reads while Off)
+    const off = setup();
+    off.f.state.settings.whatsapp.readTools = { enabled: false, scope: 'all_chats', windowDays: 30 };
+    const r3 = await off.h['settings:set']({ whatsapp: { readTools: { windowDays: 10 } } }, CTX);
+    expect(r3.ok && r3.value.whatsapp.readTools).toEqual({ enabled: false, scope: 'all_chats', windowDays: 10 });
+    const r4 = await off.h['settings:set']({ whatsapp: { readTools: { enabled: false } } }, CTX);
+    expect(r4.ok && r4.value.whatsapp.readTools.scope).toBe('all_chats');
+  });
+
+  it('a guarded re-enable that is refused writes nothing - not even the narrowing', async () => {
+    // refused by an earlier check (voice models not ready)
+    const early = setup({ voice: { ...READY, vad: { status: 'none' } } });
+    early.f.state.settings.whatsapp.readTools = { enabled: false, scope: 'all_chats', windowDays: 30 };
+    expect(
+      await early.h['settings:set']({ voice: { enabled: true }, whatsapp: { readTools: { enabled: true } } }, CTX),
+    ).toEqual({ ok: false, error: { code: 'VOICE_MODEL_MISSING' } });
+    expect(early.f.state.settings.whatsapp.readTools).toEqual({ enabled: false, scope: 'all_chats', windowDays: 30 });
+    // refused by the merged-object check (only reachable past register.ts's strict parse if the schema bound drifted)
+    const merged = setup();
+    merged.f.state.settings.whatsapp.readTools = { enabled: false, scope: 'all_chats', windowDays: 30 };
+    expect(
+      await merged.h['settings:set']({ whatsapp: { readTools: { enabled: true, windowDays: 0 } } } as never, CTX),
+    ).toEqual({ ok: false, error: { code: 'BAD_REQUEST' } });
+    expect(merged.f.state.settings.whatsapp.readTools).toEqual({ enabled: false, scope: 'all_chats', windowDays: 30 });
+    expect(merged.f.rec.audits).toEqual([]);
+  });
+
   it('images and readTools toggles are accepted; the audit names the groups, never a value', async () => {
     const { f, h } = setup();
     const res = await h['settings:set']({ images: { cloud: false }, whatsapp: { readTools: { windowDays: 14 } } }, CTX);

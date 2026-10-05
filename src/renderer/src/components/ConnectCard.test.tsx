@@ -28,7 +28,7 @@ const agy = (patch: Partial<CliStatus> = {}): CliStatus =>
 beforeEach(() => {
   useSettingsStore.setState({ settings: DEFAULT_SETTINGS });
   useHealthStore.setState({ health: defaultHealth });
-  useCliStore.setState({ status: {}, checkedAt: {}, error: {} });
+  useCliStore.setState({ status: {}, checkedAt: {}, error: {}, signInError: {}, signInStartedAt: {} });
   useFocusGuardStore.setState({ activationBlockedUntil: 0 });
 });
 afterEach(() => {

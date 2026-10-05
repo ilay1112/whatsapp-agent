@@ -143,9 +143,7 @@ describe('argv + env literal (production builders, fake witness)', () => {
       '--agent',
       'wca-extract',
       '--model',
-      'gemini-3.8-flash-high',
-      '--effort',
-      'low',
+      'gemini-3.8-flash-high', // [D-080] a suffixed slug: no --effort (agy 1.2.16 refuses the pair)
       '--output-format',
       'stream-json',
       '--input-format',
@@ -209,13 +207,11 @@ describe('argv + env literal (production builders, fake witness)', () => {
     await p.validate(new AbortController().signal).catch(() => undefined);
     expect(w.spawnedArgs).toHaveLength(1);
     const argv = w.spawnedArgs[0] ?? [];
-    expect(argv.slice(0, 13)).toEqual([
+    expect(argv.slice(0, 11)).toEqual([
       '--agent',
       'wca-smoke',
       '--model',
-      'gemini-3.8-flash-high',
-      '--effort',
-      'low',
+      'gemini-3.8-flash-high', // [D-080] a suffixed slug: no --effort (agy 1.2.16 refuses the pair)
       '--output-format',
       'stream-json',
       '--input-format',
@@ -224,7 +220,7 @@ describe('argv + env literal (production builders, fake witness)', () => {
       '20s',
       '--disable-slash-commands',
     ]);
-    expect(argv[13]).toBe('--json-schema');
+    expect(argv[11]).toBe('--json-schema');
     const [j] = runs(w);
     expect(j?.stage).toBe('smoke');
     expect(j?.agentFile.bodySha256).toBe(sha256(CLI_SMOKE_SYSTEM));
@@ -665,5 +661,126 @@ describe('the fake speaks the documented stream-json; the W1-09 classifiers read
     expect(r.status).toBe(1);
     expect(r.first).toBeUndefined();
     expect(r.stderr).toMatch(/authentication required/);
+  });
+});
+
+// [D-080] Live diagnostic (user-approved, agy 1.2.16): `--model gemini-3.8-flash-high --effort low` is refused with one stderr line, exit 1
+// and a {"event":"result",...,"error":...} as the FIRST stdout event (no init). The fake now does exactly that, so a regression of the argv
+// builder (passing --effort next to a suffixed slug) fails here; and an error event before init is a classified failure - never
+// CLI_TOOLSET_MISMATCH, never proven, never retried with other flags.
+describe('[D-080] model / effort conflict and error events before init (fake = agy 1.2.16 behaviour)', () => {
+  const runWithArgs = (w: AgyFakeWorld, model: string, extra: string[]) => {
+    const ws = path.join(w.userData, 'agy-workspace');
+    const runDir = path.join(ws, 'runs', `direct-${crypto.randomBytes(3).toString('hex')}`);
+    const home = planAgyHome(w.userData, ws);
+    for (const f of home.files) {
+      fs.mkdirSync(path.dirname(f.path), { recursive: true });
+      fs.writeFileSync(f.path, f.text);
+    }
+    fs.mkdirSync(path.join(runDir, '.agents', 'agents'), { recursive: true });
+    fs.writeFileSync(
+      path.join(runDir, '.agents', 'agents', 'wca-extract.md'),
+      buildAgentFile('extract', AGY_S1_SYSTEM),
+    );
+    fs.writeFileSync(path.join(runDir, 'schema.json'), JSON.stringify(AGY_S1_SCHEMA));
+    const args = [
+      ...buildAgyArgs(
+        {
+          provider: 'antigravity_cli',
+          stage: 'extract',
+          exePath: w.exePath,
+          model,
+          system: AGY_S1_SYSTEM,
+          stdinLine: buildAgyStdinLine(AGY_S1_USER),
+          jsonSchema: AGY_S1_SCHEMA,
+          maxTurns: 1,
+          wallClockMs: LIMITS.cliWallClockExtractMs,
+          toolServer: null,
+          observedVersion: '1.2.16',
+        },
+        path.join(runDir, 'schema.json'),
+      ),
+      ...extra,
+    ];
+    const r = cp.spawnSync(
+      process.execPath,
+      [FAKE_AGY, '--fake-journal', w.journalFile, '--fake-state', w.stateFile, '--fake-end', ...args],
+      {
+        encoding: 'utf8',
+        cwd: runDir,
+        env: buildAgyEnv({ processEnv: w.processEnv, tempDir: runDir, home: home.env }),
+        input: `${buildAgyStdinLine(AGY_S1_USER)}\n`,
+        windowsHide: true,
+        timeout: 10_000,
+      },
+    );
+    fs.rmSync(runDir, { recursive: true, force: true });
+    const first = r.stdout.split('\n').find((l) => l.trim().length > 0);
+    return {
+      status: r.status,
+      stderr: r.stderr,
+      args,
+      first: first === undefined ? undefined : (JSON.parse(first) as unknown),
+    };
+  };
+
+  it('the fake refuses --effort next to a suffixed slug exactly like 1.2.16: stderr line, exit 1, a result event FIRST, no init', () => {
+    const w = world({ registerJournal: false }); // this test PROVOKES the effort_with_suffixed_model violation
+    const r = runWithArgs(w, 'gemini-3.8-flash-high', ['--effort', 'low']);
+    expect(r.status).toBe(1);
+    expect(r.stderr.trim()).toBe(
+      'error: invalid model selection (--model "gemini-3.8-flash-high" --effort "low"): --model gemini-3.8-flash-high conflicts with --effort=low',
+    );
+    expect(Object.keys(r.first as object).sort()).toEqual(
+      ['conversation_id', 'duration_seconds', 'error', 'event', 'num_turns', 'response', 'status', 'usage'].sort(),
+    );
+    expect(r.first).toMatchObject({ event: 'result', error: expect.stringMatching(/conflicts with --effort=low/) });
+    expect(checkAgyInit(r.first, 'extract')).toMatchObject({ initOk: false });
+    expect(runs(w)[0]?.violations).toContain('effort_with_suffixed_model');
+  });
+
+  it('the production argv never provokes it: suffixed slug => no --effort; plain slug => --effort low (both clean in the journal)', () => {
+    const w = world();
+    const a = runWithArgs(w, 'gemini-3.8-flash-high', []);
+    expect(a.args).not.toContain('--effort');
+    expect(a.status).toBe(0);
+    expect(checkAgyInit(a.first, 'extract')).toMatchObject({ initOk: true });
+    const b = runWithArgs(w, 'gemini-3.8-flash', []);
+    expect(b.args.slice(2, 6)).toEqual(['--model', 'gemini-3.8-flash', '--effort', 'low']);
+    expect(b.status).toBe(0);
+    for (const j of runs(w)) expect(j.violations).toEqual([]);
+  });
+
+  it.each([
+    ['result_error_auth', 'not_logged_in'],
+    ['result_error_quota', 'usage_limit'],
+    ['result_error_other', 'network'],
+  ] as const)(
+    'mode %s through the production runner + provider => LlmError %s, NO proof, no toolset_mismatch, ONE spawn',
+    async (mode, code) => {
+      const w = world({ state: { mode } });
+      const sink = sandboxSink();
+      const err = await w
+        .provider()
+        .structured(S1, AGY_S1_SCHEMA, opts({ onSandbox: sink.onSandbox }))
+        .catch((e: unknown) => e);
+      expect(err).toBeInstanceOf(LlmError);
+      expect((err as LlmError).code).toBe(code);
+      expect(sink.proofs).toEqual([
+        { initOk: false, toolsCount: 0, mcpServers: 0, apiKeySource: 'unknown', mismatch: null },
+      ]);
+      expect(w.spawnedArgs).toHaveLength(1);
+      expect(w.audits.filter((a) => a.kind === 'toolset_mismatch')).toEqual([]);
+      const row = w.audits.find((a) => a.kind === 'cli_run');
+      expect(row?.detail).toMatchObject({ initOk: false, errorBeforeInit: code });
+      expect(runs(w)[0]?.turnStarted).toBe(false);
+      expect(leftovers(w)).toEqual([]);
+    },
+  );
+
+  it('the provider-start smoke reports the classified reason (a model rejection is CLI_MODEL_REJECTED, not a toolset change)', async () => {
+    const w = world({ state: { mode: 'result_error_auth' } });
+    expect(await w.provider().validate(new AbortController().signal)).toEqual({ ok: false, reason: 'not_logged_in' });
+    expect(w.audits.filter((a) => a.kind === 'toolset_mismatch')).toEqual([]);
   });
 });

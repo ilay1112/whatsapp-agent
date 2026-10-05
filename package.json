@@ -3,6 +3,7 @@
   "productName": "WhatsApp Calendar Agent",
   "version": "0.1.0",
   "private": true,
+  "license": "MIT",
   "type": "module",
   "main": "./out/main/index.js",
   "engines": {
@@ -31,7 +32,7 @@
     "fetch:whisper": "node scripts/fetch-whisper.mjs",
     "gen:fixtures": "node scripts/gen-v3-fixture.mjs && node scripts/gen-golden-images.mjs",
     "bench:wa": "vitest run --project integration tests/bench/wa-bridgedb.bench.test.ts",
-    "verify": "npm run lint && npm run format:check && npm run typecheck && npm run stage:mcp && npm run test:coverage && npm run test:e2e && npm run fetch:whisper && npm run test:smoke && npm run audit:prod"
+    "verify": "npm run lint && npm run format:check && npm run typecheck && npm run stage:mcp && npm run test:coverage && npm run test:e2e && npm run fetch:whisper && npm run test:smoke && npm run test:defender && npm run audit:prod"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "0.127.0",

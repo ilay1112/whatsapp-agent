@@ -11,6 +11,7 @@ import {
 } from '../../../shared/settings';
 import { CONSENT_KIND_FOR, CONSENT_KINDS, SECRET_NAMES } from '../../../shared/types';
 import type {
+  AppError,
   ApiKeyProviderId,
   CliProviderId,
   CliState,
@@ -45,12 +46,12 @@ export const PRESETS_FOR: Record<ApiKeyProviderId, readonly string[]> = {
 };
 /** [V2] B12: a CLI provider is selectable only with a passed smoke test (cli:test) no older than this. */
 export const CLI_TEST_FRESH_MS = 24 * 3600_000;
-/** [V2] The ErrorCode a non-ready CLI state maps to (the Connect card's one action). 'unknown' = auth status unparsable. */
-export const CLI_STATE_CODE: Record<Exclude<CliState, 'ready'>, ErrorCode> = {
+/** [V2] The ErrorCode a non-ready CLI state maps to (the Connect card's one action). [D-080] 'unknown' (the status could not tell -
+ *  auth status unparsable, or the probe failed) is NOT here: it is never reported as "not signed in" (B13); the smoke test decides. */
+export const CLI_STATE_CODE: Record<Exclude<CliState, 'ready' | 'unknown'>, ErrorCode> = {
   not_installed: 'CLI_NOT_INSTALLED',
   too_old: 'CLI_VERSION',
   not_signed_in: 'CLI_NOT_SIGNED_IN',
-  unknown: 'CLI_NOT_SIGNED_IN',
 };
 /** [V2] The agy model listing is vendor-CLI text (B27): only ids the settings schema would accept reach the renderer, capped. */
 export const AGY_MODELS_MAX = 50;
@@ -109,21 +110,26 @@ export function createLlmHandlers(deps: HandlerDeps, v2?: LlmHandlersV2): Pick<I
    * (CONSENT_REQUIRED) -> a passed cli:test within 24 h (CLI_UNSTABLE). Checked BEFORE the switch; the consent dialog is the only
    * way to satisfy the second, so a CLI provider can never be selected without it (B21).
    */
-  const cliPrecondition = async (provider: CliProviderId): Promise<ErrorCode | null> => {
+  const cliPrecondition = async (provider: CliProviderId): Promise<AppError | null> => {
     if (v2 === undefined) {
       deps.log.error('ipc_v2_unwired', { channel: 'llm:setProvider' });
-      return 'INTERNAL';
+      return { code: 'INTERNAL' };
     }
     const status = await v2.cliStatus.get(provider);
-    if (status.state !== 'ready') return CLI_STATE_CODE[status.state];
-    if (!deps.repos.consents.isCurrent(CONSENT_FOR[provider])) return 'CONSENT_REQUIRED';
+    const state = status.state;
+    const unknown = state === 'unknown';
+    if (state !== 'ready' && state !== 'unknown') return { code: CLI_STATE_CODE[state] };
+    if (!deps.repos.consents.isCurrent(CONSENT_FOR[provider])) return { code: 'CONSENT_REQUIRED' };
     const test = status.lastTest;
-    if (test !== null && test.ok && deps.clock.now() - test.at <= CLI_TEST_FRESH_MS) return null;
+    // [D-080] "could not tell" never relies on an older test: the smoke below asks the CLI itself, NOW
+    if (!unknown && test !== null && test.ok && deps.clock.now() - test.at <= CLI_TEST_FRESH_MS) return null;
+    // without a smoke runner nothing is claimed: params.state tells the renderer to say "Could not tell whether you are signed in"
+    if (unknown && v2.runCliTest === undefined) return { code: 'CLI_NOT_SIGNED_IN', params: { state: 'unknown' } };
     // [v2-repair REQUEST 13] no passed test within 24 h (typically: never tested yet) is not "keeps stopping": run the provider-start
     // smoke now, exactly as cli:test does, and answer with ITS outcome. The consent was checked above; nothing else is sent.
-    if (v2.runCliTest === undefined) return 'CLI_UNSTABLE';
+    if (v2.runCliTest === undefined) return { code: 'CLI_UNSTABLE' };
     const ran = await v2.runCliTest(provider);
-    return ran.ok ? null : ran.error.code;
+    return ran.ok ? null : { code: ran.error.code };
   };
 
   /** [V2] llm:listModels for a CLI id: Claude = the alias presets (the CLI has no listing); agy = its model listing, schema-filtered. */
@@ -155,7 +161,7 @@ export function createLlmHandlers(deps: HandlerDeps, v2?: LlmHandlersV2): Pick<I
     'llm:setProvider': async (req) => {
       if (isCliProvider(req.provider)) {
         const refused = await cliPrecondition(req.provider);
-        if (refused !== null) return fail(refused);
+        if (refused !== null) return fail(refused.code, refused.params);
       } else if (req.provider === 'local') {
         const plan = await deps.modelManager.plan();
         const selected = plan.tiers.find((t) => t.tier === plan.selectedTier);

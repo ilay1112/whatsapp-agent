@@ -118,6 +118,24 @@ describe('readSeams two-lock matrix', () => {
       })!.fakeBridge,
     ).toBeUndefined();
   });
+
+  it('[D-080] WCA_CONSOLE_DIR (the tracked e2e S-CONSOLE recorder) takes an absolute drive path only', () => {
+    const base = { argv: [], isPackaged: false, mode: 'e2e' };
+    const dir = (v: string | undefined) =>
+      readSeams({ ...base, env: { WCA_E2E: '1', WCA_CONSOLE_DIR: v } })!.consoleDir;
+    expect(dir('C:\\Users\\x\\AppData\\Local\\Temp\\wca-e2e-1\\wca-consoles\\a')).toBe(
+      'C:\\Users\\x\\AppData\\Local\\Temp\\wca-e2e-1\\wca-consoles\\a',
+    );
+    expect(dir(undefined)).toBeUndefined();
+    expect(dir('')).toBeUndefined();
+    expect(dir('relative\\dir')).toBeUndefined();
+    expect(dir('\\\\server\\share\\dir')).toBeUndefined();
+    expect(dir('C:\\tmp\\..\\Windows')).toBeUndefined();
+    // the production locks still win
+    expect(
+      readSeams({ argv: [], isPackaged: true, mode: 'e2e', env: { WCA_E2E: '1', WCA_CONSOLE_DIR: 'C:\\x' } }),
+    ).toBeNull();
+  });
 });
 
 describe('installTestHooks (globalThis.__wcaTest)', () => {

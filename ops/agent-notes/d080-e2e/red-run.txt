@@ -1,0 +1,105 @@
+
+Running 3 tests using 1 worker
+
+  x  1 tests\e2e\cli-signin.spec.ts:51:1 › (a) Claude, expired session: the error card offers Sign in -> auth login --claudeai in a visible console -> closing it re-tests by itself -> Ready (15.4s)
+  x  2 tests\e2e\cli-signin.spec.ts:129:1 › (b) Antigravity: an effort-suffixed model runs without --effort and passes; a refused model is CLI_MODEL_REJECTED -> Choose another model (1.2m)
+  x  3 tests\e2e\cli-signin.spec.ts:210:1 › (c) Antigravity sign-in: the console runs in the isolated agy-home profile; closing it re-tests by itself -> Ready (12.7s)
+
+
+  1) tests\e2e\cli-signin.spec.ts:51:1 › (a) Claude, expired session: the error card offers Sign in -> auth login --claudeai in a visible console -> closing it re-tests by itself -> Ready 
+
+    Error: expect(received).toBe(expected) // Object.is equality
+
+    Expected: 1
+    Received: 0
+
+    Call Log:
+    - Timeout 10000ms exceeded while waiting on the predicate
+
+      82 |   // Sign in: exactly one console, the located exe + `auth login --claudeai`, never cmd.exe; nothing was spawned
+      83 |   await action.click();
+    > 84 |   await expect.poll(() => rec.calls().length, { timeout: 10_000 }).toBe(1);
+         |                                                                    ^
+      85 |   const c = rec.calls()[0]!;
+      86 |   expect(samePath(c.argv[0]!, w.cli.claude!.command), 'the console runs the LOCATED exe').toBe(true);
+      87 |   expect(c.argv.slice(1)).toEqual(['auth', 'login', '--claudeai']);
+        at C:\dev\whatsapp agent\tests\e2e\cli-signin.spec.ts:84:68
+
+    Error Context: test-results\cli-signin--a-Claude-expir-19d01--re-tests-by-itself---Ready\error-context.md
+
+    attachment #2: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results\cli-signin--a-Claude-expir-19d01--re-tests-by-itself---Ready\trace.zip
+    Usage:
+
+        npx playwright show-trace test-results\cli-signin--a-Claude-expir-19d01--re-tests-by-itself---Ready\trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  2) tests\e2e\cli-signin.spec.ts:129:1 › (b) Antigravity: an effort-suffixed model runs without --effort and passes; a refused model is CLI_MODEL_REJECTED -> Choose another model 
+
+    Error: expect(locator).toHaveAttribute(expected) failed
+
+    Locator:  getByTestId('connect-test-result-antigravity_cli')
+    Expected: "0"
+    Received: "1"
+    Timeout:  60000ms
+
+    Call log:
+      - Expect "toHaveAttribute" getByTestId('connect-test-result-antigravity_cli') with timeout 60000ms
+      - waiting for getByTestId('connect-test-result-antigravity_cli')
+        121 × locator resolved to <span data-ok="1" class="text-ok" data-testid="connect-test-result-antigravity_cli">Works - answered in about 1 s</span>
+            - unexpected value "1"
+
+
+      173 |   await expect.poll(() => runsOf(w.cli.agy!.journal(), 'smoke').length, { timeout: 60_000 }).toBe(3);
+      174 |   const result = page.getByTestId('connect-test-result-antigravity_cli');
+    > 175 |   await expect(result).toHaveAttribute('data-ok', '0', { timeout: 60_000 });
+          |                        ^
+      176 |   await expect(result).toContainText('did not accept the chosen model');
+      177 |   await expect(result).not.toContainText(TOOLSET_MISMATCH_TEXT);
+      178 |   const refused = runsOf(w.cli.agy!.journal(), 'smoke')[2]!;
+        at C:\dev\whatsapp agent\tests\e2e\cli-signin.spec.ts:175:24
+
+    Error Context: test-results\cli-signin--b-Antigravity--1519f-CTED---Choose-another-model\error-context.md
+
+    attachment #2: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results\cli-signin--b-Antigravity--1519f-CTED---Choose-another-model\trace.zip
+    Usage:
+
+        npx playwright show-trace test-results\cli-signin--b-Antigravity--1519f-CTED---Choose-another-model\trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  3) tests\e2e\cli-signin.spec.ts:210:1 › (c) Antigravity sign-in: the console runs in the isolated agy-home profile; closing it re-tests by itself -> Ready 
+
+    Error: expect(received).toBe(expected) // Object.is equality
+
+    Expected: 1
+    Received: 0
+
+    Call Log:
+    - Timeout 10000ms exceeded while waiting on the predicate
+
+      229 |   await expect.poll(() => connectState(page, 'antigravity_cli'), { timeout: 30_000 }).toBe('not_signed_in');
+      230 |   await page.getByTestId('connect-signin-antigravity_cli').click();
+    > 231 |   await expect.poll(() => rec.calls().length, { timeout: 10_000 }).toBe(1);
+          |                                                                    ^
+      232 |
+      233 |   const c = rec.calls()[0]!;
+      234 |   const agyHome = join(userDataDir, 'agy-home');
+        at C:\dev\whatsapp agent\tests\e2e\cli-signin.spec.ts:231:68
+
+    Error Context: test-results\cli-signin--c-Antigravity--f6a06--re-tests-by-itself---Ready\error-context.md
+
+    attachment #2: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results\cli-signin--c-Antigravity--f6a06--re-tests-by-itself---Ready\trace.zip
+    Usage:
+
+        npx playwright show-trace test-results\cli-signin--c-Antigravity--f6a06--re-tests-by-itself---Ready\trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  3 failed
+    tests\e2e\cli-signin.spec.ts:51:1 › (a) Claude, expired session: the error card offers Sign in -> auth login --claudeai in a visible console -> closing it re-tests by itself -> Ready 
+    tests\e2e\cli-signin.spec.ts:129:1 › (b) Antigravity: an effort-suffixed model runs without --effort and passes; a refused model is CLI_MODEL_REJECTED -> Choose another model 
+    tests\e2e\cli-signin.spec.ts:210:1 › (c) Antigravity sign-in: the console runs in the isolated agy-home profile; closing it re-tests by itself -> Ready 

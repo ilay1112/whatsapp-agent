@@ -66,7 +66,7 @@ beforeEach(() => {
   useSettingsStore.setState({ settings: null, saveError: null, savedAt: 0, voiceIntent: null });
   useDashboardStore.setState({ ignoredCount: 0, toast: null, arrivedItemIds: new Set() });
   useAutoStore.setState({ state: null, rows: [], fetchedAt: 0 });
-  useCliStore.setState({ status: {}, checkedAt: {}, error: {} });
+  useCliStore.setState({ status: {}, checkedAt: {}, error: {}, signInError: {}, signInStartedAt: {} });
 });
 
 const boot = async () => {

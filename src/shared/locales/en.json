@@ -581,6 +581,11 @@
       "title": "Gemini setup on this computer is not safe to use",
       "body": "Your Antigravity setup loads extra tools or hooks in every run. The app will not use it until they are removed.",
       "action": "Open AI settings"
+    },
+    "CLI_MODEL_REJECTED": {
+      "title": "{{cli}} did not accept the chosen model",
+      "body": "{{cli}} refused the selected model with the settings the app uses. Choose another model, then run a test.",
+      "action": "Choose another model"
     }
   },
   "event": {
@@ -1905,6 +1910,12 @@
     "vendor": {
       "claude_cli": "Anthropic",
       "antigravity_cli": "Google"
+    },
+    "session": {
+      "open": "A sign-in window opened. Finish signing in there - the app will test again when it closes.",
+      "retesting": "Testing {{cli}}...",
+      "ok": "Signed in - {{cli}} works.",
+      "failed": "The test after signing in did not pass. Try signing in again."
     }
   }
 }

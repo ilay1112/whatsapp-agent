@@ -269,6 +269,10 @@ describe('every mode of T2 3.2 through the production runner', () => {
     hang: { code: 'network', turnStarted: false },
     garbage_lines: { ok: true },
     global_mcp_present: { ok: true }, // isolated mode: the planted global server is never seen (fallback mode: agy.sandbox.test.ts)
+    // [D-080] an error result INSTEAD of the init: classified by its text (never sandbox), killed before any turn
+    result_error_auth: { code: 'not_logged_in', turnStarted: false },
+    result_error_quota: { code: 'usage_limit', turnStarted: false },
+    result_error_other: { code: 'network', turnStarted: false },
   };
   it('the table covers every frozen mode', () => {
     expect(Object.keys(EXPECT).sort()).toEqual([...FAKE_AGY_MODES].sort());

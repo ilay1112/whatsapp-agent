@@ -67,10 +67,10 @@ const FORBIDDEN_FLAGS = {
   '--dangerously-skip-permissions': false,
   '--sandbox': false,
 };
+/** [D-080] `--effort` is required only for a slug WITHOUT an effort suffix (agy 1.2.16 refuses it next to a suffixed slug). */
 const REQUIRED_RUN_FLAGS = [
   '--agent',
   '--model',
-  '--effort',
   '--output-format',
   '--input-format',
   '--print-timeout',
@@ -91,6 +91,10 @@ export const FAKE_AGY_MODES = [
   'hang',
   'garbage_lines',
   'global_mcp_present',
+  // [D-080] an error event INSTEAD of the init (the shape agy 1.2.16 printed in the live diagnostic): auth / quota / anything else
+  'result_error_auth',
+  'result_error_quota',
+  'result_error_other',
 ];
 const INIT_FAILURE_MODES = new Set(['extra_tools', 'agent_mismatch', 'perm_mode']);
 /** // ASSUMED (U-A3): the AGY_ERROR payloads (field names unverified; the app classifies by substrings only). */
@@ -99,6 +103,33 @@ export const AGY_ERROR_LINES = {
   exit3_auth:
     'AGY_ERROR: {"status":"UNAUTHENTICATED","code":401,"message":"authentication required","error_id":"fake-auth"}',
   exit3_other: 'AGY_ERROR: {"status":"INTERNAL","code":500,"retryable":true,"error_id":"fake-internal"}',
+};
+/** [D-080] Live diagnostic, agy 1.2.16: a model slug that carries its effort (as `agy models` lists them) refuses `--effort`. */
+export const EFFORT_SUFFIX_RE = /-(minimal|low|medium|high|xhigh|max)$/i;
+export const effortConflictLine = (model, effort) =>
+  `error: invalid model selection (--model "${model}" --effort "${effort}"): --model ${model} conflicts with --effort=${effort}`;
+/** [D-080 e2e] A refused model (state.rejectedModels). // ASSUMED: only the prefix up to `(--model "X"` is from the live capture. */
+export const rejectedModelLine = (model) =>
+  `error: invalid model selection (--model "${model}"): model ${model} is not available for this account`;
+/** [D-080] The FIRST stdout event of a refused start: keys exactly as captured (conversation_id, status, response, error, duration_seconds,
+ *  num_turns, usage) and NO init before it. The VALUES of status / response / usage are // ASSUMED (only the keys were recorded). */
+export function errorResultEvent(conversationId, error) {
+  return {
+    event: 'result',
+    conversation_id: conversationId,
+    status: 'ERROR',
+    response: '',
+    error,
+    duration_seconds: 0.01,
+    num_turns: 0,
+    usage: {},
+  };
+}
+/** // ASSUMED: the error texts of the result_error_* modes (the app classifies by substrings only). */
+export const RESULT_ERROR_TEXTS = {
+  result_error_auth: 'authentication required: sign in with agy first',
+  result_error_quota: 'RESOURCE_EXHAUSTED: quota exceeded (429)',
+  result_error_other: 'internal error',
 };
 const AUTH_REQUIRED_LINE = 'Error: authentication required. Run `agy` once in a terminal to sign in.';
 const NONCE_BLOCK_RE = /<<DATA-([0-9a-f]{8,64})>>[\s\S]*?<<END-DATA-\1>>/g;
@@ -448,6 +479,12 @@ async function main() {
     entry.violations.push('input_format_not_stream_json');
   if (parsed.opts['--effort'] !== undefined && parsed.opts['--effort'] !== 'low')
     entry.violations.push('effort_not_low');
+  const modelSlug = typeof parsed.opts['--model'] === 'string' ? parsed.opts['--model'] : '';
+  const slugHasEffort = EFFORT_SUFFIX_RE.test(modelSlug);
+  // [D-080] the app passes --effort exactly when the slug has no effort of its own
+  if (!slugHasEffort && parsed.opts['--effort'] === undefined) entry.violations.push('missing_flag:--effort');
+  const effortConflict = slugHasEffort && parsed.opts['--effort'] !== undefined;
+  if (effortConflict) entry.violations.push('effort_with_suffixed_model');
   if (parsed.opts['--print-timeout'] !== undefined && !/^\d+(ms|s|m|h)$/.test(parsed.opts['--print-timeout']))
     entry.violations.push('print_timeout_format');
   if (typeof parsed.opts['--model'] === 'string' && !/^[A-Za-z0-9._-]{1,100}$/.test(parsed.opts['--model']))
@@ -513,6 +550,29 @@ async function main() {
   journal(); // phase 'started'
   if (stdin.envelope !== 'agy') {
     process.stderr.write('Error: malformed input\n');
+    finish(1);
+    return;
+  }
+  // [D-080] exactly what agy 1.2.16 did for `--model gemini-3.8-flash-high --effort low`: one stderr line, then a result event carrying
+  // the error as the FIRST stdout event (no init), exit 1.
+  if (effortConflict) {
+    const line = effortConflictLine(modelSlug, parsed.opts['--effort']);
+    process.stderr.write(`${line}\n`);
+    out(errorResultEvent(`fake-${invocation}`, line.replace(/^error: /, '')));
+    finish(1);
+    return;
+  }
+  // [D-080 e2e] a model this CLI refuses (state.rejectedModels): the same SHAPE as the captured 1.2.16 refusal - one stderr line, then
+  // an error result as the FIRST stdout event (no init), exit 1. // ASSUMED: the wording after `invalid model selection (--model "X"`.
+  if (Array.isArray(state.rejectedModels) && state.rejectedModels.includes(modelSlug)) {
+    const line = rejectedModelLine(modelSlug);
+    process.stderr.write(`${line}\n`);
+    out(errorResultEvent(`fake-${invocation}`, line.replace(/^error: /, '')));
+    finish(1);
+    return;
+  }
+  if (Object.hasOwn(RESULT_ERROR_TEXTS, mode)) {
+    out(errorResultEvent(`fake-${invocation}`, RESULT_ERROR_TEXTS[mode]));
     finish(1);
     return;
   }

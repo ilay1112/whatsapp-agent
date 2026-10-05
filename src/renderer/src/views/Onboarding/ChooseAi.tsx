@@ -17,6 +17,9 @@
 // ("Checking Claude..." meanwhile); main refuses a CLI that is not ready + consented + smoke-tested (B12). A failure keeps
 // the previous provider and says so ("Still using: ..."). Onboarding adds the voice-notes opt-in and the pictures sentence;
 // automatic mode is never offered here.
+// [D-080] That error card ALWAYS carries its one action (cliSignIn.ts): CLI_NOT_SIGNED_IN -> Sign in (cli:signIn for that
+// provider, the vendor's own login in a visible console), CLI_MODEL_REJECTED -> Choose another model (focus the model
+// control), every other code -> its ERROR_ACTION. The Connect card gets the code too, so it stops saying "signed in".
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
@@ -38,11 +41,12 @@ import {
   type TierSetting,
   type VoiceState,
 } from '@shared/types';
-import type { ErrorCode } from '@shared/errors';
+import { ERROR_ACTION, type ErrorCode } from '@shared/errors';
 import { formatModelSize } from '@shared/i18n/format';
 import { api } from '../../api';
 import { ConsentDialog, cloudConsentKindOf } from '../../components/ConsentDialog';
 import { ConnectCard } from '../../components/ConnectCard';
+import { cliErrorActionLabel, runCliErrorAction, signInBusy, signInSessionOf } from '../../components/cliSignIn';
 import { useCliStore } from '../../store/cli';
 import { isActivationBlocked } from '../../store/health';
 import { useSettingsStore } from '../../store/settings';
@@ -184,6 +188,19 @@ export function ChooseAi({ onDone, onBack, embedded = false }: ChooseAiProps) {
       cancelled = true;
     };
   }, [loadPlan, loadModels, embedded]);
+
+  // [D-080] A sign-in session that ended with a passing test makes a "not signed in" card stale: drop it.
+  useEffect(
+    () =>
+      useCliStore.subscribe((store) =>
+        setCliError((e) => {
+          if (!e || (e.code !== 'CLI_NOT_SIGNED_IN' && e.code !== 'CLOUD_AUTH')) return e;
+          const session = signInSessionOf(store.status[e.provider]);
+          return session?.phase === 'done' && session.outcome?.ok === true ? null : e;
+        }),
+      ),
+    [],
+  );
 
   const effectiveTier: ModelTier = tier === 'auto' ? (plan?.recommendedTier ?? 'small') : tier;
   const tierInfo = useMemo(() => plan?.tiers.find((row) => row.tier === effectiveTier) ?? null, [plan, effectiveTier]);
@@ -674,6 +691,7 @@ export function ChooseAi({ onDone, onBack, embedded = false }: ChooseAiProps) {
             size={embedded ? 'full' : 'compact'}
             status={status}
             selected={active}
+            lastError={cliError?.provider === provider ? cliError.code : null}
             onUse={() => startCli(provider, false)}
           />
         ) : (
@@ -691,6 +709,23 @@ export function ChooseAi({ onDone, onBack, embedded = false }: ChooseAiProps) {
             <p className="m-0 font-semibold">
               {t(`errors.${cliError.code}.title`, { cli: t(`cli.name.${provider}`), vendor })}
             </p>
+            <p className="m-0 text-sm">
+              {t(`errors.${cliError.code}.body`, { cli: t(`cli.name.${provider}`), vendor })}
+            </p>
+            {cliErrorActionLabel(t, provider, cliError.code) !== '' ? (
+              <button
+                type="button"
+                className="btn btn-outline mt-1"
+                data-testid={`ai-use-error-action-${provider}`}
+                disabled={
+                  signInBusy(signInSessionOf(status)) &&
+                  (ERROR_ACTION[cliError.code] === 'sign_in' || ERROR_ACTION[cliError.code] === 'sign_in_again')
+                }
+                onClick={() => void runCliErrorAction(t, provider, cliError.code)}
+              >
+                {cliErrorActionLabel(t, provider, cliError.code)}
+              </button>
+            ) : null}
             <p className="m-0 text-sm" data-testid={`ai-still-using-${provider}`}>
               {t('ai.stillUsing', { provider: cardName(config?.provider ?? 'local') })}
             </p>

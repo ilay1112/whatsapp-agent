@@ -1166,6 +1166,11 @@ export async function compose(deps: ComposeDeps): Promise<AppRuntimeHandle> {
       if (res.error === 'sandbox') cliIssue.set(req.provider, 'CLI_TOOLSET_MISMATCH');
       else if (res.error === null && res.sandbox.initOk) cliIssue.delete(req.provider);
       refreshLlmHealth();
+      // [D-080] a run that proved "not signed in" flips the Connect card at once (the status service overrules the cached probe)
+      if (res.error === 'not_logged_in') {
+        const peek = cliStatus.peek(req.provider);
+        if (peek !== null) emit('cli:changed', peek);
+      }
       return res;
     },
   };
@@ -1970,11 +1975,39 @@ export async function compose(deps: ComposeDeps): Promise<AppRuntimeHandle> {
   });
   /** S-CONSOLE: production spawns the vendor exe in its own visible console; an e2e build only RECORDS the argv (T2 4.2). */
   const consoleCalls: string[][] = [];
+  /** [D-080] WCA_CONSOLE_DIR: the e2e recorder is TRACKED - it writes console-<n>.json ({argv, cwd, env}: what production would have
+   *  spawned; nothing is spawned) and its `exited` resolves once the spec writes console-<n>.exit ("the window was closed"). */
+  const consoleDir = seams?.consoleDir;
+  const trackedE2eConsole = (
+    dir: string,
+    n: number,
+    argv: string[],
+    opts: { cwd?: string; env?: Record<string, string> },
+  ): import('./deps').VisibleConsoleHandle => {
+    const base = nodePath.join(dir, `console-${String(n)}`);
+    nodeFs.writeFileSync(
+      `${base}.json`,
+      JSON.stringify({ argv, cwd: opts.cwd ?? null, env: opts.env ?? null }),
+      'utf8',
+    );
+    const exited = new Promise<void>((resolve) => {
+      const poll = setInterval(() => {
+        if (lifecycle.closing || nodeFs.existsSync(`${base}.exit`)) {
+          clearInterval(poll);
+          resolve();
+        }
+      }, 200);
+      poll.unref();
+    });
+    return { exited };
+  };
   const cliConsole: import('./deps').OpenVisibleConsoleFn =
     deps.console ??
     (e2e
-      ? async (exe, args) => {
+      ? async (exe, args, opts) => {
           consoleCalls.push([exe, ...args]);
+          if (consoleDir === undefined) return; // untracked recorder (T2 4.2)
+          return trackedE2eConsole(consoleDir, consoleCalls.length, [exe, ...args], opts);
         }
       : createOpenVisibleConsole({ spawn }));
   const handlerDepsV2: HandlerDepsV2 = {
@@ -2023,6 +2056,11 @@ export async function compose(deps: ComposeDeps): Promise<AppRuntimeHandle> {
         observedVersion,
         now,
       }),
+    // [D-080] the guided sign-in session: the isolated agy profile, the runs' env source, the cli:changed push, the quit guard
+    userDataDir: paths.userData,
+    processEnv: cliEnv,
+    emitCliChanged: (s) => emit('cli:changed', s),
+    closed: () => lifecycle.closing,
   });
   /** [v2-repair REQUEST 13] llm:setProvider's smoke for a never/stale-tested CLI: the cli:test handler itself (same consent, same
    *  locator, same recorder), refused while the runner breaker is open (that IS "keeps stopping", reset only by a Test-again click). */

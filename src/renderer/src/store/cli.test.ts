@@ -6,7 +6,7 @@ import { useCliStore } from './cli';
 
 const status = (patch: Partial<CliStatus> = {}): CliStatus => ({ ...IPC_DEFAULTS['cli:getStatus'], ...patch });
 
-beforeEach(() => useCliStore.setState({ status: {}, checkedAt: {}, error: {} }));
+beforeEach(() => useCliStore.setState({ status: {}, checkedAt: {}, error: {}, signInError: {}, signInStartedAt: {} }));
 
 describe('useCliStore', () => {
   it("setStatus keeps the status per provider, stamps checkedAt and clears that provider's error only", () => {
@@ -33,5 +33,24 @@ describe('useCliStore', () => {
     await expect(useCliStore.getState().refresh('claude_cli')).resolves.toBeUndefined();
     expect(useCliStore.getState().error.claude_cli).toBe('INTERNAL');
     expect(useCliStore.getState().status.claude_cli).toBeUndefined();
+  });
+
+  it('[D-080] signIn asks main for the console, stamps the poll fallback and clears an older refusal', async () => {
+    useCliStore.setState({ signInError: { claude_cli: 'CLI_VERSION' } });
+    await expect(useCliStore.getState().signIn('claude_cli')).resolves.toBe(true);
+    expect(invokeMocks['cli:signIn']).toHaveBeenCalledExactlyOnceWith({ provider: 'claude_cli' });
+    expect(useCliStore.getState().signInError).toEqual({});
+    expect(useCliStore.getState().signInStartedAt.claude_cli).toBeTypeOf('number');
+    useCliStore.getState().clearSignInWait('claude_cli');
+    useCliStore.getState().clearSignInWait('claude_cli'); // idempotent
+    expect(useCliStore.getState().signInStartedAt).toEqual({});
+  });
+
+  it("[D-080] a refused signIn records the code and re-reads that provider's status", async () => {
+    mockInvoke('cli:signIn', () => ({ ok: false, error: { code: 'CLI_NOT_INSTALLED' } }));
+    await expect(useCliStore.getState().signIn('antigravity_cli')).resolves.toBe(false);
+    expect(useCliStore.getState().signInError).toEqual({ antigravity_cli: 'CLI_NOT_INSTALLED' });
+    expect(useCliStore.getState().signInStartedAt).toEqual({});
+    expect(invokeMocks['cli:getStatus']).toHaveBeenCalledWith({ provider: 'antigravity_cli' });
   });
 });
