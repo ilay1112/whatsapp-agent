@@ -567,6 +567,28 @@ describe('createCliStatus - cached status (<= 1 probe per cacheMs)', () => {
     agy.recordWorkspaceTrusted(true);
     expect((await agy.get('antigravity_cli')).workspaceTrusted).toBe(true);
   });
+
+  // e2e cli-connect (7a): llm:setProvider probes the status (cliPrecondition) and then invalidates the cache
+  // (providerFactory.invalidate -> cliStatus.invalidate). The lazy provider-start smoke of the first chat hits the usage window
+  // AFTER that, so compose's onCliQuota found peek() === null and pushed no cli:changed: the Connect card showed CLOUD_QUOTA
+  // (AppHealth) without the reset time until its own cli:getStatus finished a fresh probe (two CLI jobs, ~2 s). A recorded
+  // quota must be peekable from the last probed status even while the cache is dropped - peek() never probes, so it is cheap.
+  it('peek() after invalidate() still answers the last probed status, with a quota recorded afterwards', async () => {
+    const loc = fakeLocator(READY, true);
+    const svc = createCliStatus({ locator: loc, runner, clock: { now: () => 5 }, cacheMs: 60_000 });
+    const probed = await svc.get('claude_cli');
+    expect(probed.state).toBe('ready');
+    svc.invalidate();
+    svc.recordQuota('claude_cli', { resetsAt: 7_200_000, usingOverage: false });
+    expect(svc.peek('claude_cli')).toEqual({ ...probed, quota: { resetsAt: 7_200_000, usingOverage: false } });
+    expect(loc.finds, 'peek never probes').toBe(1);
+    expect(loc.auths).toBe(1);
+    // the next get() still re-probes (the cache really was dropped) and carries the same quota
+    const again = await svc.get('claude_cli');
+    expect(loc.finds).toBe(2);
+    expect(again.quota).toEqual({ resetsAt: 7_200_000, usingOverage: false });
+    expect(svc.peek('antigravity_cli'), 'never probed = null').toBeNull();
+  });
 });
 
 // [v2-closeout] e2e cli-connect (9): after cli:test invalidated the cache, the Connect card's follow-up cli:getStatus ran the locator
