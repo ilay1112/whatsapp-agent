@@ -141,3 +141,4 @@ Status: `todo` · `doing` · `review` · `done` · `blocked`. Details in `ops/ti
 | T-902 | Leftovers: signing docs + README v2 features, Defender gate in verify, midnight flake, settings guard | agent | done |
 | T-903 | e2e for the sign-in flow + full run; final proof | agents | done |
 | T-904 | v3 dashboard: dismiss X, schedule-only filter, week calendar, manual time (user request) | orchestrator + Opus workers | done |
+| T-905 | e2e cli-connect 7a: CLOUD_QUOTA row missing the reset time - cli:changed push skipped while the status cache was dropped | orchestrator | fixed, not committed |

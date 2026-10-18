@@ -82,7 +82,8 @@ export interface CliStatusRecorder extends CliStatusService {
   recordQuota(provider: CliProviderId, q: LlmQuota | null): void;
   /** antigravity_cli only (cli:allowWorkspace). */
   recordWorkspaceTrusted(trusted: boolean | null): void;
-  /** The last computed status without probing (null = never computed). */
+  /** The last probed status (with the live decorations: quota, test, sign-in) without probing - also after invalidate(), so a quota /
+   *  smoke recorded while the cache is dropped can still be pushed (cli:changed). null = never probed. */
   peek(provider: CliProviderId): CliStatusVM | null;
   /** [D-080] The guided sign-in session of cli:signIn (null = idle: the field is then absent from the status). */
   recordSignIn(provider: CliProviderId, session: CliSignInSession | null): void;
@@ -118,7 +119,7 @@ export function createCliStatus(deps: {
   closed?: () => boolean;
 }): CliStatusRecorder {
   const cache = new Map<CliProviderId, { at: EpochMs; status: CliStatusVM }>();
-  /** The last probed status per provider, kept across invalidate() for the closed path only. */
+  /** The last probed status per provider, kept across invalidate() for the closed path and for peek(). */
   const lastKnown = new Map<CliProviderId, CliStatusVM>();
   const inflight = new Map<CliProviderId, Promise<CliStatusVM>>();
   const tests = new Map<CliProviderId, CliStatus['lastTest']>();
@@ -225,8 +226,11 @@ export function createCliStatus(deps: {
       workspaceTrusted = trusted;
     },
     peek(provider) {
-      const hit = cache.get(provider);
-      return hit === undefined ? null : decorate(hit.status);
+      // e2e cli-connect (7a): llm:setProvider probes, then providerFactory.invalidate() drops the cache; the lazy provider-start smoke
+      // that hits the usage window comes AFTER that, and its quota must still reach the Connect card at once (compose's onCliQuota
+      // pushes peek()). The last probed status is never staler than anything the renderer holds - it only ever gets statuses from here.
+      const hit = cache.get(provider)?.status ?? lastKnown.get(provider);
+      return hit === undefined ? null : decorate(hit);
     },
   };
 }
