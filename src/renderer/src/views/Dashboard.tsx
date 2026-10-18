@@ -22,15 +22,26 @@
 // subscribes to `auto:changed` / `queue:changed` while it is mounted; the Needs-reply queue line becomes
 // "Transcribing a voice note (0:42)..." while a whisper job runs. Undo in the strip goes through `auto:undo` from the
 // row's click handler only; Pause is the fail-safe direction (no dialog, no guard).
+//
+// [V3] T-904 (handover §2.2 / §2.3; ux.md 6.11): a toolbar row above the AutoStrip holds the schedule-only filter
+// (`schedule-filter-toggle`, "Show all (N hidden)" / "Only schedules") and the cards / calendar switch (`view-switch`).
+// Both are renderer preferences remembered by store/dashboard.ts, never settings. The filter applies to the three lists
+// AND the calendar, never to the sheet (opening by id must work for a hidden card). The calendar view draws
+// `CalendarWeek` from the dashboard's own lists (no Google read) plus a "No date yet" side list - the existing
+// `ItemList` over the undated cards. Time zone = `settings.general.timeZone`, language = i18next.
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
+import type { EpochMs, ItemCard as ItemVM, Lang } from '@shared/types';
 import { useDashboardStore, LIST_KEYS, type ListKey } from '../store/dashboard';
+import { hiddenCount, selectCalendarEntries, visibleItems } from '../store/calendarEntries';
+import { useSettingsStore } from '../store/settings';
 import { useHealthStore } from '../store/health';
 import { useAutoStore } from '../store/auto';
 import { events } from '../api';
 import { AutoStrip } from '../components/AutoStrip';
 import { ItemList } from '../components/ItemList';
 import { ItemCard } from '../components/ItemCard';
+import { CalendarWeek } from '../components/CalendarWeek';
 import { CloseIcon, UndoDismissDrawer, useDialogChrome } from '../components/UndoDismissDrawer';
 import './dashboard.css';
 
@@ -73,8 +84,20 @@ function Skeletons() {
   );
 }
 
+/** Fallback zone until settings are hydrated (main always sets `general.timeZone`, R2). */
+const DEFAULT_TIME_ZONE = 'Asia/Jerusalem';
+/** The calendar's "today" is re-read once a minute while the calendar is on screen. */
+const NOW_TICK_MS = 60_000;
+
+/** One F6 stop: `root` decides whether focus is already inside the region, `focus` is where F6 lands. */
+interface F6Region {
+  root: HTMLElement;
+  focus: HTMLElement;
+}
+
 export function Dashboard() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
+  const lang: Lang = i18n.language === 'he' ? 'he' : 'en';
   const lists = useDashboardStore((s) => s.lists);
   const analysingFallback = useDashboardStore((s) => s.analysing);
   const hydrated = useDashboardStore((s) => s.hydrated);
@@ -93,6 +116,44 @@ export function Dashboard() {
   const autoRows = useAutoStore((s) => s.rows);
   const autoPolicy = useAutoStore((s) => s.state?.policy ?? null);
   const transcribing = (ownQueue ?? healthQueue)?.transcribing?.seconds ?? null;
+  // [V3] filter + view (remembered by the store) and the calendar's inputs
+  const scheduleOnly = useDashboardStore((s) => s.scheduleOnly);
+  const setScheduleOnly = useDashboardStore((s) => s.setScheduleOnly);
+  const view = useDashboardStore((s) => s.view);
+  const setView = useDashboardStore((s) => s.setView);
+  const calNoteSeen = useDashboardStore((s) => s.calNoteSeen);
+  const setCalNoteSeen = useDashboardStore((s) => s.setCalNoteSeen);
+  const timeZone = useSettingsStore((s) => s.settings?.general.timeZone ?? DEFAULT_TIME_ZONE);
+  const [anchorMs, setAnchorMs] = useState<EpochMs>(() => Date.now());
+  const [nowMs, setNowMs] = useState<EpochMs>(() => Date.now());
+  const calendarView = view === 'calendar';
+
+  useEffect(() => {
+    if (!calendarView) return;
+    const timer = setInterval(() => setNowMs(Date.now()), NOW_TICK_MS);
+    return () => clearInterval(timer);
+  }, [calendarView]);
+
+  /** §2.2: the cards each list shows, and how many the filter hides across all three ("Show all (N hidden)"). */
+  const shown = useMemo(
+    () =>
+      Object.fromEntries(LIST_KEYS.map((k) => [k, visibleItems(lists[k].items, scheduleOnly)])) as Record<
+        ListKey,
+        ItemVM[]
+      >,
+    [lists, scheduleOnly],
+  );
+  const hidden = useMemo(() => hiddenCount(lists, scheduleOnly), [lists, scheduleOnly]);
+  const calendar = useMemo(
+    () => (calendarView ? selectCalendarEntries(lists, scheduleOnly, timeZone) : null),
+    [calendarView, lists, scheduleOnly, timeZone],
+  );
+  /**
+   * A column's count is the server count minus the cards the filter hides from it, so `count-<key>` reads what the
+   * user can see and "Showing the latest 20 of N" still appears exactly when the server holds more than it sent. The
+   * line itself names the SERVER count (`totalCount`, v3 spec 2.2: unchanged by the filter).
+   */
+  const countOf = (k: ListKey): number => lists[k].count - (lists[k].items.length - shown[k].length);
 
   // [V2] automatic-mode store + the queue line, for as long as the dashboard is on screen.
   useEffect(() => {
@@ -172,22 +233,39 @@ export function Dashboard() {
     if (e.key === 'F6') {
       // UX 13.2 regions: header, column 1..3, footer. Header and footer belong to App.tsx, so they are found by testid.
       e.preventDefault();
+      const main = mainRef.current;
+      const one = (node: HTMLElement | null | undefined): F6Region | null =>
+        node ? { root: node, focus: node } : null;
+      const region = (rootSel: string, focusSel: string): F6Region | null => {
+        const root = main?.querySelector<HTMLElement>(rootSel) ?? null;
+        // Queried from <main> with the combined selector: an element-scoped "h2 > *" is unreliable in jsdom (nwsapi).
+        const focus = main?.querySelector<HTMLElement>(`${rootSel} ${focusSel}`) ?? null;
+        return root && focus ? { root, focus } : null;
+      };
+      // UX2 11.1 + [V3] ux.md 6.11: header -> dashboard toolbar -> AutoStrip (when present) -> the columns, or the
+      // calendar and its "No date yet" list -> footer. Focus anywhere inside a region (a card, a block) counts as "in" it.
+      const content = calendarView
+        ? [
+            region('[data-testid="calendar-week"]', '[data-testid="cal-range"]'),
+            region('[data-testid="cal-undated"]', 'h2 > *'),
+          ]
+        : visibleLists.map((k) => region(`[data-testid="list-${k}"]`, 'h2 > *'));
       const regions = [
-        document.querySelector<HTMLElement>('[data-testid="pause-toggle"]'),
-        // UX2 11.1: header -> AutoStrip (when present) -> columns -> footer.
-        mainRef.current?.querySelector<HTMLElement>('[data-testid="autostrip-toggle"]') ?? null,
-        ...visibleLists.map(
-          (k) => mainRef.current?.querySelector<HTMLElement>(`[data-testid="list-${k}"] h2 > *`) ?? null,
+        one(document.querySelector<HTMLElement>('[data-testid="pause-toggle"]')),
+        region('[data-testid="dash-toolbar"]', 'button'),
+        one(main?.querySelector<HTMLElement>('[data-testid="autostrip-toggle"]')),
+        ...content,
+        one(
+          document.querySelector<HTMLElement>('[data-testid="undo-dismiss"]') ??
+            document.querySelector<HTMLElement>('[data-testid="app-version"]'),
         ),
-        document.querySelector<HTMLElement>('[data-testid="undo-dismiss"]') ??
-          document.querySelector<HTMLElement>('[data-testid="app-version"]'),
-      ].filter((n): n is HTMLElement => n !== null);
+      ].filter((r): r is F6Region => r !== null);
       if (regions.length === 0) return;
       const active = document.activeElement;
-      const current = regions.findIndex((n) => n === active || n.contains(active));
+      const current = regions.findIndex((r) => r.root === active || r.root.contains(active));
       const step = e.shiftKey ? -1 : 1;
       const from = current === -1 ? (e.shiftKey ? 0 : -1) : current;
-      const next = regions[(((from + step) % regions.length) + regions.length) % regions.length]!;
+      const next = regions[(((from + step) % regions.length) + regions.length) % regions.length]!.focus;
       // A column heading in three-column mode is a plain <span>; make it programmatically focusable for this hop only.
       if (!next.hasAttribute('tabindex') && next.tagName !== 'BUTTON') next.setAttribute('tabindex', '-1');
       next.focus();
@@ -266,6 +344,50 @@ export function Dashboard() {
         </div>
       ) : null}
 
+      {/* [V3] ux.md 6.11: schedule-only filter + view switch. The filter button is absent only when it is on and has
+          nothing to reveal; while it is off it stays so the user can switch back. */}
+      <div className="flex flex-wrap items-center justify-end gap-2" data-testid="dash-toolbar">
+        {!scheduleOnly || hidden > 0 ? (
+          <button
+            type="button"
+            className="btn btn-quiet"
+            data-testid="schedule-filter-toggle"
+            onClick={() => setScheduleOnly(!scheduleOnly)}
+          >
+            {scheduleOnly ? t('filter.showAll', { count: hidden }) : t('filter.scheduleOnly')}
+          </button>
+        ) : null}
+        <div role="group" className="flex gap-1" data-testid="view-switch">
+          <button
+            type="button"
+            className={view === 'cards' ? 'btn btn-outline' : 'btn btn-quiet'}
+            aria-pressed={view === 'cards'}
+            data-testid="view-cards"
+            onClick={() => setView('cards')}
+          >
+            {t('view.cards')}
+          </button>
+          <button
+            type="button"
+            className={calendarView ? 'btn btn-outline' : 'btn btn-quiet'}
+            aria-pressed={calendarView}
+            data-testid="view-calendar"
+            onClick={() => {
+              // [fix pass, review should-fix 6] the app may have been open since last week: entering the calendar
+              // always lands on the current week with a fresh "today" mark.
+              if (!calendarView) {
+                const now = Date.now();
+                setNowMs(now);
+                setAnchorMs(now);
+              }
+              setView('calendar');
+            }}
+          >
+            {t('view.calendar')}
+          </button>
+        </div>
+      </div>
+
       <AutoStrip
         rows={autoRows}
         policyState={autoPolicy}
@@ -274,26 +396,62 @@ export function Dashboard() {
         onPause={() => void useAutoStore.getState().pause()}
       />
 
-      <div
-        className={wide ? 'dash-columns grid min-h-0 grow gap-4' : 'flex min-h-0 grow flex-col gap-3 overflow-y-auto'}
-      >
-        {LIST_KEYS.map((key) => (
-          <ItemList
-            key={key}
-            list={key}
-            title={t(`list.${key}`)}
-            count={lists[key].count}
-            items={lists[key].items}
-            queueCount={key === 'needs_reply' ? analysing : undefined}
-            transcribingSeconds={key === 'needs_reply' ? transcribing : undefined}
-            collapsible={!wide}
-            open={wide || sectionOpen[key]}
-            onToggle={() => toggleSection(key)}
-            emptyState={emptyFor(key)}
+      {calendar !== null ? (
+        <div
+          className={
+            wide ? 'dash-calendar grid min-h-0 grow gap-4' : 'flex min-h-0 grow flex-col gap-3 overflow-y-auto'
+          }
+        >
+          <CalendarWeek
+            entries={calendar.entries}
+            anchorMs={anchorMs}
+            onAnchorChange={setAnchorMs}
+            nowMs={nowMs}
+            lang={lang}
+            timeZone={timeZone}
             onOpenItem={(id) => void openItemById(id)}
+            noteSeen={calNoteSeen}
+            onNoteSeen={setCalNoteSeen}
           />
-        ))}
-      </div>
+          {/* §2.3 side list: the existing ItemList over the undated cards. list='info_missing' keeps its RawCard /
+              ItemCard choice and the roving tabindex; it is the only list on screen in this view, so ids cannot collide. */}
+          <div className="flex min-h-0 min-w-0 flex-col" data-testid="cal-undated">
+            <ItemList
+              list="info_missing"
+              title={t('cal.undated')}
+              count={calendar.undated.length}
+              items={calendar.undated}
+              collapsible={false}
+              open
+              onToggle={() => undefined}
+              emptyState={hydrated ? null : <Skeletons />}
+              onOpenItem={(id) => void openItemById(id)}
+            />
+          </div>
+        </div>
+      ) : (
+        <div
+          className={wide ? 'dash-columns grid min-h-0 grow gap-4' : 'flex min-h-0 grow flex-col gap-3 overflow-y-auto'}
+        >
+          {LIST_KEYS.map((key) => (
+            <ItemList
+              key={key}
+              list={key}
+              title={t(`list.${key}`)}
+              count={countOf(key)}
+              totalCount={lists[key].count}
+              items={shown[key]}
+              queueCount={key === 'needs_reply' ? analysing : undefined}
+              transcribingSeconds={key === 'needs_reply' ? transcribing : undefined}
+              collapsible={!wide}
+              open={wide || sectionOpen[key]}
+              onToggle={() => toggleSection(key)}
+              emptyState={emptyFor(key)}
+              onOpenItem={(id) => void openItemById(id)}
+            />
+          ))}
+        </div>
+      )}
 
       {/* ---- approval sheet (UX 7) ------------------------------------------------------------------------------- */}
       {sheetOpen ? (

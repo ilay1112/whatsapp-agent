@@ -17,13 +17,16 @@
     "dismiss": "Dismiss",
     "dismissed": "Dismissed",
     "edit": "Edit",
+    "editTime": "Edit time",
     "openInCalendar": "Open in calendar",
     "resetSuggestion": "Reset to suggestion",
     "restore": "Restore",
+    "saveTime": "Save time",
     "send": "Send",
     "sendAgain": "Send again",
     "sending": "Sending...",
     "sent": "Sent",
+    "timeSaved": "Time saved. Add it to the calendar when ready.",
     "undo": "Undo"
   },
   "ai": {
@@ -1917,5 +1920,22 @@
       "ok": "Signed in - {{cli}} works.",
       "failed": "The test after signing in did not pass. Try signing in again."
     }
+  },
+  "cal": {
+    "prev": "Previous week",
+    "next": "Next week",
+    "today": "Today",
+    "scopeNote": "Shows the chats this app analysed, not your whole Google calendar.",
+    "gotIt": "Got it",
+    "empty": "Nothing this week",
+    "undated": "No date yet"
+  },
+  "view": {
+    "cards": "Cards",
+    "calendar": "Calendar"
+  },
+  "filter": {
+    "showAll": "Show all ({{count}} hidden)",
+    "scheduleOnly": "Only schedules"
   }
 }

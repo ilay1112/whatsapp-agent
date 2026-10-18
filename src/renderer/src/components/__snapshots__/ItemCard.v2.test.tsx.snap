@@ -39,6 +39,29 @@ exports[`Change card snapshots > cancel en 1`] = `
     >
       11:59
     </span>
+    <button
+      aria-label="Dismiss"
+      class="icon-btn shrink-0 text-text-muted"
+      data-testid="dismiss-x-1"
+      style="inline-size: 32px; block-size: 32px;"
+      title="Dismiss"
+      type="button"
+    >
+      <svg
+        aria-hidden="true"
+        fill="none"
+        height="14"
+        stroke="currentColor"
+        stroke-width="1.6"
+        viewBox="0 0 16 16"
+        width="14"
+      >
+        <path
+          d="M4 4l8 8M12 4l-8 8"
+          stroke-linecap="round"
+        />
+      </svg>
+    </button>
     <div
       class="relative"
     >
@@ -306,6 +329,29 @@ exports[`Change card snapshots > cancel he 1`] = `
     >
       11:59
     </span>
+    <button
+      aria-label="התעלמות"
+      class="icon-btn shrink-0 text-text-muted"
+      data-testid="dismiss-x-1"
+      style="inline-size: 32px; block-size: 32px;"
+      title="התעלמות"
+      type="button"
+    >
+      <svg
+        aria-hidden="true"
+        fill="none"
+        height="14"
+        stroke="currentColor"
+        stroke-width="1.6"
+        viewBox="0 0 16 16"
+        width="14"
+      >
+        <path
+          d="M4 4l8 8M12 4l-8 8"
+          stroke-linecap="round"
+        />
+      </svg>
+    </button>
     <div
       class="relative"
     >
@@ -573,6 +619,29 @@ exports[`Change card snapshots > move en 1`] = `
     >
       11:59
     </span>
+    <button
+      aria-label="Dismiss"
+      class="icon-btn shrink-0 text-text-muted"
+      data-testid="dismiss-x-1"
+      style="inline-size: 32px; block-size: 32px;"
+      title="Dismiss"
+      type="button"
+    >
+      <svg
+        aria-hidden="true"
+        fill="none"
+        height="14"
+        stroke="currentColor"
+        stroke-width="1.6"
+        viewBox="0 0 16 16"
+        width="14"
+      >
+        <path
+          d="M4 4l8 8M12 4l-8 8"
+          stroke-linecap="round"
+        />
+      </svg>
+    </button>
     <div
       class="relative"
     >
@@ -795,6 +864,14 @@ exports[`Change card snapshots > move en 1`] = `
       </button>
     </div>
     <button
+      aria-expanded="false"
+      class="btn btn-quiet"
+      data-testid="edit-event-1"
+      type="button"
+    >
+      Edit time
+    </button>
+    <button
       class="btn btn-quiet"
       data-testid="keep-change-1"
       type="button"
@@ -852,6 +929,29 @@ exports[`Change card snapshots > move he 1`] = `
     >
       11:59
     </span>
+    <button
+      aria-label="התעלמות"
+      class="icon-btn shrink-0 text-text-muted"
+      data-testid="dismiss-x-1"
+      style="inline-size: 32px; block-size: 32px;"
+      title="התעלמות"
+      type="button"
+    >
+      <svg
+        aria-hidden="true"
+        fill="none"
+        height="14"
+        stroke="currentColor"
+        stroke-width="1.6"
+        viewBox="0 0 16 16"
+        width="14"
+      >
+        <path
+          d="M4 4l8 8M12 4l-8 8"
+          stroke-linecap="round"
+        />
+      </svg>
+    </button>
     <div
       class="relative"
     >
@@ -1074,6 +1174,14 @@ exports[`Change card snapshots > move he 1`] = `
       </button>
     </div>
     <button
+      aria-expanded="false"
+      class="btn btn-quiet"
+      data-testid="edit-event-1"
+      type="button"
+    >
+      עריכת זמן
+    </button>
+    <button
       class="btn btn-quiet"
       data-testid="keep-change-1"
       type="button"
@@ -1131,6 +1239,29 @@ exports[`Change card snapshots > reschedule en 1`] = `
     >
       11:59
     </span>
+    <button
+      aria-label="Dismiss"
+      class="icon-btn shrink-0 text-text-muted"
+      data-testid="dismiss-x-1"
+      style="inline-size: 32px; block-size: 32px;"
+      title="Dismiss"
+      type="button"
+    >
+      <svg
+        aria-hidden="true"
+        fill="none"
+        height="14"
+        stroke="currentColor"
+        stroke-width="1.6"
+        viewBox="0 0 16 16"
+        width="14"
+      >
+        <path
+          d="M4 4l8 8M12 4l-8 8"
+          stroke-linecap="round"
+        />
+      </svg>
+    </button>
     <div
       class="relative"
     >
@@ -1353,6 +1484,14 @@ exports[`Change card snapshots > reschedule en 1`] = `
       </button>
     </div>
     <button
+      aria-expanded="false"
+      class="btn btn-quiet"
+      data-testid="edit-event-1"
+      type="button"
+    >
+      Edit time
+    </button>
+    <button
       class="btn btn-quiet"
       data-testid="keep-change-1"
       type="button"
@@ -1410,6 +1549,29 @@ exports[`Change card snapshots > reschedule he 1`] = `
     >
       11:59
     </span>
+    <button
+      aria-label="התעלמות"
+      class="icon-btn shrink-0 text-text-muted"
+      data-testid="dismiss-x-1"
+      style="inline-size: 32px; block-size: 32px;"
+      title="התעלמות"
+      type="button"
+    >
+      <svg
+        aria-hidden="true"
+        fill="none"
+        height="14"
+        stroke="currentColor"
+        stroke-width="1.6"
+        viewBox="0 0 16 16"
+        width="14"
+      >
+        <path
+          d="M4 4l8 8M12 4l-8 8"
+          stroke-linecap="round"
+        />
+      </svg>
+    </button>
     <div
       class="relative"
     >
@@ -1631,6 +1793,14 @@ exports[`Change card snapshots > reschedule he 1`] = `
         אישור השינוי
       </button>
     </div>
+    <button
+      aria-expanded="false"
+      class="btn btn-quiet"
+      data-testid="edit-event-1"
+      type="button"
+    >
+      עריכת זמן
+    </button>
     <button
       class="btn btn-quiet"
       data-testid="keep-change-1"

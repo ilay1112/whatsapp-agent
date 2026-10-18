@@ -25,6 +25,9 @@ const OWNED = [
   'src/renderer/src/components/UndoControl.tsx',
   'src/renderer/src/components/VoiceBubble.tsx',
   'src/renderer/src/components/ImageBubble.tsx',
+  // [V3] T-904
+  'src/renderer/src/store/calendarEntries.ts',
+  'src/renderer/src/components/CalendarWeek.tsx',
 ];
 /** Source with line comments stripped (the headers explain the rules by naming the very things they forbid). */
 const code = (rel: string): string =>

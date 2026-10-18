@@ -152,6 +152,19 @@ describe('createItemService', () => {
     expect(card.editingLocked).toBe(false);
   });
 
+  // [V3] T-904 Task 1: the renderer's schedule-only filter reads the current proposal's intent off the card.
+  it("carries the current proposal's intent on the card ([V3])", () => {
+    triage(item, { extraction: { ...EXTRACTION, intent: 'smalltalk' } });
+    expect(service.dashboard().needsReply[0]!.intent).toBe('smalltalk');
+  });
+
+  it('sets intent to null on a card that has no proposal yet ([V3])', () => {
+    env.repos.items.update(item.id, { analysis: 'held', holdReason: 'paused' }, now);
+    const card = service.dashboard().needsReply.find((c) => c.itemId === item.id)!;
+    expect(env.repos.proposals.current(item.id)).toBeNull();
+    expect(card.intent).toBeNull();
+  });
+
   it('never puts a JID or a calendar link into a view model ([R2])', () => {
     triage();
     env.repos.items.update(
@@ -463,6 +476,31 @@ describe('createItemService', () => {
       ok: false,
       error: { code: 'ACTION_STALE' },
     });
+  });
+
+  // fix pass (v3 review should-fix 1): a reschedule / cancel that named no usable new time is about an EXISTING event;
+  // "Save time" there would insert a create_event and the approval would add a second event.
+  it('completeEvent() refuses ACTION_STALE when the current proposal is a reschedule / cancel without an event', () => {
+    for (const intent of ['reschedule', 'cancel'] as const) {
+      env.repos.proposals.insertNext({
+        itemId: item.id,
+        provider: 'user',
+        model: '',
+        extraction: { ...EXTRACTION, intent },
+        draftText: null,
+        replyLang: null,
+        event: null,
+        freeBusy: null,
+        suspicious: false,
+        createdAt: now,
+      });
+      env.repos.items.update(item.id, { eventState: 'incomplete', missing: ['time'] }, now);
+      expect(service.completeEvent({ itemId: item.id, event: EVENT })).toEqual({
+        ok: false,
+        error: { code: 'ACTION_STALE' },
+      });
+      expect(env.repos.actions.forItem(item.id).filter((a) => a.kind === 'create_event')).toEqual([]);
+    }
   });
 
   // ---------------------------------------------------------------------------------------------------------------

@@ -443,6 +443,7 @@ export function createItemService(deps: ItemServiceDeps): ItemService {
           ? { text: proposal.draftText, lang: proposal.replyLang, proposalVersion: proposal.version }
           : null,
       event: proposal?.event ?? null,
+      intent: proposal?.extraction?.intent ?? null,
       missing: item.missing,
       badges: item.badges,
       actions: actionViewsFor(item),
@@ -625,6 +626,13 @@ export function createItemService(deps: ItemServiceDeps): ItemService {
       const now = clock.now();
       const timeZone = settings().general.timeZone;
       const previous = repos.proposals.current(item.id);
+      // [fix pass, v3 review should-fix 1] a reschedule / cancel with no usable new time is about an EXISTING event:
+      // completing it here would insert a create_event and its approval would add a second event (the renderer shows no
+      // form for it; this is the code-side guard).
+      const intent = previous?.extraction?.intent ?? null;
+      if (previous !== null && previous.event === null && (intent === 'reschedule' || intent === 'cancel')) {
+        return err('ACTION_STALE');
+      }
       repos.db.transaction(() => {
         const proposal = repos.proposals.insertNext({
           itemId: item.id,

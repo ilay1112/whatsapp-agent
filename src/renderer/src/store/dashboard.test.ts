@@ -231,3 +231,78 @@ describe('arrived ids (UX 2.4)', () => {
     expect(useDashboardStore.getState().arrivedItemIds.size).toBe(0);
   });
 });
+
+// [V3] T-904 Task 2 (handover §2.2 / §2.3): the schedule-only filter, the view switch and the calendar scope note are
+// remembered in the renderer's own web storage. The store reads them once, when its module is created, so every case
+// below loads a FRESH module after arranging localStorage.
+describe('dashboard store - [V3] remembered view state', () => {
+  const fresh = async (): Promise<typeof import('./dashboard')> => {
+    vi.resetModules();
+    return import('./dashboard');
+  };
+
+  beforeEach(() => window.localStorage.clear());
+  afterEach(() => {
+    vi.restoreAllMocks();
+    window.localStorage.clear();
+  });
+
+  it('defaults to the filter on, the cards view and the note not seen', async () => {
+    const s = (await fresh()).useDashboardStore.getState();
+    expect(s.scheduleOnly).toBe(true);
+    expect(s.view).toBe('cards');
+    expect(s.calNoteSeen).toBe(false);
+  });
+
+  it('exports the three storage keys', async () => {
+    const m = await fresh();
+    expect([m.SCHEDULE_ONLY_KEY, m.VIEW_KEY, m.CAL_NOTE_KEY]).toEqual([
+      'wca.dashboard.scheduleOnly',
+      'wca.dashboard.view',
+      'wca.dashboard.calNoteSeen',
+    ]);
+  });
+
+  it('setView / setScheduleOnly / setCalNoteSeen update the state and write localStorage', async () => {
+    const { useDashboardStore: store } = await fresh();
+    store.getState().setView('calendar');
+    store.getState().setScheduleOnly(false);
+    store.getState().setCalNoteSeen();
+    const s = store.getState();
+    expect([s.view, s.scheduleOnly, s.calNoteSeen]).toEqual(['calendar', false, true]);
+    expect(window.localStorage.getItem('wca.dashboard.view')).toBe('calendar');
+    expect(window.localStorage.getItem('wca.dashboard.scheduleOnly')).toBe('false');
+    expect(window.localStorage.getItem('wca.dashboard.calNoteSeen')).toBe('true');
+  });
+
+  it('a store created after the choices were stored starts with them', async () => {
+    window.localStorage.setItem('wca.dashboard.scheduleOnly', 'false');
+    window.localStorage.setItem('wca.dashboard.view', 'calendar');
+    window.localStorage.setItem('wca.dashboard.calNoteSeen', 'true');
+    const s = (await fresh()).useDashboardStore.getState();
+    expect([s.scheduleOnly, s.view, s.calNoteSeen]).toEqual([false, 'calendar', true]);
+  });
+
+  it('garbage in storage falls back to the defaults', async () => {
+    window.localStorage.setItem('wca.dashboard.scheduleOnly', 'nope');
+    window.localStorage.setItem('wca.dashboard.view', 'month');
+    window.localStorage.setItem('wca.dashboard.calNoteSeen', '1');
+    const s = (await fresh()).useDashboardStore.getState();
+    expect([s.scheduleOnly, s.view, s.calNoteSeen]).toEqual([true, 'cards', false]);
+  });
+
+  it('storage that throws leaves the defaults, and setters still update the state without throwing', async () => {
+    vi.spyOn(window, 'localStorage', 'get').mockImplementation(() => {
+      throw new Error('blocked');
+    });
+    const { useDashboardStore: store } = await fresh();
+    expect(store.getState().scheduleOnly).toBe(true);
+    expect(store.getState().view).toBe('cards');
+    expect(() => store.getState().setView('calendar')).not.toThrow();
+    expect(() => store.getState().setScheduleOnly(false)).not.toThrow();
+    expect(() => store.getState().setCalNoteSeen()).not.toThrow();
+    expect(store.getState().view).toBe('calendar');
+    expect(store.getState().scheduleOnly).toBe(false);
+    expect(store.getState().calNoteSeen).toBe(true);
+  });
+});

@@ -23,6 +23,8 @@ export interface ItemListProps {
   list: ListKey;
   title: string;
   count: number;
+  /** [V3 fix pass] The SERVER count for the "Showing the latest 20 of N" line (v3 spec 2.2); `count` is what is visible. */
+  totalCount?: number;
   items: ItemVM[];
   queueCount?: number;
   /** [V2] Seconds of the voice note being transcribed (`queue:changed`); replaces the queue line while set. */
@@ -172,7 +174,7 @@ export function ItemList(props: ItemListProps) {
           {/* UX 6.3: no pagination in v1 - the column just says how many more exist. */}
           {hiddenExtra > 0 ? (
             <p className="m-0 ps-1 text-xs text-text-muted" data-testid={`more-${props.list}`}>
-              {t('list.latestOf', { count: props.count })}
+              {t('list.latestOf', { count: props.totalCount ?? props.count })}
             </p>
           ) : null}
         </div>

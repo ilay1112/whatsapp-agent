@@ -65,6 +65,8 @@ const STILL_SENDING_MS = 10_000;
 /** The confirmation row is shown for 1.2 s before the list refresh takes the card away (UX 6.8). */
 const CONFIRM_MS = 1_200;
 const COPIED_MS = 2_000;
+/** [fix pass] Intents about an EXISTING event: without a usable new time the card gets no blank fill form. */
+const CHANGE_INTENTS: ReadonlySet<NonNullable<ItemVM['intent']>> = new Set(['reschedule', 'cancel']);
 
 export interface ResultAction {
   label: string;
@@ -222,6 +224,32 @@ export interface CardController {
   dismiss(): void;
   retriage(): void;
   refreshCard(): void;
+  /** [V3] "Edit time" (v3 spec 2.4a): the compact card's inline EventEditor is open. */
+  inlineEditorOpen: boolean;
+  /** [V3] Opens / closes the inline editor; closing DISCARDS the edit, so the approval carries what the card shows. */
+  toggleInlineEditor(): void;
+  /**
+   * [V3] "Save time" (v3 spec 2.4b): `item:completeEvent` with the fill form's content. Writes a PROPOSAL (provider
+   * 'user' + a pending create_event), never a calendar event; the calendar write still needs "Add to calendar".
+   */
+  saveTime(): Promise<void>;
+  /** [V3] `item:completeEvent` is in flight (single flight, like the approvals). */
+  savingTime: boolean;
+}
+
+/** [V3] The EventEdit a view model already holds - what "Save time" sends when the user did not touch the form. */
+export function editOfVm(vm: EventVM): EventEdit {
+  return {
+    title: vm.title.trim(),
+    startLocal: vm.startLocal,
+    endLocal: vm.endLocal,
+    location: vm.location.trim(),
+  } as EventEdit;
+}
+
+/** [V3] Toast key of a refused `item:completeEvent` (v3 spec 2.4b: the existing calendar / event error texts). */
+function saveTimeErrorKey(code: ErrorCode): string {
+  return code === 'ACTION_STALE' ? 'card.changed' : `errors.${code}.title`;
 }
 
 /**
@@ -248,15 +276,43 @@ export function useCardController(item: ItemVM, onClose?: () => void, onChangeTi
   const [result, setResult] = useState<ResultRow | null>(null);
   const [copied, setCopied] = useState(false);
   const [focusedInputs, setFocusedInputs] = useState(false);
+  const [inlineEditorOpen, setInlineEditorOpen] = useState(false);
+  const [savingTime, setSavingTime] = useState(false);
   const resultRef = useRef<HTMLDivElement>(null);
   const busyRef = useRef(false);
+  const savingRef = useRef(false);
+  const inlineOpenRef = useRef(false);
   const focusResultRef = useRef(false);
 
   // [V2] UX2 12: the dirty-card rule extends to delta cards - an edited `to` is never overwritten by a refresh.
-  const dirty = focusedInputs || draft !== suggestion || (eventEdit !== null && item.change !== null);
+  // [V3] ... and to the compact card's inline editor and the fill form: a refresh that remounted the editor would show
+  // the old fields while `eventEdit` still held the user's edit - the approval must carry what is on the screen.
+  const dirty =
+    focusedInputs ||
+    draft !== suggestion ||
+    (eventEdit !== null && (item.change !== null || inlineEditorOpen || item.eventState === 'incomplete'));
   useEffect(() => {
     markDirty(item.itemId, dirty);
   }, [dirty, item.itemId, markDirty]);
+
+  // [fix pass, review should-fix 3] a card that unmounts while dirty (view switch, filter toggle, sheet closed after
+  // "Discard") loses its edit, so it must also give back the dirty pin and the edit lock - the way closing does. Refs,
+  // because the cleanup has to see the LAST render's values.
+  const dirtyRef = useRef(false);
+  const focusedRef = useRef(false);
+  useEffect(() => {
+    dirtyRef.current = dirty;
+    focusedRef.current = focusedInputs;
+  });
+  useEffect(() => {
+    const id = item.itemId;
+    return () => {
+      const held = dirtyRef.current || focusedRef.current || inlineOpenRef.current;
+      if (!held) return;
+      useDashboardStore.getState().markDirty(id, false);
+      void api.setEditing(id, false);
+    };
+  }, [item.itemId]);
 
   // The flag is only ever RAISED here; it is lowered in the click handler that starts the next approval, because a
   // synchronous setState inside an effect would cost a cascading render on every busy -> idle transition.
@@ -290,10 +346,24 @@ export function useCardController(item: ItemVM, onClose?: () => void, onChangeTi
   const onInputFocus = useCallback(
     (focused: boolean) => {
       setFocusedInputs(focused);
-      void api.setEditing(item.itemId, focused);
+      // [V3] leaving an input of the open inline editor does not lift the lock: the editor is still open.
+      void api.setEditing(item.itemId, focused || inlineOpenRef.current);
     },
     [item.itemId],
   );
+
+  const toggleInlineEditor = useCallback(() => {
+    const next = !inlineOpenRef.current;
+    inlineOpenRef.current = next;
+    setInlineEditorOpen(next);
+    if (!next) {
+      setEventEditState(null);
+      setEventValid(true);
+      setEventMessage(undefined);
+    }
+    // Mirrors the sheet: main holds re-analysis off this item while the user edits it.
+    void api.setEditing(item.itemId, next);
+  }, [item.itemId]);
 
   const refreshCard = useCallback(() => {
     markStale(item.itemId, false);
@@ -448,7 +518,11 @@ export function useCardController(item: ItemVM, onClose?: () => void, onChangeTi
                 : 'change.approved'
               : 'action.added';
         setResult({ tone: 'ok', text: t(doneKey), actions: [] });
-        if (action.kind !== 'send_reply') setEventEditState(null);
+        if (action.kind !== 'send_reply') {
+          setEventEditState(null);
+          inlineOpenRef.current = false;
+          setInlineEditorOpen(false);
+        }
         useDashboardStore.getState().applyItem(out.item);
         setTimeout(() => {
           setResult(null);
@@ -573,6 +647,28 @@ export function useCardController(item: ItemVM, onClose?: () => void, onChangeTi
     void api.retriage(item.itemId).then(() => void useDashboardStore.getState().refresh());
   }, [item.itemId]);
 
+  const saveTime = useCallback(async (): Promise<void> => {
+    if (savingRef.current) return; // a second synchronous click sends nothing
+    const vm = eventVmOf(item);
+    const edit = eventEdit ?? (vm ? editOfVm(vm) : null);
+    // The button is disabled in exactly these cases; re-checked here so no path sends an event the editor refused.
+    if (edit === null || !eventValid || edit.startLocal === '' || edit.endLocal === '') return;
+    savingRef.current = true;
+    setSavingTime(true);
+    const r = await api.completeEvent({ itemId: item.itemId, event: edit });
+    savingRef.current = false;
+    setSavingTime(false);
+    if (!r.ok) {
+      setToast({ key: saveTimeErrorKey(r.error.code) });
+      return;
+    }
+    setEventEditState(null);
+    markDirty(item.itemId, false); // the refresh below must replace this card (it moves to Needs reply)
+    useDashboardStore.getState().applyItem(r.value);
+    setToast({ key: 'action.timeSaved' });
+    void useDashboardStore.getState().refresh();
+  }, [eventEdit, eventValid, item, markDirty, setToast]);
+
   return {
     draft,
     setDraft,
@@ -595,6 +691,10 @@ export function useCardController(item: ItemVM, onClose?: () => void, onChangeTi
     dismiss,
     retriage,
     refreshCard,
+    inlineEditorOpen,
+    toggleInlineEditor,
+    saveTime,
+    savingTime,
   };
 }
 
@@ -667,123 +767,160 @@ export function CardHeader(props: {
   );
 }
 
-/** The `[...]` overflow menu of UX 6.5. */
-export function OverflowMenu(props: { item: ItemVM; onOpen?(): void; onDismiss(): void; onRetriage(): void }) {
+/**
+ * The `[...]` overflow menu of UX 6.5, preceded on a COMPACT card by the [V3] dismiss X (v3 spec 2.1,
+ * `dismiss-x-<itemId>`): a 28 px quiet icon button that runs the same `onDismiss` as the menu's "Dismiss" (item:dismiss,
+ * nothing sent or written). `dismissX` defaults to "this card can be opened", i.e. compact: RawCard is compact-only and
+ * always passes `onOpen`; ItemCard passes `dismissX` explicitly because a compact card may be rendered without `onOpen`.
+ */
+export function OverflowMenu(props: {
+  item: ItemVM;
+  onOpen?(): void;
+  onDismiss(): void;
+  onRetriage(): void;
+  dismissX?: boolean;
+}) {
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   const setToast = useDashboardStore((s) => s.setToast);
   const autoPolicyExists = useAutoStore((s) => s.state?.policy != null);
   const neverAuto = props.item.chat.autoPolicy === 'never';
+  const dismissX = props.dismissX ?? props.onOpen !== undefined;
   return (
-    <div className="relative">
-      <button
-        type="button"
-        className="icon-btn"
-        aria-haspopup="menu"
-        aria-expanded={open}
-        aria-label={t('card.overflow')}
-        data-testid={`overflow-${props.item.itemId}`}
-        onClick={() => setOpen(!open)}
-      >
-        <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
-          <circle cx="3" cy="8" r="1.4" />
-          <circle cx="8" cy="8" r="1.4" />
-          <circle cx="13" cy="8" r="1.4" />
-        </svg>
-      </button>
-      {open ? (
-        <div
-          role="menu"
-          className="absolute end-0 z-20 mt-1 flex w-60 flex-col rounded-sm bg-surface p-1 shadow-pop"
-          data-testid={`overflow-menu-${props.item.itemId}`}
-          onKeyDown={(e) => {
-            if (e.key === 'Escape') setOpen(false);
-          }}
+    <>
+      {dismissX ? (
+        <button
+          type="button"
+          className="icon-btn shrink-0 text-text-muted"
+          style={{ inlineSize: 32, blockSize: 32 }}
+          aria-label={t('action.dismiss')}
+          title={t('action.dismiss')}
+          data-testid={`dismiss-x-${props.item.itemId}`}
+          onClick={props.onDismiss}
         >
-          {props.onOpen ? (
+          <svg
+            width="14"
+            height="14"
+            viewBox="0 0 16 16"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.6"
+            aria-hidden="true"
+          >
+            <path d="M4 4l8 8M12 4l-8 8" strokeLinecap="round" />
+          </svg>
+        </button>
+      ) : null}
+      <div className="relative">
+        <button
+          type="button"
+          className="icon-btn"
+          aria-haspopup="menu"
+          aria-expanded={open}
+          aria-label={t('card.overflow')}
+          data-testid={`overflow-${props.item.itemId}`}
+          onClick={() => setOpen(!open)}
+        >
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+            <circle cx="3" cy="8" r="1.4" />
+            <circle cx="8" cy="8" r="1.4" />
+            <circle cx="13" cy="8" r="1.4" />
+          </svg>
+        </button>
+        {open ? (
+          <div
+            role="menu"
+            className="absolute end-0 z-20 mt-1 flex w-60 flex-col rounded-sm bg-surface p-1 shadow-pop"
+            data-testid={`overflow-menu-${props.item.itemId}`}
+            onKeyDown={(e) => {
+              if (e.key === 'Escape') setOpen(false);
+            }}
+          >
+            {props.onOpen ? (
+              <button
+                type="button"
+                role="menuitem"
+                className="btn btn-quiet justify-start"
+                onClick={() => {
+                  setOpen(false);
+                  props.onOpen?.();
+                }}
+              >
+                {t('card.openDetails')}
+              </button>
+            ) : null}
             <button
               type="button"
               role="menuitem"
               className="btn btn-quiet justify-start"
+              data-testid={`dismiss-${props.item.itemId}`}
               onClick={() => {
                 setOpen(false);
-                props.onOpen?.();
+                props.onDismiss();
               }}
             >
-              {t('card.openDetails')}
+              {t('action.dismiss')}
             </button>
-          ) : null}
-          <button
-            type="button"
-            role="menuitem"
-            className="btn btn-quiet justify-start"
-            data-testid={`dismiss-${props.item.itemId}`}
-            onClick={() => {
-              setOpen(false);
-              props.onDismiss();
-            }}
-          >
-            {t('action.dismiss')}
-          </button>
-          <button
-            type="button"
-            role="menuitem"
-            className="btn btn-quiet justify-start"
-            data-testid={`retriage-${props.item.itemId}`}
-            onClick={() => {
-              setOpen(false);
-              props.onRetriage();
-            }}
-          >
-            {t('action.analyseAgain')}
-          </button>
-          <button
-            type="button"
-            role="menuitem"
-            className="btn btn-quiet justify-start"
-            data-testid={`never-${props.item.itemId}`}
-            onClick={() => {
-              setOpen(false);
-              void api.setChatPolicy({ chatRef: props.item.chat.chatRef, policy: 'never' }).then(() => {
-                setToast({ key: 'card.neverAnalyse' });
-                void useDashboardStore.getState().refresh();
-              });
-            }}
-          >
-            {t('card.neverAnalyse')}
-          </button>
-          {/* [V2] UX2 3.2 / B28: shown only while a policy is live or has existed (AutoState.policy is the live row or
-              the newest closed one). The fail-safe direction: no dialog, no guard. */}
-          {autoPolicyExists ? (
             <button
               type="button"
               role="menuitem"
               className="btn btn-quiet justify-start"
-              data-testid={`never-auto-${props.item.itemId}`}
-              data-policy={neverAuto ? 'never' : 'inherit'}
+              data-testid={`retriage-${props.item.itemId}`}
               onClick={() => {
                 setOpen(false);
-                const chatRef = props.item.chat.chatRef;
-                const next = neverAuto ? 'inherit' : 'never';
-                void api.setChatPolicy({ chatRef, autoPolicy: next }).then(() => {
-                  if (next === 'never')
-                    setToast({
-                      key: 'auto.neverToast',
-                      onUndo: () =>
-                        void api
-                          .setChatPolicy({ chatRef, autoPolicy: 'inherit' })
-                          .then(() => void useDashboardStore.getState().refresh()),
-                    });
+                props.onRetriage();
+              }}
+            >
+              {t('action.analyseAgain')}
+            </button>
+            <button
+              type="button"
+              role="menuitem"
+              className="btn btn-quiet justify-start"
+              data-testid={`never-${props.item.itemId}`}
+              onClick={() => {
+                setOpen(false);
+                void api.setChatPolicy({ chatRef: props.item.chat.chatRef, policy: 'never' }).then(() => {
+                  setToast({ key: 'card.neverAnalyse' });
                   void useDashboardStore.getState().refresh();
                 });
               }}
             >
-              {neverAuto ? `${t('card.autoNeverState')} - ${t('auto.allowAgain')}` : t('auto.neverForContact')}
+              {t('card.neverAnalyse')}
             </button>
-          ) : null}
-        </div>
-      ) : null}
-    </div>
+            {/* [V2] UX2 3.2 / B28: shown only while a policy is live or has existed (AutoState.policy is the live row or
+              the newest closed one). The fail-safe direction: no dialog, no guard. */}
+            {autoPolicyExists ? (
+              <button
+                type="button"
+                role="menuitem"
+                className="btn btn-quiet justify-start"
+                data-testid={`never-auto-${props.item.itemId}`}
+                data-policy={neverAuto ? 'never' : 'inherit'}
+                onClick={() => {
+                  setOpen(false);
+                  const chatRef = props.item.chat.chatRef;
+                  const next = neverAuto ? 'inherit' : 'never';
+                  void api.setChatPolicy({ chatRef, autoPolicy: next }).then(() => {
+                    if (next === 'never')
+                      setToast({
+                        key: 'auto.neverToast',
+                        onUndo: () =>
+                          void api
+                            .setChatPolicy({ chatRef, autoPolicy: 'inherit' })
+                            .then(() => void useDashboardStore.getState().refresh()),
+                      });
+                    void useDashboardStore.getState().refresh();
+                  });
+                }}
+              >
+                {neverAuto ? `${t('card.autoNeverState')} - ${t('auto.allowAgain')}` : t('auto.neverForContact')}
+              </button>
+            ) : null}
+          </div>
+        ) : null}
+      </div>
+    </>
   );
 }
 
@@ -1231,14 +1368,75 @@ export function ItemCard(props: ItemCardProps) {
     cancel: 'card.autoBlock.cancelledOn',
   } as const;
 
+  // [V3] an information-missing card gets the fill form (v3 spec 2.4b), even when the model produced no event at all:
+  // an empty one is the starting point, every field marked "Needed". [fix pass, review should-fix 1] NOT when the card
+  // is about an existing event: a change card, or a reschedule / cancel that named no usable new time (the delta
+  // `incomplete` path, `event: null`). "Save time" there would propose a SECOND event while the original stayed put.
+  const blankFormAllowed =
+    infoMissing && !raw && item.change === null && (item.intent === null || !CHANGE_INTENTS.has(item.intent));
+  const editorVm: EventVM | null =
+    eventVm ??
+    (blankFormAllowed
+      ? {
+          title: '',
+          startLocal: '',
+          endLocal: '',
+          timeZone,
+          location: '',
+          assumptions: [],
+          dateHint: '',
+          state: 'incomplete',
+          hasCalendarLink: false,
+        }
+      : null);
+
   const editorMode: 'edit' | 'fill' | 'readonly' | 'change' =
     change !== null
       ? 'change'
-      : eventVm?.state === 'created' || eventVm?.state === 'updated' || eventVm?.state === 'cancelled'
+      : editorVm?.state === 'created' || editorVm?.state === 'updated' || editorVm?.state === 'cancelled'
         ? 'readonly'
-        : eventVm?.state === 'incomplete'
+        : editorVm?.state === 'incomplete'
           ? 'fill'
           : 'edit';
+
+  // [V3] "Edit time" (v3 spec 2.4a): compact only, a proposed event or a proposed change, and only while the approval
+  // that would carry the edit is pending (a cancel has no time to edit).
+  const canEditTime =
+    !expanded &&
+    eventVm !== null &&
+    (item.eventState === 'proposed' || item.eventState === 'change_proposed') &&
+    ((eventAction !== null && !addBack) || (changeButtons !== null && change?.kind !== 'cancel'));
+  const inlineEditorShown = canEditTime && controller.inlineEditorOpen;
+  const inlineEditorId = `inline-editor-${item.itemId}`;
+
+  // [V3] "Save time" (v3 spec 2.4b): under the fill form in both modes; enabled when the editor says the event is valid
+  // and it has a start and an end. `item:completeEvent` writes a proposal, never a calendar event.
+  const fillForm = editorMode === 'fill' && editorVm !== null && item.change === null;
+  // An EMPTY event has nothing known to lock: 'fill' would turn the title read-only after its first character (it is
+  // editable only while empty), so the blank form is a plain 'edit' form.
+  const fillMode: 'fill' | 'edit' = eventVm === null ? 'edit' : 'fill';
+  const saveDraft = controller.eventEdit ?? (editorVm !== null ? editOfVm(editorVm) : null);
+  const canSaveTime =
+    fillForm &&
+    saveDraft !== null &&
+    controller.eventValid &&
+    saveDraft.startLocal !== '' &&
+    saveDraft.endLocal !== '' &&
+    !controller.savingTime;
+  const saveTimeRow = fillForm ? (
+    <div className="mt-2 flex flex-wrap items-center gap-2">
+      <button
+        type="button"
+        className="btn btn-outline"
+        data-testid={`save-event-${item.itemId}`}
+        disabled={!canSaveTime}
+        aria-busy={controller.savingTime || undefined}
+        onClick={() => void controller.saveTime()}
+      >
+        {t('action.saveTime')}
+      </button>
+    </div>
+  ) : null;
 
   return (
     <article
@@ -1271,6 +1469,7 @@ export function ItemCard(props: ItemCardProps) {
             onOpen={expanded ? undefined : props.onOpen}
             onDismiss={controller.dismiss}
             onRetriage={controller.retriage}
+            dismissX={!expanded}
           />
         }
       />
@@ -1385,6 +1584,38 @@ export function ItemCard(props: ItemCardProps) {
         />
       ) : null}
 
+      {/* [V3] "Edit time": the sheet's editor, inline under the event line; its edit rides in the same approval. */}
+      {inlineEditorShown && eventVm ? (
+        <div id={inlineEditorId} className="mt-2" data-testid={inlineEditorId}>
+          <EventEditor
+            key={`${item.itemId}-${item.updatedAt}`}
+            value={eventVm}
+            missing={item.missing}
+            mode={editorMode}
+            calendarName={calendarName}
+            onChange={controller.setEventEdit}
+            onValidityChange={controller.setEventValidity}
+          />
+        </div>
+      ) : null}
+
+      {/* [V3] the information-missing fill form + "Save time" on the compact card (the sheet has its own below). */}
+      {!expanded && fillForm && editorVm ? (
+        <div className="mt-2" data-testid={`fill-form-${item.itemId}`}>
+          <EventEditor
+            key={`${item.itemId}-${item.updatedAt}`}
+            value={editorVm}
+            missing={item.missing}
+            mode={fillMode}
+            calendarName={calendarName}
+            onChange={controller.setEventEdit}
+            onValidityChange={controller.setEventValidity}
+            dateNote={imageUnclear ? t('image.checkAgainst') : undefined}
+          />
+          {saveTimeRow}
+        </div>
+      ) : null}
+
       {chip !== null ? <AutoChip item={item} chip={chip} /> : null}
 
       {/* UX2 3.3.3: the source card of a pending change. */}
@@ -1406,7 +1637,7 @@ export function ItemCard(props: ItemCardProps) {
         </div>
       ) : null}
 
-      {eventVm && expanded ? (
+      {editorVm && expanded ? (
         <section className="mt-3 border-t border-line pt-3" aria-label={t('sheet.event')} data-testid="sheet-event">
           <h3 className="mt-0 text-xs font-semibold text-text-muted">{t('sheet.event')}</h3>
           {/* UX2 3.7: a delta item shows the event as it is now (app-rendered `from`) above the editable `to`. */}
@@ -1426,15 +1657,16 @@ export function ItemCard(props: ItemCardProps) {
           ) : null}
           <EventEditor
             key={`${item.itemId}-${item.updatedAt}`}
-            value={eventVm}
+            value={editorVm}
             missing={item.missing}
-            mode={editorMode}
+            mode={fillForm ? fillMode : editorMode}
             calendarName={calendarName}
             onChange={controller.setEventEdit}
             onValidityChange={controller.setEventValidity}
             focusField={focusField}
             dateNote={imageUnclear ? t('image.checkAgainst') : undefined}
           />
+          {saveTimeRow}
         </section>
       ) : null}
 
@@ -1532,6 +1764,21 @@ export function ItemCard(props: ItemCardProps) {
               describedBy={reason !== null ? reasonId : undefined}
             />
           )
+        ) : null}
+
+        {/* [V3] "Edit time" (v3 spec 2.4a): toggles the inline editor; not an approval, so no activation guard. */}
+        {canEditTime ? (
+          <button
+            type="button"
+            className="btn btn-quiet"
+            data-testid={`edit-event-${item.itemId}`}
+            aria-expanded={inlineEditorShown}
+            aria-controls={inlineEditorShown ? inlineEditorId : undefined}
+            disabled={controller.busyKind !== null}
+            onClick={controller.toggleInlineEditor}
+          >
+            {t('action.editTime')}
+          </button>
         ) : null}
 
         {changeButtons && change ? (

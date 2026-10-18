@@ -451,6 +451,10 @@ A text-only analysis still runs (V1 failure never blocks S1), so the placeholder
 - Footer provenance (ux.md 7.4) values: "Suggested by: AI on this computer" / "Claude (your subscription)" / "Gemini (your subscription, experimental)" / "Claude (API key)" / "Gemini (API key)"; a shadow/automatic item adds "· Automatic mode: {{state}}"; an unproven CLI run adds nothing visible (the `provider_unsafe` reason line already says it).
 - An automatic item's sheet shows an **"Automatic"** block at the top: "Added automatically on {{when}}" + the Undo control of 3.4 + link "See all automatic activity".
 
+### 3.8 v3 dashboard: dismiss X, schedule filter, week calendar, manual time
+
+Specified in ux.md 6.11 (`[V3]` T-904, `docs/specs/v3-dashboard-handover.md`); nothing in this section changes.
+
 ---
 
 ## 4. Settings deltas (extends ux.md 9)

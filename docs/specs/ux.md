@@ -590,6 +590,26 @@ Used for `analysis IN ('held','failed')`. Same header and QuotedBubble; then the
 
 Opened from the footer "Undo dismiss". Side panel on the inline-end side (same geometry as the sheet), title "Dismissed", a flat list of the **last 20 items the user dismissed** (`dashboard:getIgnored`, `closed_reason='dismissed'` only): name `<bdi>`, one-line message excerpt (`dir="auto"`), relative time, and "Restore" (`item:restore`). No other closed items are listed (not_needed / replied / expired / past are not browsable in v1). Empty state: "Nothing to undo."
 
+### 6.11 Schedule filter, view switch and week calendar (`[V3]` T-904)
+
+Source: `docs/specs/v3-dashboard-handover.md` §1-§3 (user decisions of 2026-10-18). Renderer-only: everything below is derived from `dashboard:get`; no Google event is read (I2'/I9) and no new write path exists - every calendar write is still one `action:approve` click with `shownHash` (I1').
+
+**Toolbar** (`dash-toolbar`, top of the dashboard, above the AutoStrip; an F6 stop between the app header and the AutoStrip): `schedule-filter-toggle` then `view-switch` (`view-cards` / `view-calendar`, `aria-pressed`).
+
+**Dismiss X** (`dismiss-x-<itemId>`): every compact card (three lists and the calendar side list) has a quiet `×` (14 px glyph in a 32 x 32 px hit area, 13.7) at the inline-end of its header, before the overflow menu, `aria-label` "Dismiss". It is the existing dismiss (`item:dismiss` -> refresh -> toast with Undo); nothing is sent or written, a later scheduling message makes a new card. The sheet keeps `sheet-dismiss-<id>` and has no X.
+
+**Schedule-only filter** (default on, remembered in web storage `wca.dashboard.scheduleOnly`; a UI preference, never `settings:set`): a card is hidden only when its analysis is done, `intent` is question / smalltalk / other, and it has no event, no change and `eventState = 'none'`. Analysing, held, failed and raw cards always show, as does any card that carries the manipulation badge (a security signal). Toggle label: on -> "Show all (N hidden)" (N across the three lists; the button is absent when N = 0), off -> "Only schedules". A column's `count-<key>` = server count minus the cards the filter hides from it (what is visible), so "Showing the latest 20 of N" still appears exactly when the server holds more; N in that line is the SERVER count (`ItemList.totalCount`), unchanged by the filter. "Show all (N hidden)" counts a card once even if it sits in two lists. The filter applies to the calendar view too, never to the sheet (opening a hidden card by id works).
+
+**Week calendar** (`view-calendar`, remembered in `wca.dashboard.view`, default cards). `CalendarWeek` replaces the three lists:
+- toolbar `cal-prev` / `cal-today` / `cal-next` (chevrons mirror in RTL via `icon-dir`) and the range `cal-range` (`Intl`, active language);
+- 7 day columns, first day Sunday for Hebrew, else the locale's `weekInfo.firstDay` (fallback Sunday); headers `cal-day-<yyyy-mm-dd>`: weekday over day number, the weekday `short` from a 72 px column, `narrow` below it (CSS container query), today `data-today="true"`; hour rows `cal-hour-<h>` of 48 px in a vertical scroller (`cal-grid`) that opens at 07:00; block columns `cal-col-<yyyy-mm-dd>`;
+- one block per entry (`cal-block-<itemId>`, a button): line 1 the start time (`formatTime`, two-digit 24 h, `tnum`), line 2 the title in `<bdi className="msg-text" dir="auto">`, both one line with an ellipsis; the full range (`formatTimeRange`, trusted) is the `title` attribute; the chat name is a visually hidden `<bdi className="msg-text sr-only" dir="auto">` inside the block (never an attribute, 16.5). Overlapping blocks of one day share the column width (lanes: first free lane by start time, width 1/lanes of the overlap cluster); `data-state` proposed (dashed amber; proposed and change_proposed) / in_calendar (solid) / cancelled (struck, muted). A change card is drawn at `change.to`; an entry past 24:00 is clipped on its start day; in-calendar entries sharing an event key are drawn once (newest wins). Click / Enter opens the existing sheet;
+- `cal-empty` "Nothing this week" when no block falls in the week; a one-time `cal-note` "Shows the chats this app analysed, not your whole Google calendar." with `cal-note-dismiss` "Got it" (remembered in `wca.dashboard.calNoteSeen`);
+- side list `cal-undated` "No date yet": the existing `ItemList` over the cards without a complete slot (info-missing, replies without an event, `endLocal = ''`), compact cards with the X and the fill form. Inline-end column of 20 rem from 900 px, stacked under the grid below that.
+- F6 in this view: header -> toolbar -> AutoStrip -> calendar (`cal-range`) -> side list -> footer.
+
+**Manual time.** (a) Proposed / change-proposed compact card: quiet "Edit time" (`edit-event-<id>`) toggles an inline `EventEditor` (`inline-editor-<id>`, mode edit / change); the edit rides the same `action:approve` as the sheet, "Add to calendar" is disabled while the edit is invalid, `item:setEditing` as in the sheet. (b) Information missing, compact (`fill-form-<id>`) and sheet - never on a change card, nor on a reschedule / cancel with no usable new time (`event: null`; "Save time" would add a second event; `item:completeEvent` refuses it with `ACTION_STALE`): "Save time" (`save-event-<id>`), enabled when the editor is valid and start/end are set, calls `item:completeEvent` (a user proposal, never a calendar write) -> toast "Time saved. Add it to the calendar when ready."; the card then offers "Add to calendar" (two clicks: save, then add) and moves from the side list onto the grid.
+
 ---
 
 ## 7. Item detail / approval sheet
@@ -1076,7 +1096,7 @@ Target: WCAG 2.2 AA; fully operable without a mouse; tested with Narrator and NV
 | Key | Where | Effect |
 |---|---|---|
 | Tab / Shift+Tab | everywhere | DOM order = visual reading order in both directions (no `tabindex` > 0, no CSS reordering) |
-| F6 / Shift+F6 | dashboard | cycle regions: header, column 1, column 2, column 3, footer |
+| F6 / Shift+F6 | dashboard | cycle regions: header, toolbar (`dash-toolbar`, `[V3]`), AutoStrip (when present, `[V2]`), column 1, column 2, column 3, footer; in the calendar view the three columns are replaced by calendar (`cal-range`), side list (6.11) |
 | Up / Down | focus on a card (card root is focusable, `tabindex=0`, roving) | previous / next card in the column |
 | Left / Right | focus on a card root | adjacent column **in visual direction** (Right moves to the visually right column in both LTR and RTL) |
 | Enter | card root | open the sheet |
@@ -1119,7 +1139,7 @@ Minimum target 32 x 32 px with 8 px between adjacent targets (desktop pointer; W
 
 ## 14. Component inventory
 
-Files are exactly those of ARCHITECTURE section 18 - no new component files. Small internal parts are co-located and exported from the named file. `VM` types below are what the renderer needs; the authoritative shapes live in `src/shared/types.ts` / `src/shared/ipc.ts` (Wave 0) and must contain at least these fields.
+Files are exactly those of ARCHITECTURE section 18 - no new component files (`[V3]` T-904 lifts this rule for `components/CalendarWeek.tsx` and its pure selectors `store/calendarEntries.ts`, 6.11; the other renderer rules - logical CSS only, no `settings:set` from components, untrusted text only in `<bdi className="msg-text" dir="auto">`, locale keys for every string - still hold). Small internal parts are co-located and exported from the named file. `VM` types below are what the renderer needs; the authoritative shapes live in `src/shared/types.ts` / `src/shared/ipc.ts` (Wave 0) and must contain at least these fields.
 
 ```ts
 // view models needed by the renderer (subset of shared types)
@@ -1148,7 +1168,7 @@ interface ItemDetailVM extends ItemVM { messages: { fromMe: boolean; ts: number;
 | Component (file) | Props | Notes |
 |---|---|---|
 | `App` | - | bootstrap (`app:getBootstrap`), `<html lang dir>`, routes `onboarding | dashboard | settings` from store, hosts header/footer, live regions, toast, coach mark, `DB_RECOVERY` dialog; subscribes to `ui:navigate`, `ui:languageChanged` |
-| `Dashboard` | - | reads `store/dashboard`; renders three `ItemList`s, `SetupStrip`, the sheet (expanded `ItemCard`), `UndoDismissDrawer`; owns F6/arrow navigation |
+| `Dashboard` | - | reads `store/dashboard`; renders three `ItemList`s, `SetupStrip`, the sheet (expanded `ItemCard`), `UndoDismissDrawer`; owns F6/arrow navigation. `[V3]` also the toolbar (schedule filter + view switch) and, in the calendar view, `CalendarWeek` + the "No date yet" `ItemList` instead of the three lists (6.11) |
 | `Settings` | `{ initialGroup?: 'general'|'ai'|'whatsapp'|'calendar'|'rules'|'replies'|'privacy' }` | section 9 |
 | `Onboarding/Welcome` | `{ onDone(): void }` | 8.0 |
 | `Onboarding/ChooseAi` | `{ onDone(): void; onBack(): void; embedded?: boolean }` | `embedded` = reused inside Settings > AI without wizard chrome |
@@ -1161,8 +1181,9 @@ interface ItemDetailVM extends ItemVM { messages: { fromMe: boolean; ts: number;
 | Component | Props | Behaviour summary |
 |---|---|---|
 | `ItemList` | `{ list: ListKey; title: string; count: number; items: ItemVM[]; queueCount?: number; collapsible: boolean; open: boolean; onToggle(): void; emptyState: ReactNode; onOpenItem(itemId: number): void }` | column/section; renders `ItemCard` or `RawCard` by `analysis`; "Showing the latest 20 of N" |
-| `ItemCard` | `{ item: ItemVM | ItemDetailVM; mode: 'compact'|'expanded'; onOpen?(): void; onClose?(): void }` | anatomy 6.5 / sheet 7; owns local edit state (draft text, event fields), calls `api.approve`, `api.dismiss`, `api.setEditing`; never re-syncs local edits from props while dirty |
+| `ItemCard` | `{ item: ItemVM | ItemDetailVM; mode: 'compact'|'expanded'; onOpen?(): void; onClose?(): void }` | anatomy 6.5 / sheet 7; owns local edit state (draft text, event fields), calls `api.approve`, `api.dismiss`, `api.setEditing`; never re-syncs local edits from props while dirty. `[V3]` props unchanged; adds the compact X, "Edit time" and "Save time" (`api.completeEvent`), 6.11 |
 | `RawCard` | `{ item: ItemVM; onOpen(): void }` | 6.9 |
+| `CalendarWeek` `[V3]` | `{ entries: CalendarEntry[]; anchorMs: EpochMs; onAnchorChange(ms: EpochMs): void; nowMs: EpochMs; lang: 'he'|'en'; timeZone: string; onOpenItem(itemId: number): void; noteSeen: boolean; onNoteSeen(): void }` | 6.11; new file (the v3 exception to "no new component files"); entries from `selectCalendarEntries(lists, scheduleOnly, timeZone)` in `store/calendarEntries.ts`; reads nothing, writes nothing - a block only calls `onOpenItem` |
 | `QuotedBubble` | `{ text: string | null; from: 'contact'|'me'; lang?: 'he'|'en'|null; clampLines?: number; isTrigger?: boolean; mediaKind?: ItemVM['trigger']['mediaKind']; timeLabel?: string }` | inert text only; no children prop (prevents accidental rich content) |
 | `DraftBox` | `{ value: string; suggestion: string | null; onChange(v: string): void; onEditingChange(editing: boolean): void; label: 'draft'|'own'; maxLength?: 600; disabled?: boolean; collapsedReason?: 'manipulation'; describedBy?: string }` | dashed/solid edge by `label`; counter; "Reset to suggestion"; Ctrl+Enter -> `onRequestPrimaryFocus` via ref |
 | `EventEditor` (+ exports `EventChip`) | `EventEditor: { value: EventVM; missing: MissingCode[]; mode: 'edit'|'fill'|'readonly'; calendarName: string; onChange(v: EventEdit): void; onValidityChange(ok: boolean, message?: string): void; focusField?: 'title'|'date'|'start'|'end'|'location' }`; `EventChip: { event: EventVM; badges: BadgeCode[]; onOpen(): void }` | 6.4, 7.2, 7.3; `EventEdit = { title, startLocal, endLocal, location }` |
@@ -1253,7 +1274,7 @@ Lane 13 owns both locale files and extends this table; lane 14 hands over its ke
 3. Every approval button's click sends exactly one `action:approve` with the `shownHash` from the VM it rendered; a second synchronous click sends nothing. No code path calls `action:approve` from `useEffect`, a timer, a toast or a keyboard shortcut other than Enter/Space on the focused button.
 4. A dirty card is not replaced on `dashboard:changed` (test: type, push a changed VM, assert textarea value unchanged and the "card changed" notice appears after blur).
 5. Untrusted strings (`displayName`, `trigger.text`, `draft.text`, `event.title`, `event.location`) appear only inside `QuotedBubble`, `DraftBox`, the `EventChip`/`EventEditor` title and location nodes, the card/sheet header name, and `<bdi>` interpolations; never in `document.title`, toasts, `aria-live` text other than the name in "Sent to <name>", or attributes other than `aria-label` of the card. No `dangerouslySetInnerHTML`.
-6. `data-testid` contract for e2e: `list-<ListKey>`, `card-<itemId>`, `approve-send-<itemId>`, `approve-event-<itemId>`, `draft-<itemId>`, `copy-<itemId>`, `dismiss-<itemId>`, `health-pill`, `health-row-<part>`, `download-pill`, `setup-strip-<task>`, `lang-toggle`, `pause-toggle`, `qr-image`, `coach-mark`, `onboarding-step-<n>`.
+6. `data-testid` contract for e2e: `list-<ListKey>`, `card-<itemId>`, `approve-send-<itemId>`, `approve-event-<itemId>`, `draft-<itemId>`, `copy-<itemId>`, `dismiss-<itemId>`, `health-pill`, `health-row-<part>`, `download-pill`, `setup-strip-<task>`, `lang-toggle`, `pause-toggle`, `qr-image`, `coach-mark`, `onboarding-step-<n>`. `[V3]` (6.11): `dash-toolbar`, `schedule-filter-toggle`, `view-switch`, `view-cards`, `view-calendar`, `calendar-week`, `cal-prev`, `cal-today`, `cal-next`, `cal-range`, `cal-note`, `cal-note-dismiss`, `cal-empty`, `cal-grid`, `cal-day-<yyyy-mm-dd>`, `cal-col-<yyyy-mm-dd>`, `cal-hour-<h>`, `cal-block-<itemId>` (`data-state`), `cal-undated`, `dismiss-x-<itemId>`, `edit-event-<itemId>`, `inline-editor-<itemId>`, `fill-form-<itemId>`, `save-event-<itemId>`.
 7. axe-core (dev dependency is **not** in the pinned list - so: `@testing-library` role queries + a manual Narrator/NVDA pass are the gate; see concern C7).
 8. Light/dark/forced-colors screenshots of the dashboard and sheet in both languages reviewed by a human once before release.
 9. Window: at 420 x 560 nothing overflows horizontally in either language; at 980 x 680 three columns are visible with no horizontal scrollbar; zoom 200 % engages the one-column layout.

@@ -123,6 +123,14 @@ test('a Hebrew dashboard lays out towards the right and neither language scrolls
 
   await e2e.screenshot(page, 'dashboard-he-420');
 
+  // [V3] T-904 review focus 5: the week calendar (Sunday first, mirrored arrows) does not scroll horizontally either.
+  await page.getByTestId('view-calendar').click();
+  await expect(page.getByTestId('calendar-week')).toBeVisible();
+  expect(await horizontalOverflow(launched), 'no horizontal scrollbar in the Hebrew calendar at 420 px').toBe(0);
+  await e2e.screenshot(page, 'calendar-he-420');
+  await page.getByTestId('view-cards').click();
+  await expect(page.getByTestId('calendar-week')).toHaveCount(0);
+
   await page.locator('[data-testid="lang-toggle"] [data-lang="en"]').click();
   await expect(page.locator('html')).toHaveAttribute('dir', 'ltr');
   expect(await horizontalOverflow(launched), 'no horizontal scrollbar in English at 420 px').toBe(0);
@@ -149,6 +157,12 @@ test('every view is screenshotted in both languages for the Hebrew review', asyn
 
     await expect(page.getByTestId('dashboard')).toBeVisible();
     await e2e.screenshot(page, `dashboard-${lang}`);
+    // [V3] T-904: the week calendar view of the same dashboard.
+    await page.getByTestId('view-calendar').click();
+    await expect(page.getByTestId('calendar-week')).toBeVisible();
+    await e2e.screenshot(page, `calendar-${lang}`);
+    await page.getByTestId('view-cards').click();
+    await expect(page.getByTestId('calendar-week')).toHaveCount(0);
 
     await page.getByTestId('settings-toggle').click();
     await expect(page.getByTestId('settings')).toBeVisible();

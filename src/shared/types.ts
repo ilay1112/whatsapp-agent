@@ -1026,6 +1026,7 @@ export interface ItemCard {
   trigger: { ts: EpochMs; text: string | null }; // UNTRUSTED, cut to LIMITS.triggerPreviewChars
   draft: DraftReply | null;
   event: ProposedEvent | null;
+  intent: Intent | null; // [V3] current proposal's intent; null before analysis — the renderer's schedule-only filter reads it
   missing: MissingField[];
   badges: Badge[];
   actions: ActionView[]; // only states pending | approved | executing | failed | unknown_outcome of the CURRENT proposal ; max one per kind

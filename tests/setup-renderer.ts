@@ -130,6 +130,7 @@ export const defaultCard: ItemCard = {
     assumptions: ['hour_assumed_pm'],
     dateHint: '',
   },
+  intent: 'schedule_request', // [V3]
   missing: [],
   badges: ['time_assumed'],
   actions: [

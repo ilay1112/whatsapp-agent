@@ -780,6 +780,13 @@ describe('automatic mode on the card', () => {
 // source card of a pending change (UX2 3.3.3)
 // ---------------------------------------------------------------------------------------------------------------------
 describe('"Change proposed - see Needs reply"', () => {
+  // [V3 task 5] These cases read the store's lists. An earlier test's 1.2 s post-approval refresh timer (CONFIRM_MS) can
+  // fire inside them and replace the lists with the default dashboard (no delta card) - a pre-existing flake. Keep any
+  // such stray refresh pending so the lists stay what the case seeded.
+  beforeEach(() => {
+    mockInvoke('dashboard:get', () => new Promise(() => {}));
+  });
+
   it('the source card wears the chip; activating it focuses the delta card of the same chat', async () => {
     const user = userEvent.setup();
     const source = landed({ itemId: 5, changePending: true, undo: null });

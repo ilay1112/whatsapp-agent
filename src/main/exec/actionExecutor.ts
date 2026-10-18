@@ -250,6 +250,7 @@ function fallbackDetail(repos: Repos, itemId: ItemId): ItemDetail {
     trigger: { ts: item?.triggerTs ?? 0, text: null },
     draft: null,
     event: null,
+    intent: null, // [V3] row-only fallback (never shown); ItemService sets the real one
     missing: item?.missing ?? [],
     badges: item?.badges ?? [],
     actions: [],

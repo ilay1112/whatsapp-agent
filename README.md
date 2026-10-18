@@ -44,7 +44,11 @@ A Windows 11 desktop app that watches **your own** WhatsApp chats for plans ("co
 - **In calendar** — plans that are on your Google Calendar (only after you approved them).
 - **Information missing** — plans the app spotted but can't book yet (no time, no day…); the draft reply asks for what's missing.
 
-Each card shows the original message, the proposed event (title, date, time, place) and the draft reply, with **Approve & send**, **Add to calendar**, **Edit**, **Ask for details** and **Dismiss** (*Undo dismiss* keeps the last 20).
+Each card shows the original message, the proposed event (title, date, time, place) and the draft reply, with **Approve & send**, **Add to calendar**, **Edit time**, **Ask for details** and an **×** to dismiss (*Undo dismiss* keeps the last 20).
+
+- By default only chats that look like a plan are shown; **Show all (N hidden)** reveals the rest.
+- **Cards / Calendar** switch: a week view of your proposed and booked plans (built from the app's own data, not a read of your whole Google calendar); chats with no date yet sit in a side list.
+- A plan with a missing time can be completed by hand: **Save time**, then **Add to calendar** — still one explicit click per calendar write.
 
 ### Events that follow the conversation
 

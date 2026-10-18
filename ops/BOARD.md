@@ -140,3 +140,4 @@ Status: `todo` · `doing` · `review` · `done` · `blocked`. Details in `ops/ti
 | T-901 | Antigravity: no --effort with effort-suffixed models; error-before-init classified by its text | agent | done |
 | T-902 | Leftovers: signing docs + README v2 features, Defender gate in verify, midnight flake, settings guard | agent | done |
 | T-903 | e2e for the sign-in flow + full run; final proof | agents | done |
+| T-904 | v3 dashboard: dismiss X, schedule-only filter, week calendar, manual time (user request) | orchestrator + Opus workers | done |

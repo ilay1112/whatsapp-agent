@@ -9,6 +9,10 @@
 // refresh (UX2 12). `queue:changed` feeds the "Transcribing a voice note (0:42)..." line (UX2 2.5). `navRequest` is how
 // a dashboard control asks the shell (App.tsx, V2-W1-12) to open another view: the AutoStrip "Show all in Automatic
 // activity" link and the "Turn on in Settings" / "Choose an AI" actions of the voice / picture raw cards.
+//
+// [V3] T-904 (handover §2.2 / §2.3): `scheduleOnly` (the schedule-only filter, default on), `view` (cards | calendar) and
+// `calNoteSeen` (the calendar's one-time scope note) are remembered in the renderer's own web storage, the same guarded
+// pattern as `store/settings.ts` VOICE_INTENT_KEY. They are UI preferences, not settings: nothing goes to `settings:set`.
 import { create } from 'zustand';
 import type { ItemCard, ItemDetail, ItemId } from '@shared/types';
 import type { ErrorCode } from '@shared/errors';
@@ -16,6 +20,30 @@ import { api } from '../api';
 
 export type ListKey = 'needs_reply' | 'in_calendar' | 'info_missing';
 export const LIST_KEYS: readonly ListKey[] = ['needs_reply', 'in_calendar', 'info_missing'];
+
+/** [V3] The dashboard body: the three card columns or the week calendar (handover §2.3). */
+export type DashboardView = 'cards' | 'calendar';
+export const SCHEDULE_ONLY_KEY = 'wca.dashboard.scheduleOnly';
+export const VIEW_KEY = 'wca.dashboard.view';
+export const CAL_NOTE_KEY = 'wca.dashboard.calNoteSeen';
+
+/** Reads one remembered value; missing, unknown or unreadable storage gives `fallback`. */
+function readStored<T extends string>(key: string, allowed: readonly T[], fallback: T): T {
+  try {
+    const raw = window.localStorage.getItem(key);
+    return allowed.find((v) => v === raw) ?? fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+function writeStored(key: string, value: string): void {
+  try {
+    window.localStorage.setItem(key, value);
+  } catch {
+    // window memory still holds it for this run
+  }
+}
 
 /**
  * How long an id stays in `arrivedItemIds` (UX 2.4: the 3 px inline-start edge fades over 1.6 s). The class is dropped
@@ -75,6 +103,15 @@ export interface DashboardStore {
   toggleSection(list: ListKey): void;
   setUndoDrawerOpen(open: boolean): void;
   setToast(t: DashboardStore['toast']): void;
+  /** [V3] Schedule-only filter (default on), remembered in `wca.dashboard.scheduleOnly`. */
+  scheduleOnly: boolean;
+  setScheduleOnly(v: boolean): void;
+  /** [V3] Cards or week calendar (default cards), remembered in `wca.dashboard.view`. */
+  view: DashboardView;
+  setView(v: DashboardView): void;
+  /** [V3] The calendar's one-line scope note was dismissed; remembered in `wca.dashboard.calNoteSeen`. */
+  calNoteSeen: boolean;
+  setCalNoteSeen(): void;
 }
 
 const emptyLists = (): DashboardStore['lists'] => ({
@@ -215,4 +252,20 @@ export const useDashboardStore = create<DashboardStore>((set, get) => ({
   setQueue: (queue) => set({ queue }),
   requestNavigation: (navRequest) => set({ navRequest }),
   clearNavRequest: () => set({ navRequest: null }),
+
+  scheduleOnly: readStored(SCHEDULE_ONLY_KEY, ['true', 'false'], 'true') === 'true',
+  setScheduleOnly: (scheduleOnly) => {
+    set({ scheduleOnly });
+    writeStored(SCHEDULE_ONLY_KEY, String(scheduleOnly));
+  },
+  view: readStored<DashboardView>(VIEW_KEY, ['cards', 'calendar'], 'cards'),
+  setView: (view) => {
+    set({ view });
+    writeStored(VIEW_KEY, view);
+  },
+  calNoteSeen: readStored(CAL_NOTE_KEY, ['true'], 'false') === 'true',
+  setCalNoteSeen: () => {
+    set({ calNoteSeen: true });
+    writeStored(CAL_NOTE_KEY, 'true');
+  },
 }));

@@ -7,7 +7,9 @@
  *   3. the 12 px queue spinner (UX 6.3), which must stop under prefers-reduced-motion (UX 2.4);
  *   4. the sticky column headers of the one-column layout (UX 6.2);
  *   5. [V2, owner V2-W1-11] the AutoStrip width and its narrow-window row wrap (UX2 3.1);
- *   6. [V2] the 96 px card thumbnail and the contained sheet picture (UX2 3.6).
+ *   6. [V2] the 96 px card thumbnail and the contained sheet picture (UX2 3.6);
+ *   7. [V3] the week-calendar view: the grid and its "No date yet" side list (ux.md 6.11), the day headers' weekday
+ *      swap (container query) and the one-line block text.
  * Logical properties only - no left/right/margin-left/... anywhere (TESTS section 9 "Physical-CSS ban").
  */
 
@@ -96,4 +98,39 @@
   max-block-size: 22.5rem;
   object-fit: contain;
   user-select: none;
+}
+
+/* ---- 7. [V3] week calendar view (ux.md 6.11): the week grid and, at its inline-end, the 20 rem "No date yet" list.
+   Below 900 px the dashboard renders a stacked flex column instead, so this rule only serves the wide layout. ---- */
+.dash-calendar {
+  grid-template-columns: minmax(0, 1fr) 20rem;
+}
+
+/* [V3 fix pass] Day header: weekday over day number. Each header cell is a size container; under 72 px the short
+   weekday ("Wed", "יום ד׳") gives way to the narrow one ("W", "ד׳"). The day number is always shown. */
+.cal-day {
+  container-type: inline-size;
+}
+
+.cal-wd-narrow {
+  display: none;
+}
+
+@container (inline-size < 72px) {
+  .cal-wd-short {
+    display: none;
+  }
+
+  .cal-wd-narrow {
+    display: inline;
+  }
+}
+
+/* [V3 fix pass] Block text: two single lines (start time, title) cut with an ellipsis. Two classes deep so it wins over
+   .msg-text's pre-wrap (styles.css), which would otherwise wrap the untrusted title onto hidden lines. */
+.cal-block .cal-line {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  overflow-wrap: normal;
 }
