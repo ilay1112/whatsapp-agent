@@ -225,7 +225,7 @@ export function buildNotices(input) {
   out.push(
     [
       'Shipped at: resources\\bridge\\whatsapp-bridge.exe (pinned SHA-256 ' + input.bridgeSha256 + ')',
-      'A prebuilt Go binary; the corresponding source is vendored for reference in vendor/whatsapp-bridge-src/.',
+      'A Go binary built from the vendored source in vendor/whatsapp-bridge-src/ (`npm run build:bridge`; library versions pinned in its go.mod).',
       'Fork of https://github.com/lharries/whatsapp-mcp',
       '',
       input.bridgeLicense.trim(),
@@ -403,7 +403,7 @@ export function main(io = { out: process.stdout, err: process.stderr }) {
     llamaUrl: pin.llama.url,
     llamaMit: readFileSync(LLAMA_MIT_PATH, 'utf8'),
     bridgeLicense: readFileSync(BRIDGE_LICENSE_PATH, 'utf8'),
-    bridgeSha256: 'AC23221E8BCF3937A4CA346B3BD80A8DA09DF94CBECD949AF2916C4BC8D22FF5',
+    bridgeSha256: '150A85FC65B0D1989B692F3DA4399888D92CBC23AC9283E915D4E090C4358AB5',
     mcpVersion: mcpPkg.dependencies['@cocal/google-calendar-mcp'],
     stagedCrt: existsSync(manifestPath) ? stagedCrtFrom(readFileSync(manifestPath, 'utf8')) : [],
     npmPackages: productionPackages(lock),

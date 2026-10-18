@@ -10,7 +10,9 @@
  *    so they are accepted only while the launcher is in SPAWNING with no health answer yet).
  *  - `logged_out` comes ONLY from GET /api/pairing/status (LOGGED_OUT_MESSAGE_RE). `client_outdated`, `rest_error`, `unstable`, `stream_replaced`
  *    only ANNOTATE: when the health probe/breaker later decides (503 persisting -> respawn -> breaker open), the most recent annotation within
- *    the last 60 s selects the ErrorCode shown (BRIDGE_OUTDATED when `client_outdated`, else BRIDGE_CRASH_LOOP). They never stop, kill or respawn by themselves.
+ *    the last 60 s selects the ErrorCode shown (BRIDGE_OUTDATED when `client_outdated`, else BRIDGE_CRASH_LOOP). They never stop, kill or respawn by themselves -
+ *    except `client_outdated` from the RUNNING child, which makes the launcher probe GET /api/health once; only a disconnected (503) answer then stops
+ *    the bridge as terminal 'outdated' (the real bridge never exits on ClientOutdated). A typed copy arrives while connected and is refuted (200).
  *  ONLY the marker name is ever logged; raw stdout is never persisted or displayed. */
 export const MESSAGE_ECHO_RE = /^\[\d{4}-\d\d-\d\d \d\d:\d\d:\d\d\] /; // main.go: fmt.Printf("[%s] %s %s: %s\n", timestamp, direction, sender, content)
 export const CLIENT_LOG_PREFIX_RE = /^\d\d:\d\d:\d\d\.\d{3} \[Client (INFO|WARN|ERROR|DEBUG)\] /;

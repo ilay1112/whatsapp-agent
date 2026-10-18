@@ -20,3 +20,4 @@ tests/eslint-fixtures/
 # src/renderer/src/styles.test.ts greps styles.css for the UX section 2 token declarations.
 src/preload/index.ts
 src/renderer/src/styles.css
+.claude/

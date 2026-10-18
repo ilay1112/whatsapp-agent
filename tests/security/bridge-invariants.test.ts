@@ -279,8 +279,8 @@ describe('I6 - the spawn invariant table', () => {
   it('pins the exe identity of ARCH 4.1', () => {
     expect(BRIDGE_EXE).toEqual({
       fileName: 'whatsapp-bridge.exe',
-      size: 43_540_541,
-      sha256: 'ac23221e8bcf3937a4ca346b3bd80a8da09df94cbecd949af2916c4bc8d22ff5',
+      size: 37_538_577,
+      sha256: '150a85fc65b0d1989b692f3da4399888d92cbc23ac9283e915d4e090c4358ab5',
     });
   });
 

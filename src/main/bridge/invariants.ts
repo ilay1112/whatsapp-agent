@@ -9,8 +9,8 @@ import type { ErrorCode } from '../../shared/errors';
 
 export const BRIDGE_EXE = {
   fileName: 'whatsapp-bridge.exe',
-  size: 43_540_541,
-  sha256: 'ac23221e8bcf3937a4ca346b3bd80a8da09df94cbecd949af2916c4bc8d22ff5',
+  size: 37_538_577,
+  sha256: '150a85fc65b0d1989b692f3da4399888d92cbc23ac9283e915d4e090c4358ab5',
 } as const; // compared lowercase
 
 // ---------------------------------------------------------------------------------------------------------------------
@@ -161,7 +161,7 @@ export function errorCodeForViolations(violations: readonly SpawnViolation[]): E
   return violations.includes('exe_hash_mismatch') ? 'BRIDGE_BINARY_BLOCKED' : 'BRIDGE_SPAWN_REFUSED';
 }
 
-/** Streamed SHA-256 of one file - the bridge exe is 43.5 MB, so it is never read into memory whole. Rejects when it cannot be read. */
+/** Streamed SHA-256 of one file - the bridge exe is ~37.5 MB, so it is never read into memory whole. Rejects when it cannot be read. */
 export function sha256OfFile(filePath: string): Promise<string> {
   return new Promise<string>((res, rej) => {
     const hash = createHash('sha256');

@@ -1,22 +1,25 @@
 #!/usr/bin/env node
-// scripts/import-bridge.mjs - copies EXACTLY ONE file by exact literal path into resources/bridge/ and verifies it (ARCH 4.1;
-// build-plan section 2 deliverable 5; decision D-016). Owner W0 -> W2-04.
+// scripts/import-bridge.mjs - LEGACY PATH. Since 2026-10-18 resources/bridge/whatsapp-bridge.exe is BUILT by `npm run build:bridge`
+// (scripts/build-bridge.mjs) from vendor/whatsapp-bridge-src - WhatsApp now refuses the old prebuilt exe (ClientOutdated). This
+// script is kept for reference and for its pins: BRIDGE_EXE_SIZE / BRIDGE_EXE_SHA256 below are the pins of the CURRENT built exe
+// (hash-bridge.mjs and sign-windows.mjs import them), so copying the reference exe with it now REFUSES on size/hash, by design.
+// Originally (ARCH 4.1; build-plan section 2 deliverable 5; decision D-016, owner W0 -> W2-04) it copied EXACTLY ONE file by exact
+// literal path into resources/bridge/ and verified it.
 //
 // Rules this file obeys literally (tests/setup-guards + scripts/import-bridge.test.mjs grep the source for them):
 //   - the ONLY source path literal is the one exe below; the folder is never listed (no directory-listing or glob call anywhere);
 //   - the exe is streamed (read stream -> SHA-256 + temp file); it is never started (no process-starting import, no shell);
 //   - it refuses unless the byte size AND the SHA-256 match the pins; on refusal the temp file is deleted and nothing is written;
 //   - it never touches the reference bridge's `store\` folder or anything else in that tree.
-// Run once by the user or an explicitly user-approved step:  node scripts/import-bridge.mjs
 import { createHash } from 'node:crypto';
 import { createReadStream, createWriteStream, mkdirSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { pipeline } from 'node:stream/promises';
 import { fileURLToPath } from 'node:url';
 
-/** Pins (docs/research/bridge-contract.md section 1; ARCH 4.1). Lower-case hex for comparison. */
-export const BRIDGE_EXE_SIZE = 43_540_541;
-export const BRIDGE_EXE_SHA256 = 'ac23221e8bcf3937a4ca346b3bd80a8da09df94cbecd949af2916c4bc8d22ff5';
+/** Pins of the exe built by `npm run build:bridge` (ARCH 4.1; docs/research/bridge-contract.md section 0). Lower-case hex. */
+export const BRIDGE_EXE_SIZE = 37_538_577;
+export const BRIDGE_EXE_SHA256 = '150a85fc65b0d1989b692f3da4399888d92cbc23ac9283e915d4e090c4358ab5';
 
 /** The one and only source path (literal, never derived from a listing). */
 const SOURCE_EXE = 'C:\\Users\\ilay1\\Documents\\minime\\whatsapp-mcp\\whatsapp-bridge\\whatsapp-bridge.exe';

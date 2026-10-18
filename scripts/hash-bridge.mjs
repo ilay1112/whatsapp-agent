@@ -81,7 +81,9 @@ export async function main(argv = process.argv.slice(2), io = { out: process.std
     );
     return 0;
   }
-  io.err.write(`hash-bridge: FAIL - ${r.reason}. Run \`node scripts/import-bridge.mjs\` (user-approved step) first.\n`);
+  io.err.write(
+    `hash-bridge: FAIL - ${r.reason}. Run \`npm run build:bridge\` first (and update the pins after a rebuild).\n`,
+  );
   return 1;
 }
 

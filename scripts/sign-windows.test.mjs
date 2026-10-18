@@ -917,7 +917,7 @@ describe('session - provenance before signing', () => {
   it('the real provenance resolver reads the repo pins (import-bridge pin, committed vendor/*.pin.json)', async () => {
     const prov = createProvenance();
     const bridge = await prov('C:\\x\\win-unpacked\\resources\\bridge\\whatsapp-bridge.exe');
-    expect(bridge.expected).toBe('ac23221e8bcf3937a4ca346b3bd80a8da09df94cbecd949af2916c4bc8d22ff5');
+    expect(bridge.expected).toBe('150a85fc65b0d1989b692f3da4399888d92cbc23ac9283e915d4e090c4358ab5');
     expect((await prov('C:\\x\\win-unpacked\\ffmpeg.dll')).expected).toBeNull();
     for (const kind of ['llama', 'whisper']) {
       const committed = JSON.parse(readFileSync(join(HERE, '..', 'vendor', `${kind}.pin.json`), 'utf8'));

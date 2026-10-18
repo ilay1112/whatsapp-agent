@@ -13,8 +13,8 @@ Local language models are NOT part of this installer. They are downloaded by the
 1. WhatsApp bridge - whatsapp-bridge.exe  (MIT)
 ====================================================================================================
 
-Shipped at: resources\bridge\whatsapp-bridge.exe (pinned SHA-256 AC23221E8BCF3937A4CA346B3BD80A8DA09DF94CBECD949AF2916C4BC8D22FF5)
-A prebuilt Go binary; the corresponding source is vendored for reference in vendor/whatsapp-bridge-src/.
+Shipped at: resources\bridge\whatsapp-bridge.exe (pinned SHA-256 150A85FC65B0D1989B692F3DA4399888D92CBC23AC9283E915D4E090C4358AB5)
+A Go binary built from the vendored source in vendor/whatsapp-bridge-src/ (`npm run build:bridge`; library versions pinned in its go.mod).
 Fork of https://github.com/lharries/whatsapp-mcp
 
 This is a fork of https://github.com/lharries/whatsapp-mcp

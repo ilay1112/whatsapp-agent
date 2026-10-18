@@ -89,6 +89,7 @@ export default tseslint.config(
   {
     ignores: [
       'node_modules/**',
+      '.claude/**', // worktrees the desktop app creates for other sessions carry their own tsconfig
       'out/**',
       'dist/**',
       'release/**',

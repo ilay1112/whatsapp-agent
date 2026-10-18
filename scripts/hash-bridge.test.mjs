@@ -83,6 +83,6 @@ describe('hash-bridge.mjs', () => {
     writePlaceholder(exePath);
     expect(existsSync(exePath)).toBe(true);
     expect(statSync(exePath).size).toBe(0);
-    expect((await checkBridge({ exePath, expectedSize: 43_540_541, expectedSha256: 'a'.repeat(64) })).ok).toBe(false);
+    expect((await checkBridge({ exePath, expectedSize: 37_538_577, expectedSha256: 'a'.repeat(64) })).ok).toBe(false);
   });
 });

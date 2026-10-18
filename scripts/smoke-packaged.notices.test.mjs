@@ -30,7 +30,7 @@ const input = {
   llamaUrl: 'https://example.invalid/llama.zip',
   llamaMit: 'MIT License\n\nCopyright (c) 2023-2026 The ggml authors\n',
   bridgeLicense: 'MIT License\n\nOriginal work Copyright (c) 2025 Luke Harries\n',
-  bridgeSha256: 'AC23221E8BCF3937A4CA346B3BD80A8DA09DF94CBECD949AF2916C4BC8D22FF5',
+  bridgeSha256: '150A85FC65B0D1989B692F3DA4399888D92CBC23AC9283E915D4E090C4358AB5',
   mcpVersion: '2.6.3',
   stagedCrt: [],
   npmPackages: productionPackages(lock),

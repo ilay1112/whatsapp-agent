@@ -646,6 +646,115 @@ describe('the host state machine (ARCHITECTURE 4.3)', () => {
   });
 });
 
+// [bridge-outdated] 2026-10-18: the real bridge logs ClientOutdated and then reconnects forever WITHOUT exiting, so the
+// exit-counting breaker never opened and the UI sat on "starting" indefinitely.
+describe('client_outdated while the bridge is running (health-confirmed)', () => {
+  const OUTDATED_LINE = '❌ Client outdated - please update whatsmeow library';
+  const healthCalls = (h: Harness): number => h.fetchScript.calls.filter((c) => c.path === '/api/health').length;
+
+  it('marker + health 503 => terminal: status outdated, child killed, no respawn, logged', async () => {
+    const launcher = await startOnline();
+    const child = harness.children[0] as FakeChild;
+    harness.fetchScript.healthStatus = 503; // ClientOutdated = 405 at connect: the socket is closed
+    child.say(OUTDATED_LINE);
+    expect(await settleUntil(() => launcher.status(), 'outdated')).toBe('outdated');
+    expect(child.killed).toBe(true);
+    expect(launcher.errorCode()).toBe('BRIDGE_OUTDATED');
+    expect(launcher.childSpec().terminal?.()).toBe(true);
+    expect(harness.logs.some((l) => l.level === 'error' && l.event === 'bridge_client_outdated')).toBe(true);
+    // no respawn: neither the backoff timer nor the health tick brings it back
+    for (let i = 0; i < 10; i++) {
+      await harness.clock.advance(60_000);
+      await flush();
+    }
+    expect(harness.spawned).toHaveLength(1);
+    expect(launcher.status()).toBe('outdated');
+  });
+
+  it('a second marker inside the annotation window does nothing (no second probe, no second kill)', async () => {
+    const launcher = await startOnline();
+    const child = harness.children[0] as FakeChild;
+    const kill = vi.spyOn(child, 'kill');
+    harness.fetchScript.healthStatus = 503;
+    child.say(OUTDATED_LINE);
+    child.say(OUTDATED_LINE);
+    expect(await settleUntil(() => launcher.status(), 'outdated')).toBe('outdated');
+    const probes = healthCalls(harness);
+    child.say(OUTDATED_LINE); // the dying child's stdout is still readable
+    await flush();
+    await flush();
+    expect(kill).toHaveBeenCalledTimes(1);
+    expect(healthCalls(harness)).toBe(probes);
+    expect(probes).toBe(1);
+    expect(harness.logs.filter((l) => l.event === 'bridge_client_outdated')).toHaveLength(1);
+  });
+
+  it('resetBreaker (start = the user retry) clears it: the next start spawns again', async () => {
+    const launcher = await startOnline();
+    harness.fetchScript.healthStatus = 503;
+    harness.children[0]?.say(OUTDATED_LINE);
+    expect(await settleUntil(() => launcher.status(), 'outdated')).toBe('outdated');
+
+    harness.fetchScript.healthStatus = 200;
+    await launcher.start();
+    await flush();
+    expect(harness.spawned).toHaveLength(2);
+    await harness.clock.advance(HEALTH_POLL_MS); // the pairing poller dedupes 'connected'; the first health tick reports online
+    await flush();
+    expect(launcher.status()).toBe('online');
+    expect(launcher.childSpec().terminal?.()).toBe(false);
+    await launcher.stop();
+    await flush();
+  });
+
+  it('[R2] a typed "Client outdated" (multi-line message, bridge connected => health 200) is refuted and stays an annotation', async () => {
+    const launcher = await startOnline();
+    const child = harness.children[0] as FakeChild;
+    child.say(`[2026-10-18 12:00:00] <- 972550000001: hi\n${OUTDATED_LINE}`);
+    await flush();
+    await flush();
+    expect(launcher.status()).toBe('online');
+    expect(child.killed).toBe(false);
+    expect(launcher.childSpec().terminal?.()).toBe(false);
+    expect(harness.logs.some((l) => l.event === 'bridge_client_outdated_unconfirmed')).toBe(true);
+    expect(harness.logs.some((l) => l.event === 'bridge_client_outdated')).toBe(false);
+    await launcher.stop();
+    await flush();
+  });
+
+  it('rest_error alone keeps the old behaviour: annotation only, nothing stops', async () => {
+    const launcher = await startOnline();
+    const child = harness.children[0] as FakeChild;
+    harness.fetchScript.healthStatus = 503;
+    child.say('REST API server error: listen tcp 127.0.0.1:1: bind');
+    await flush();
+    await flush();
+    expect(launcher.status()).toBe('online');
+    expect(child.killed).toBe(false);
+    expect(healthCalls(harness)).toBe(0);
+    expect(launcher.childSpec().terminal?.()).toBe(false);
+    expect(harness.logs.some((l) => l.event.startsWith('bridge_client_outdated'))).toBe(false);
+    await launcher.stop();
+    await flush();
+  });
+
+  it('supervised: the child is killed, terminal() is true so the Supervisor does not respawn, status outdated', async () => {
+    const launcher = createBridgeLauncher(harness.deps);
+    const spec = launcher.childSpec();
+    const handle = await spec.start(1);
+    await flush();
+    const exits: unknown[] = [];
+    handle.onExit((info) => exits.push(info));
+    harness.fetchScript.healthStatus = 503;
+    harness.children[0]?.say(OUTDATED_LINE);
+    expect(await settleUntil(() => launcher.status(), 'outdated')).toBe('outdated');
+    expect(harness.children[0]?.killed).toBe(true);
+    expect(exits).toHaveLength(1); // the Supervisor's exit callback ran ...
+    expect(spec.terminal?.()).toBe(true); // ... and finds the launcher terminal => proc_terminal, no backoff
+    expect(launcher.status()).toBe('outdated'); // not overwritten by 'backoff'
+  });
+});
+
 describe('[R2] stdout is untrusted: no marker ever changes state', () => {
   it('every BRIDGE_MARKERS string, echoed as a message line AND as multi-line content, is inert', async () => {
     const launcher = await startOnline();

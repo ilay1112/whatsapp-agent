@@ -1563,7 +1563,9 @@ export interface Ingest {
  *    so they are accepted only while the launcher is in SPAWNING with no health answer yet).
  *  - `logged_out` comes ONLY from GET /api/pairing/status (LOGGED_OUT_MESSAGE_RE). `client_outdated`, `rest_error`, `unstable`, `stream_replaced`
  *    only ANNOTATE: when the health probe/breaker later decides (503 persisting -> respawn -> breaker open), the most recent annotation within
- *    the last 60 s selects the ErrorCode shown (BRIDGE_OUTDATED when `client_outdated`, else BRIDGE_CRASH_LOOP). They never stop, kill or respawn by themselves.
+ *    the last 60 s selects the ErrorCode shown (BRIDGE_OUTDATED when `client_outdated`, else BRIDGE_CRASH_LOOP). They never stop, kill or respawn by themselves -
+ *    except `client_outdated` from the RUNNING child, which makes the launcher probe GET /api/health once; only a disconnected (503) answer then stops
+ *    the bridge as terminal 'outdated' (the real bridge never exits on ClientOutdated). A typed copy arrives while connected and is refuted (200).
  *  ONLY the marker name is ever logged; raw stdout is never persisted or displayed. */
 export const MESSAGE_ECHO_RE = /^\[\d{4}-\d\d-\d\d \d\d:\d\d:\d\d\] /;      // main.go: fmt.Printf("[%s] %s %s: %s\n", timestamp, direction, sender, content)
 export const CLIENT_LOG_PREFIX_RE = /^\d\d:\d\d:\d\d\.\d{3} \[Client (INFO|WARN|ERROR|DEBUG)\] /;
@@ -1599,8 +1601,8 @@ export declare function matchMarkers(chunkUtf8: string): BridgeMarker[];
 
 ```ts
 // src/main/bridge/invariants.ts   (frozen signatures; I6)
-export const BRIDGE_EXE = { fileName: 'whatsapp-bridge.exe', size: 43_540_541,
-  sha256: 'ac23221e8bcf3937a4ca346b3bd80a8da09df94cbecd949af2916c4bc8d22ff5' } as const;   // compared lowercase
+export const BRIDGE_EXE = { fileName: 'whatsapp-bridge.exe', size: 37_538_577,
+  sha256: '150a85fc65b0d1989b692f3da4399888d92cbc23ac9283e915d4e090c4358ab5' } as const;   // compared lowercase
 export const BRIDGE_ENV_KEYS = ['WHATSAPP_BRIDGE_PORT', 'WHATSAPP_BRIDGE_TOKEN', 'WEBHOOK_URL', 'FORWARD_SELF', 'WHATSAPP_MEDIA_ROOTS'] as const;
 export const OS_ENV_PASSTHROUGH = ['SystemRoot', 'TEMP', 'TMP', 'USERPROFILE', 'APPDATA', 'LOCALAPPDATA'] as const;
 export const FORBIDDEN_BRIDGE_ARGS = ['--full-history-pair'] as const;

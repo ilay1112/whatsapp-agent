@@ -229,6 +229,8 @@ export function createBridgeLauncher(deps: BridgeLauncherDeps): BridgeLauncherHa
   let healthTimer: ClockTimer | null = null;
   let respawnTimer: ClockTimer | null = null;
   let pokeReadiness: (() => void) | null = null;
+  /** [bridge-outdated] When the current child's last `client_outdated` health confirmation started (null = none yet for this child). */
+  let outdatedCheckAt: number | null = null;
   const exits: number[] = [];
   const annotations: Array<{ marker: BridgeMarker; at: number }> = [];
   const statusCbs = new Set<(s: BridgeStatus) => void>();
@@ -305,7 +307,7 @@ export function createBridgeLauncher(deps: BridgeLauncherDeps): BridgeLauncherHa
   }
 
   // ---- stdout markers ---------------------------------------------------------------------------------------------
-  function handleMarker(marker: BridgeMarker): void {
+  function handleMarker(marker: BridgeMarker, from: ChildProcess): void {
     // Only the NAME is logged / forwarded; the raw line never leaves this function.
     log.info('bridge_marker', { marker });
     deps.onMarker(marker);
@@ -316,6 +318,9 @@ export function createBridgeLauncher(deps: BridgeLauncherDeps): BridgeLauncherHa
         return;
       case 'qr_phase':
         void poller.pollNow();
+        return;
+      case 'client_outdated':
+        confirmClientOutdated(from);
         return;
       case 'token_banner':
       case 'invalid_port':
@@ -338,6 +343,42 @@ export function createBridgeLauncher(deps: BridgeLauncherDeps): BridgeLauncherHa
     }
   }
 
+  /**
+   * [bridge-outdated] The real bridge logs ClientOutdated and then keeps reconnecting forever WITHOUT exiting, so the breaker
+   * (which counts exits) never opened and the UI sat on "starting" indefinitely. A `client_outdated` line from the CURRENT
+   * child therefore ends the bridge - terminal (no respawn), child stopped, status 'outdated' (BRIDGE_OUTDATED) - but only
+   * after GET /api/health CONFIRMS the bridge is disconnected. [R2] stdout cannot tell a bridge log line from the continuation
+   * line of a multi-line message, and a contact's message can only arrive while the bridge IS connected (health 200): a typed
+   * "Client outdated" is refuted by the probe and stays a mere annotation, while the genuine event (405 at connect, socket
+   * closed) answers 503. Idempotent: at most one confirmation per child per ANNOTATION_WINDOW_MS, and once confirmed
+   * `child` is null so any later line from the dying process is ignored.
+   */
+  function confirmClientOutdated(from: ChildProcess): void {
+    // stale child, user stop in progress, or no REST answer yet (the readiness-exhaustion path decides then)
+    if (from !== child || stopping || ep === null) return;
+    const now = deps.clock.now();
+    if (outdatedCheckAt !== null && now - outdatedCheckAt < ANNOTATION_WINDOW_MS) return;
+    outdatedCheckAt = now;
+    read.health().then(
+      (health) => {
+        if (child !== from || stopping) return;
+        if (health.httpStatus === 200 && health.connected) {
+          log.warn('bridge_client_outdated_unconfirmed', { reason: 'connected' });
+          return;
+        }
+        terminal = true; // neither launchLoop nor the Supervisor (childSpec().terminal()) respawns it
+        respawnTimer = clearTimer(respawnTimer);
+        log.error('bridge_client_outdated', { status });
+        void stopChild().then(() => {
+          setStatus('outdated');
+        });
+      },
+      () => {
+        log.warn('bridge_client_outdated_unconfirmed', { reason: 'probe_failed' });
+      },
+    );
+  }
+
   function attachStdout(proc: ChildProcess): void {
     const decoder = new StringDecoder('utf8');
     let tail = '';
@@ -350,7 +391,7 @@ export function createBridgeLauncher(deps: BridgeLauncherDeps): BridgeLauncherHa
       }
       tail = text.slice(cut + 1);
       if (tail.length > MAX_STDOUT_TAIL) tail = '';
-      for (const marker of matchMarkers(text.slice(0, cut + 1))) handleMarker(marker);
+      for (const marker of matchMarkers(text.slice(0, cut + 1))) handleMarker(marker, proc);
     };
     proc.stdout?.on('data', onChunk);
     proc.stderr?.on('data', onChunk);
@@ -367,8 +408,12 @@ export function createBridgeLauncher(deps: BridgeLauncherDeps): BridgeLauncherHa
 
   async function healthTick(): Promise<void> {
     if (child === null || stopping || terminal) return;
+    const proc = child;
     try {
       const health = await read.health();
+      // [bridge-outdated] the child may have been stopped (client_outdated, logged_out, user stop) while this probe was in
+      // flight: a late answer must not overwrite that status with 'online' / 'reconnecting' or respawn.
+      if (child !== proc || stopping || terminal) return;
       healthMisses = 0;
       if (health.httpStatus === 200 && health.connected) {
         disconnectedSince = null;
@@ -383,6 +428,7 @@ export function createBridgeLauncher(deps: BridgeLauncherDeps): BridgeLauncherHa
         }
       }
     } catch (err) {
+      if (child !== proc || stopping || terminal) return;
       if (err instanceof BridgeAuthError) {
         // Somebody else holds our port now: never keep talking to it.
         log.warn('bridge_respawn', { reason: 'foreign_listener' });
@@ -420,6 +466,7 @@ export function createBridgeLauncher(deps: BridgeLauncherDeps): BridgeLauncherHa
     healthMisses = 0;
     disconnectedSince = null;
     pokeReadiness = null;
+    outdatedCheckAt = null;
     healthTimer = clearTimer(healthTimer);
     poller.stop();
   }

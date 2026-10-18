@@ -265,7 +265,7 @@ describe('assertBridgeSpawnInvariants', () => {
   it('defaults to the vendored exe pin when no expectedSha256 is given', () => {
     const v = violationsOf(goodPlan({ exeSha256: BRIDGE_EXE.sha256.toUpperCase() }), { resourcesDir: RESOURCES });
     expect(v).toEqual([]);
-    expect(BRIDGE_EXE.size).toBe(43_540_541);
+    expect(BRIDGE_EXE.size).toBe(37_538_577);
   });
 });
 
@@ -281,7 +281,7 @@ describe('sha256OfFile', () => {
   it('hashes a file without ever reading it whole', async () => {
     const expected = (await EXE_SHA).toLowerCase();
     expect(expected).toMatch(/^[0-9a-f]{64}$/);
-    // S-HASH: the hash must be streamed (the real exe is 43.5 MB) - proven by the source, which has no readFileSync.
+    // S-HASH: the hash must be streamed (the real exe is ~37.5 MB) - proven by the source, which has no readFileSync.
     const source = readFileSync(new URL('./invariants.ts', import.meta.url), 'utf8');
     expect(source).toContain('createReadStream');
     expect(source).not.toContain('readFileSync');

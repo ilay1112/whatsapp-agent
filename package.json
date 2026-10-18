@@ -16,6 +16,7 @@
     "build": "npm run typecheck && electron-vite build && node -e \"require('node:fs').rmSync('out/.e2e-build',{force:true})\"",
     "build:e2e": "electron-vite build --mode e2e && node scripts/mark-e2e-build.mjs",
     "stage:mcp": "node scripts/stage-calendar-mcp.mjs",
+    "build:bridge": "node scripts/build-bridge.mjs",
     "test": "vitest run --project main --project renderer --project integration --project security",
     "test:unit": "vitest run --project main --project renderer",
     "test:int": "vitest run --project integration",

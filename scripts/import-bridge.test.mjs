@@ -32,8 +32,8 @@ describe('import-bridge.mjs source (static)', () => {
     expect(src).not.toMatch(/[\\/]store\b/);
   });
   it('pins are the ARCH 4.1 values', () => {
-    expect(BRIDGE_EXE_SIZE).toBe(43_540_541);
-    expect(BRIDGE_EXE_SHA256).toBe('ac23221e8bcf3937a4ca346b3bd80a8da09df94cbecd949af2916c4bc8d22ff5');
+    expect(BRIDGE_EXE_SIZE).toBe(37_538_577);
+    expect(BRIDGE_EXE_SHA256).toBe('150a85fc65b0d1989b692f3da4399888d92cbc23ac9283e915d4e090c4358ab5');
   });
 });
 
