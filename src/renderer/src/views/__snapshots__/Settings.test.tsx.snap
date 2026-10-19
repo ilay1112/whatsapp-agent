@@ -841,13 +841,22 @@ exports[`Settings - RTL > RTL snapshot 1`] = `
             מהירות במחשב הזה: עדיין לא נמדדה
           </span>
           <button
+            aria-describedby="settings-voice-test-needs-model"
             class="btn btn-outline"
             data-testid="settings-voice-test"
+            disabled=""
             type="button"
           >
             בדיקה
           </button>
         </div>
+        <p
+          class="m-0 text-sm text-text-muted"
+          data-testid="settings-voice-test-needs-model"
+          id="settings-voice-test-needs-model"
+        >
+          קודם צריך להוריד מודל קולי - הבדיקה משתמשת בו.
+        </p>
         <p
           class="m-0 text-sm text-text-muted"
         >
@@ -1047,16 +1056,17 @@ exports[`Settings - RTL > RTL snapshot 1`] = `
           class="flex flex-wrap items-center gap-2"
         >
           <span
+            data-status="connected"
             data-testid="settings-google-account"
           >
-            לא מחובר
+            מחובר
           </span>
           <button
-            class="btn btn-outline"
+            class="btn btn-quiet"
             data-testid="settings-google-reconnect"
             type="button"
           >
-            להתחבר
+            להתחבר מחדש
           </button>
           <button
             class="btn btn-quiet"

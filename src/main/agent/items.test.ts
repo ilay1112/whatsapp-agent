@@ -358,6 +358,109 @@ describe('createItemService', () => {
     expect(service.restore(99_999 as ItemId)).toEqual({ ok: false, error: { code: 'NOT_FOUND' } });
   });
 
+  // [sweep-fix-a, ui-sweep finding 1] Undo of a dismiss gives the card back WITH its approval buttons: fresh PENDING actions for the
+  // CURRENT proposal, built exactly as S4 builds them. Restoring re-offers the choice; it never approves and never executes anything.
+  describe('restore() re-offers the current proposal', () => {
+    const pendingOf = (id: ItemId) => env.repos.actions.forItem(id).filter((a) => a.state === 'pending');
+    const payloadOf = (a: { canonicalJson: string }) => JSON.parse(a.canonicalJson) as Record<string, unknown>;
+    const nothingRan = (id: ItemId): void => {
+      for (const a of env.repos.actions.forItem(id)) {
+        expect(a.approvedAt).toBeNull();
+        expect(['pending', 'superseded']).toContain(a.state);
+      }
+      expect(retriaged).toEqual([]);
+      expect(env.repos.queue.size()).toBe(0);
+    };
+
+    it('a proposed card comes back with one pending send_reply and one pending create_event', () => {
+      triage();
+      service.dismiss(item.id);
+      expect(pendingOf(item.id)).toEqual([]);
+
+      const res = service.restore(item.id);
+      expect(res.ok).toBe(true);
+      const fresh = env.repos.items.byId(item.id)!;
+      expect(fresh.state).toBe('needs_reply');
+      const current = env.repos.proposals.current(item.id)!;
+      expect(fresh.currentProposalId).toBe(current.id);
+
+      const pending = pendingOf(item.id);
+      expect(pending.map((a) => a.kind).sort()).toEqual(['create_event', 'send_reply']);
+      for (const a of pending) {
+        expect(a.proposalId).toBe(current.id);
+        expect(a.approvedAt).toBeNull();
+        expect(a.attempt).toBe(1);
+        expect(a.retryOf).toBeNull();
+        expect(payloadOf(a).proposalVersion).toBe(current.version);
+      }
+      const send = payloadOf(pending.find((a) => a.kind === 'send_reply')!);
+      expect(send.text).toBe(current.draftText);
+      const create = payloadOf(pending.find((a) => a.kind === 'create_event')!);
+      expect(create).toMatchObject({
+        title: current.event!.title,
+        startLocal: current.event!.startLocal,
+        endLocal: current.event!.endLocal,
+        timeZone: current.event!.timeZone,
+      });
+      // the card the renderer gets carries both buttons, and its shownHash is the hash the approve path verifies
+      const card = service.dashboard().needsReply.find((c) => c.itemId === item.id)!;
+      expect(card.actions.map((a) => a.kind).sort()).toEqual(['create_event', 'send_reply']);
+      for (const view of card.actions) {
+        expect(view.state).toBe('pending');
+        expect(view.shownHash).toBe(env.repos.actions.byId(view.actionId)!.contentSha256);
+      }
+      nothingRan(item.id);
+    });
+
+    it('a draft-only card comes back with exactly one pending send_reply', () => {
+      triage(item, {
+        extraction: { ...EXTRACTION, intent: 'smalltalk', dateKind: 'none', daysFromToday: 0, time24h: '', title: '' },
+      });
+      expect(pendingOf(item.id).map((a) => a.kind)).toEqual(['send_reply']);
+      service.dismiss(item.id);
+      expect(service.restore(item.id).ok).toBe(true);
+      const pending = pendingOf(item.id);
+      expect(pending.map((a) => a.kind)).toEqual(['send_reply']);
+      expect(pending[0]!.proposalId).toBe(env.repos.items.byId(item.id)!.currentProposalId);
+      nothingRan(item.id);
+    });
+
+    it('when a newer proposal landed while the card was dismissed, only the newer content is re-offered', () => {
+      triage();
+      service.dismiss(item.id);
+      // a run that finished after the dismiss: S4 writes version 2 but withholds its actions (the item is closed)
+      triage(item, { draftText: 'Make it 18:00 instead', extraction: { ...EXTRACTION, time24h: '18:00' } });
+      expect(env.repos.items.byId(item.id)!.closedReason).toBe('dismissed');
+      expect(pendingOf(item.id)).toEqual([]);
+
+      expect(service.restore(item.id).ok).toBe(true);
+      const current = env.repos.proposals.current(item.id)!;
+      const pending = pendingOf(item.id);
+      expect(pending.map((a) => a.kind).sort()).toEqual(['create_event', 'send_reply']);
+      for (const a of pending) expect(a.proposalId).toBe(current.id);
+      expect(payloadOf(pending.find((a) => a.kind === 'send_reply')!).text).toBe('Make it 18:00 instead');
+      expect(payloadOf(pending.find((a) => a.kind === 'create_event')!).startLocal).toMatch(/T18:00:00$/);
+      nothingRan(item.id);
+    });
+
+    it('re-offers no create_event while the calendar is disconnected', () => {
+      triage();
+      service.dismiss(item.id);
+      calendar = false;
+      expect(service.restore(item.id).ok).toBe(true);
+      expect(pendingOf(item.id).map((a) => a.kind)).toEqual(['send_reply']);
+    });
+
+    it("refuses to bring back a card that was closed by anything but the user's Dismiss", () => {
+      triage();
+      env.repos.actions.supersedePending(item.id, now);
+      env.repos.items.update(item.id, { closedReason: 'expired' }, now);
+      expect(service.restore(item.id)).toEqual({ ok: false, error: { code: 'ACTION_STALE' } });
+      expect(pendingOf(item.id)).toEqual([]);
+      expect(env.repos.items.byId(item.id)!.closedReason).toBe('expired');
+    });
+  });
+
   it('retriage() re-queues the item, writes the queue row and pokes the worker', () => {
     triage();
     env.repos.items.update(item.id, { errorCode: 'LLM_BAD_OUTPUT', analysis: 'failed' }, now);
@@ -368,6 +471,23 @@ describe('createItemService', () => {
     expect(fresh.errorCode).toBeNull();
     expect(env.repos.queue.size()).toBe(1);
     expect(retriaged).toEqual([chat.id]);
+  });
+
+  // [sweep-fix-a, ui-sweep finding 2] "Analyse again" is not an In-calendar action (ux.md 6.7, v2-ux 3.4): the booked card is refused
+  // instead of being re-queued into a state no run ever picks up (runChat only analyses the chat's OPEN item).
+  it('retriage() refuses ACTION_STALE for an in_calendar card and leaves it untouched', () => {
+    triage();
+    env.repos.actions.supersedePending(item.id, now);
+    env.repos.items.update(item.id, { eventState: 'created', eventStartTs: (ANCHOR_MS + 86_400_000) as EpochMs }, now);
+    const before = env.repos.items.byId(item.id)!;
+    expect(before.state).toBe('in_calendar');
+    expect(service.retriage(item.id)).toEqual({ ok: false, error: { code: 'ACTION_STALE' } });
+    const after = env.repos.items.byId(item.id)!;
+    expect(after.analysis).toBe(before.analysis);
+    expect(after.state).toBe('in_calendar');
+    expect(env.repos.queue.size()).toBe(0);
+    expect(retriaged).toEqual([]);
+    expect(service.dashboard().inCalendar.map((c) => c.itemId)).toEqual([item.id]);
   });
 
   it('retriage() refuses over the per-chat hourly budget and for an unknown item', () => {
@@ -513,6 +633,70 @@ describe('createItemService', () => {
     expect(service.setChatPolicy({ chatRef: 99_999, policy: 'never' })).toEqual({
       ok: false,
       error: { code: 'NOT_FOUND' },
+    });
+  });
+
+  // [sweep-fix-a, ui-sweep finding 4] Settings "Remove the rule" clears EVERYTHING that put the chat in the list
+  // (policy, force_known, auto_policy 'never'), in one transaction with one audit row.
+  describe('setChatPolicy({removeRule}) - "Remove the rule"', () => {
+    const listed = (): number[] => service.listPolicies().chats.map((c) => c.chatRef);
+    const auditRows = () =>
+      env.repos.db
+        .prepare<{ ref: string; detail_json: string }>(
+          `SELECT ref, detail_json FROM audit_log WHERE kind = 'chat_rules_cleared' ORDER BY id`,
+        )
+        .all();
+
+    it('a chat listed only because it was marked as known leaves the list', () => {
+      service.setChatPolicy({ chatRef: chat.id, forceKnown: true });
+      expect(listed()).toEqual([chat.id]);
+      const res = service.setChatPolicy({ chatRef: chat.id, removeRule: true });
+      expect(res).toMatchObject({ ok: true, value: { chatRef: chat.id, policy: 'default', autoPolicy: 'inherit' } });
+      expect(env.repos.chats.byId(chat.id)!.forceKnown).toBe(false);
+      expect(listed()).toEqual([]);
+    });
+
+    it('a chat listed only because of policy "never" leaves the list', () => {
+      service.setChatPolicy({ chatRef: chat.id, policy: 'never' });
+      expect(listed()).toEqual([chat.id]);
+      service.setChatPolicy({ chatRef: chat.id, removeRule: true });
+      expect(env.repos.chats.byId(chat.id)!.policy).toBe('default');
+      expect(listed()).toEqual([]);
+    });
+
+    it('a chat with every kind of rule leaves the list, and one audit row records what was cleared', () => {
+      service.setChatPolicy({ chatRef: chat.id, policy: 'never' });
+      service.setChatPolicy({ chatRef: chat.id, forceKnown: true });
+      service.setChatPolicy({ chatRef: chat.id, autoPolicy: 'never' });
+      service.setChatPolicy({ chatRef: chat.id, removeRule: true });
+      const row = env.repos.chats.byId(chat.id)!;
+      expect(row).toMatchObject({ policy: 'default', forceKnown: false, autoPolicy: 'inherit' });
+      expect(listed()).toEqual([]);
+      const audit = auditRows();
+      expect(audit).toHaveLength(1);
+      expect(audit[0]!.ref).toBe(String(chat.id));
+      expect(JSON.parse(audit[0]!.detail_json)).toEqual({
+        chatRef: chat.id,
+        policy: 'never',
+        forceKnown: true,
+        autoPolicy: 'never',
+      });
+    });
+
+    it('the policy select still changes ONLY the policy (a known contact stays listed)', () => {
+      service.setChatPolicy({ chatRef: chat.id, forceKnown: true });
+      service.setChatPolicy({ chatRef: chat.id, policy: 'never' });
+      service.setChatPolicy({ chatRef: chat.id, policy: 'default' });
+      expect(env.repos.chats.byId(chat.id)!.forceKnown).toBe(true);
+      expect(listed()).toEqual([chat.id]);
+      expect(auditRows()).toEqual([]);
+    });
+
+    it('reports NOT_FOUND for an unknown chat', () => {
+      expect(service.setChatPolicy({ chatRef: 99_999, removeRule: true })).toEqual({
+        ok: false,
+        error: { code: 'NOT_FOUND' },
+      });
     });
   });
 

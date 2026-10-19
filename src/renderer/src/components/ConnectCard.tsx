@@ -101,6 +101,10 @@ export function ConnectCard({ provider, size, status, selected, lastError = null
   const waiting = useCliStore((s) => s.signInStartedAt[provider] !== undefined);
 
   const [checking, setChecking] = useState(false);
+  /** T-906 finding 5: a Sign in click whose `cli:signIn` has not answered yet. Main answers only after it pushed the
+   *  session's `open` phase, and that push re-probes the CLI when the status cache expired (seconds, with Settings open
+   *  for over a minute) - so the wait state starts on the click itself (UX2 7.1), not on main's answer. */
+  const [signInPending, setSignInPending] = useState(false);
   const [copied, setCopied] = useState(false);
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<{ ok: true; ms: number } | { ok: false; code: ErrorCode } | null>(null);
@@ -134,7 +138,7 @@ export function ConnectCard({ provider, size, status, selected, lastError = null
       ? 'sign_in_open'
       : session?.phase === 'retesting'
         ? 'sign_in_retesting'
-        : legacyWaiting && !ready
+        : (legacyWaiting || signInPending) && !ready
           ? 'waiting_sign_in'
           : signedOut && (status.state === 'ready' || status.state === 'unknown')
             ? 'not_signed_in'
@@ -229,8 +233,13 @@ export function ConnectCard({ provider, size, status, selected, lastError = null
   }, [provider, status.state, t]);
 
   const signIn = useCallback(async () => {
-    // A refusal is recorded in the store (signInError) and the status re-read there (ux-i18n-v2-11).
-    if (!(await useCliStore.getState().signIn(provider))) setNow(Date.now());
+    setSignInPending(true);
+    try {
+      // A refusal is recorded in the store (signInError) and the status re-read there (ux-i18n-v2-11).
+      if (!(await useCliStore.getState().signIn(provider))) setNow(Date.now());
+    } finally {
+      setSignInPending(false);
+    }
   }, [provider]);
 
   const runTest = useCallback(async () => {

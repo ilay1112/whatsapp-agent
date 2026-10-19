@@ -2,7 +2,7 @@
 // and no JID is read, so the test asserts the exact call shape and that a service failure travels back unchanged.
 import { describe, expect, it } from 'vitest';
 import type { ItemService } from '../../agent/items';
-import type { IpcReq } from '../../../shared/ipc';
+import { IPC_REQUEST_SCHEMAS, type IpcReq } from '../../../shared/ipc';
 import { makeFixture } from '../register.fixtures';
 import { createItemsHandlers } from './items';
 
@@ -89,5 +89,17 @@ describe('items handlers', () => {
     const h = createItemsHandlers(makeFixture({ items: service }).deps);
     await h['chat:setPolicy']({ chatRef: 9, forceKnown: true }, CTX);
     expect(calls).toEqual([['setChatPolicy', [{ chatRef: 9, forceKnown: true }]]]);
+  });
+
+  // [sweep-fix-a] Settings "Remove the rule": its own request shape, so the policy select keeps changing the policy only.
+  it('forwards the removeRule variant of chat:setPolicy verbatim, and the schema accepts only `true`', async () => {
+    const { service, calls } = spyService();
+    const h = createItemsHandlers(makeFixture({ items: service }).deps);
+    await h['chat:setPolicy']({ chatRef: 9, removeRule: true }, CTX);
+    expect(calls).toEqual([['setChatPolicy', [{ chatRef: 9, removeRule: true }]]]);
+    const schema = IPC_REQUEST_SCHEMAS['chat:setPolicy'];
+    expect(schema.safeParse({ chatRef: 9, removeRule: true }).success).toBe(true);
+    expect(schema.safeParse({ chatRef: 9, removeRule: false }).success).toBe(false);
+    expect(schema.safeParse({ chatRef: 9, removeRule: true, policy: 'never' }).success).toBe(false);
   });
 });

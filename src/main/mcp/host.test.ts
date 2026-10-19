@@ -15,6 +15,7 @@ import { createVirtualClock } from '../../../tests/helpers/virtualClock';
 import { DEFAULT_GRACE_MS, createSupervisor } from '../proc/supervisor';
 import { MCP_TOOLS, McpCapabilityError, createMcpReadClient } from './readClient';
 import {
+  CALLABLE,
   DESTRUCTIVE_HINT_TOOLS,
   MCP_BACKOFF_MS,
   MCP_BREAKER,
@@ -641,6 +642,23 @@ describe('callerFor - the only exit from host.ts', () => {
     if (!res.ok) return;
     expect(res.value.isError).toBe(false);
     expect(JSON.parse(res.value.text)).toMatchObject({ timeZone: 'Asia/Jerusalem' });
+  });
+
+  it('CALLABLE is exactly the statuses a tool call may leave the app in - never reconnect_required', () => {
+    expect([...CALLABLE]).toEqual(['connected', 'needs_sign_in', 'signing_in']);
+    expect(CALLABLE).not.toContain('reconnect_required');
+  });
+
+  it('in reconnect_required the read AND admin facades stay refused before the server sees a call', async () => {
+    const { host, fake } = await withFake({ accounts: 'invalid_grant' });
+    await expect(host.start()).resolves.toBe('reconnect_required');
+    const before = fake.calls.length;
+    await expect(host.callerFor('read')('get-current-time', {})).resolves.toEqual({ ok: false, error: 'unavailable' });
+    await expect(
+      host.callerFor('admin')('manage-accounts', { action: 'add', account_id: 'personal' }),
+    ).resolves.toEqual({ ok: false, error: 'unavailable' });
+    expect(fake.calls.length).toBe(before);
+    expect(host.status()).toBe('reconnect_required');
   });
 
   it('invalid_grant in a tool result flips the host to reconnect_required - it never restarts the child', async () => {

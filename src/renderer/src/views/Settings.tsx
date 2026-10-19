@@ -16,7 +16,8 @@
 //     Connect-card handling exist in exactly one place.
 import { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import type { ChatView, GoogleWizardState, Lang, ModelPlan } from '@shared/types';
+import type { ChatView, GoogleWizardState, Lang, ModelPlan, Result } from '@shared/types';
+import type { ErrorCode } from '@shared/errors';
 import type { PairingState } from '@shared/health';
 import { api, on } from '../api';
 import { applyDocumentLanguage, dirOf } from '../i18n';
@@ -77,6 +78,8 @@ export const PRIVACY_ROWS = [
 const SAVED_MS = 2000;
 
 type DialogKind = 'relink' | 'wipe' | 'disconnect' | 'purge' | 'deleteModel' | 'licences';
+/** The Google Calendar row's one in-flight action: all three of its buttons are disabled while it runs. */
+type GoogleBusy = null | 'signin' | 'replace' | 'disconnect';
 
 export function Settings({ initialGroup = 'general' }: SettingsProps) {
   const { t, i18n } = useTranslation();
@@ -92,6 +95,47 @@ export function Settings({ initialGroup = 'general' }: SettingsProps) {
   const [pairing, setPairing] = useState<PairingState | null>(null);
   const [relinking, setRelinking] = useState(false);
   const [google, setGoogle] = useState<GoogleWizardState | null>(null);
+  const [googleBusy, setGoogleBusy] = useState<GoogleBusy>(null);
+  // The last failed Google action's code, shown under the row; cleared by the next successful call.
+  const [googleError, setGoogleError] = useState<ErrorCode | null>(null);
+  // T-906 finding 3: the row reads `google:status` (main asks the server's account list), never only the in-memory wizard
+  // snapshot - after a restart that one has no e-mail and the row said "Not connected" while the calendar worked.
+  // True until the first answer arrives ("Checking…").
+  const [googleChecking, setGoogleChecking] = useState(true);
+  const refreshGoogleStatus = useCallback(async () => {
+    try {
+      const r = await api.getGoogleStatus();
+      if (r.ok) {
+        setGoogle(r.value);
+        setGoogleError(null);
+      } else {
+        setGoogleError(r.error.code);
+      }
+    } catch {
+      setGoogleError('INTERNAL');
+    } finally {
+      setGoogleChecking(false);
+    }
+  }, []);
+  // T-906 finding 7: the last click that tried to uncheck the only conflict calendar (the click is refused; this says why).
+  const [conflictMinOne, setConflictMinOne] = useState(false);
+  const runGoogle = useCallback(
+    async (kind: Exclude<GoogleBusy, null>, call: () => Promise<Result<GoogleWizardState>>) => {
+      setGoogleBusy(kind);
+      try {
+        const r = await call();
+        if (r.ok) {
+          setGoogle(r.value);
+          setGoogleError(null);
+        } else {
+          setGoogleError(r.error.code);
+        }
+      } finally {
+        setGoogleBusy(null);
+      }
+    },
+    [],
+  );
   // Shared with the approval sheet (which must name the target calendar, UX 7.2) instead of being this screen's own
   // state: the two must never disagree about what "primary" is called.
   const calendars = useSettingsStore((s) => s.calendars);
@@ -113,13 +157,19 @@ export function Settings({ initialGroup = 'general' }: SettingsProps) {
     // "needs three events you approved" / missing "End trial" must not survive until the dashboard re-mounts). A read
     // only - nothing here can enable.
     void useAutoStore.getState().hydrate();
-    void api.getGoogleWizard().then((r) => r.ok && setGoogle(r.value));
+    void Promise.resolve().then(() => refreshGoogleStatus());
     // Always re-read here (not the store's fetch-once path): the user may have just connected Google or added a
     // calendar, and this is the screen that shows the list.
     void api.listCalendars().then((r) => r.ok && useSettingsStore.getState().setCalendars(r.value.calendars));
     void api.listPolicies().then((r) => r.ok && setPolicies(r.value.chats));
     void api.getModelPlan().then((r) => r.ok && setPlan(r.value));
-    const offGoogle = on('google:changed', (next) => setGoogle(next));
+    // A push carries main's snapshot; when it cannot name the account of a connected calendar (e.g. after a restart),
+    // the last known e-mail stays on screen and the server is asked again.
+    const offGoogle = on('google:changed', (next) => {
+      const unnamed = next.accountEmail === null && next.status === 'connected';
+      setGoogle((prev) => (unnamed && prev?.accountEmail ? { ...next, accountEmail: prev.accountEmail } : next));
+      if (unnamed) void refreshGoogleStatus();
+    });
     const offPairing = on('pairing:changed', (next) => setPairing(next));
     // [V2] REQUEST 2: an item change can move AutoState without an `auto:changed` (a click-approved create completes the
     // track record; a shadow decision is recorded): while Settings is open, every dashboard change re-reads it.
@@ -129,7 +179,7 @@ export function Settings({ initialGroup = 'general' }: SettingsProps) {
       offPairing();
       offDashboard();
     };
-  }, []);
+  }, [refreshGoogleStatus]);
 
   const [focusGroup, setFocusGroup] = useState<SettingsGroup>(initialGroup === 'activity' ? 'auto' : initialGroup);
   useEffect(() => {
@@ -177,8 +227,7 @@ export function Settings({ initialGroup = 'general' }: SettingsProps) {
       return;
     }
     if (kind === 'disconnect') {
-      const r = await api.disconnectGoogle();
-      if (r.ok) setGoogle(r.value);
+      await runGoogle('disconnect', () => api.disconnectGoogle());
       return;
     }
     if (kind === 'purge') {
@@ -190,7 +239,7 @@ export function Settings({ initialGroup = 'general' }: SettingsProps) {
       const r = await api.deleteModel();
       if (r.ok) setPlan(r.value);
     }
-  }, [dialog]);
+  }, [dialog, runGoogle]);
 
   const runSelfTest = useCallback(async () => {
     const r = await api.selfTest();
@@ -199,6 +248,15 @@ export function Settings({ initialGroup = 'general' }: SettingsProps) {
 
   const setPolicy = useCallback(async (chatRef: number, policy: 'default' | 'never') => {
     const r = await api.setChatPolicy({ chatRef, policy });
+    if (!r.ok) return;
+    const list = await api.listPolicies();
+    if (list.ok) setPolicies(list.value.chats);
+  }, []);
+
+  /** T-906 finding 4: "Remove the rule" clears the policy, the "known" mark and the automatic opt-out in one go (main,
+   *  sweep-fix-a). `{policy:'default'}` stays the per-row SELECT's request: it must not drop the other two. */
+  const removeRule = useCallback(async (chatRef: number) => {
+    const r = await api.setChatPolicy({ chatRef, removeRule: true });
     if (!r.ok) return;
     const list = await api.listPolicies();
     if (list.ok) setPolicies(list.value.chats);
@@ -216,7 +274,9 @@ export function Settings({ initialGroup = 'general' }: SettingsProps) {
     (id: string, checked: boolean) => {
       const current = settings?.calendar.conflictCalendarIds ?? [];
       const next = checked ? [...new Set([...current, id])] : current.filter((x) => x !== id);
-      if (next.length === 0) return; // the schema requires at least one; unchecking the last one is a no-op
+      // The schema requires at least one: unchecking the last one is refused, and the row says why.
+      setConflictMinOne(next.length === 0);
+      if (next.length === 0) return;
       void set({ calendar: { conflictCalendarIds: next } });
     },
     [settings, set],
@@ -279,6 +339,22 @@ export function Settings({ initialGroup = 'general' }: SettingsProps) {
   const active = dialog && dialog !== 'licences' ? dialogText[dialog] : null;
   const localTier = plan?.tiers.find((row) => row.tier === plan.selectedTier) ?? null;
   const targetId = settings.calendar.targetCalendarId;
+  // The account row (T-906 finding 3): Connect when there is no account, Reconnect when it expired, and a quiet
+  // Reconnect when connected - never the primary action then.
+  const googleStatus = google?.status ?? null;
+  const googleConnected = googleStatus === 'connected';
+  const googleExpired = googleStatus === 'reconnect_required';
+  const googleAccountText = googleChecking ? (
+    t('settings.calendar.checking')
+  ) : google?.accountEmail ? (
+    <bdi>{google.accountEmail}</bdi>
+  ) : googleConnected ? (
+    t('settings.calendar.connected')
+  ) : googleExpired ? (
+    t('errors.CAL_RECONNECT.title')
+  ) : (
+    t('settings.calendar.noAccount')
+  );
   const targetRole =
     (
       calendars.find((c) => c.id === targetId) ??
@@ -534,22 +610,33 @@ export function Settings({ initialGroup = 'general' }: SettingsProps) {
         {/* ---- Google Calendar ---- */}
         <Group group="calendar" title={t('settings.group.calendar')}>
           <Row label={t('settings.calendar.accountLabel')} testId="settings-row-google-account">
-            <span data-testid="settings-google-account">
-              {google?.accountEmail ? <bdi>{google.accountEmail}</bdi> : t('settings.calendar.noAccount')}
+            <span
+              data-testid="settings-google-account"
+              data-status={googleChecking ? 'checking' : (googleStatus ?? 'unknown')}
+              aria-busy={googleChecking ? true : undefined}
+            >
+              {googleAccountText}
             </span>
             <button
               type="button"
-              className="btn btn-outline"
+              className={`btn ${googleConnected ? 'btn-quiet' : 'btn-outline'}`}
               data-testid="settings-google-reconnect"
-              onClick={() => void api.startGoogleSignIn().then((r) => r.ok && setGoogle(r.value))}
+              disabled={googleBusy !== null}
+              aria-busy={googleBusy === 'signin' ? true : undefined}
+              onClick={() => void runGoogle('signin', () => api.startGoogleSignIn())}
             >
-              {t('settings.calendar.reconnect')}
+              {googleBusy === 'signin'
+                ? t('settings.calendar.signingIn')
+                : googleConnected || googleExpired
+                  ? t('settings.calendar.reconnectAction')
+                  : t('settings.calendar.reconnect')}
             </button>
             <button
               type="button"
               className="btn btn-quiet"
               data-testid="settings-google-replace"
-              onClick={() => void api.pickCredentialsFile().then((r) => r.ok && setGoogle(r.value))}
+              disabled={googleBusy !== null}
+              onClick={() => void runGoogle('replace', () => api.pickCredentialsFile())}
             >
               {t('settings.calendar.replaceKey')}
             </button>
@@ -557,11 +644,22 @@ export function Settings({ initialGroup = 'general' }: SettingsProps) {
               type="button"
               className="btn btn-quiet"
               data-testid="settings-google-disconnect"
+              disabled={googleBusy !== null}
               onClick={() => setDialog('disconnect')}
             >
               {t('settings.calendar.disconnect')}
             </button>
           </Row>
+          {googleError ? (
+            <p
+              role="alert"
+              data-testid="settings-google-error"
+              className="m-0 flex flex-wrap items-center gap-2 rounded-sm bg-danger-soft p-2"
+            >
+              <span className="font-semibold">{t(`errors.${googleError}.title`)}</span>
+              {i18n.exists(`errors.${googleError}.action`) ? <span>{t(`errors.${googleError}.action`)}</span> : null}
+            </p>
+          ) : null}
 
           <Row
             label={t('settings.calendar.targetLabel')}
@@ -617,6 +715,11 @@ export function Settings({ initialGroup = 'general' }: SettingsProps) {
                   <bdi>{c.name}</bdi>
                 </label>
               ))}
+              {conflictMinOne ? (
+                <span role="status" className="text-sm text-text-muted" data-testid="settings-conflict-min-one">
+                  {t('settings.calendar.conflictMinOne')}
+                </span>
+              ) : null}
             </div>
           </Row>
         </Group>
@@ -748,7 +851,7 @@ export function Settings({ initialGroup = 'general' }: SettingsProps) {
                       type="button"
                       className="btn btn-quiet"
                       data-testid={`settings-policy-remove-${chat.chatRef}`}
-                      onClick={() => void setPolicy(chat.chatRef, 'default')}
+                      onClick={() => void removeRule(chat.chatRef)}
                     >
                       {t('settings.rules.removePolicy')}
                     </button>

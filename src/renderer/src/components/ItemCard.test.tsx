@@ -390,6 +390,22 @@ describe('ItemCard - anatomy and per-list actions (UX 6.5, 6.7)', () => {
     expect(screen.queryByText('Reply not sent yet')).toBeNull();
   });
 
+  // [sweep-fix-a, ui-sweep finding 2] ux.md 6.7: an In-calendar card has nothing to re-analyse - main refuses item:retriage for it.
+  it('the overflow menu offers "Analyse again" on a Needs-reply card but not on an in_calendar card', async () => {
+    const user = userEvent.setup();
+    const { unmount } = render(<ItemCard item={card()} mode="compact" />);
+    await user.click(screen.getByTestId('overflow-1'));
+    expect(screen.getByTestId('retriage-1')).toBeInTheDocument();
+    unmount();
+
+    render(<ItemCard item={card({ status: 'in_calendar' })} mode="compact" />);
+    await user.click(screen.getByTestId('overflow-1'));
+    expect(screen.getByTestId('overflow-menu-1')).toBeInTheDocument();
+    expect(screen.queryByTestId('retriage-1')).toBeNull();
+    expect(screen.getByTestId('dismiss-1')).toBeInTheDocument();
+    expect(invokeMocks['item:retriage']).not.toHaveBeenCalled();
+  });
+
   it('"Open in calendar" goes through external:open with no link in the VM', async () => {
     const user = userEvent.setup();
     render(<ItemCard item={card({ status: 'in_calendar' })} mode="compact" />);

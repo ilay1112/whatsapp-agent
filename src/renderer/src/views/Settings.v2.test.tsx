@@ -203,7 +203,7 @@ describe('Settings v2 - the remaining controls address their own channels', () =
       expect(invokeMocks['settings:set']).toHaveBeenCalledWith({ whatsapp: { processUnknownSenders: true } }),
     );
     await userEvent.click(await screen.findByTestId('settings-policy-remove-8'));
-    await waitFor(() => expect(invokeMocks['chat:setPolicy']).toHaveBeenCalledWith({ chatRef: 8, policy: 'default' }));
+    await waitFor(() => expect(invokeMocks['chat:setPolicy']).toHaveBeenCalledWith({ chatRef: 8, removeRule: true }));
     emitPush('google:changed', { ...IPC_DEFAULTS['google:getWizardState'], accountEmail: 'user@example.test' });
     await waitFor(() => expect(screen.getByTestId('settings-google-account')).toHaveTextContent('user@example.test'));
     emitPush('pairing:changed', { status: 'connected' });

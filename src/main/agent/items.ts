@@ -38,6 +38,7 @@ import type { Settings } from '../../shared/settings';
 import type { IpcReq } from '../../shared/ipc';
 import type { ErrorCode } from '../../shared/errors';
 import { createHash } from 'node:crypto';
+import { reofferCurrentProposal } from './validate';
 
 /** C2 1.5 ItemCard.calendar.eventKey: first 16 hex of sha256('wca-event|' + calendar_event_id), computed in main so the Google event id
  *  never crosses IPC (C2 concern #10, UX2 C19). One-way and fixed-length: the key can never equal or contain the id. */
@@ -567,11 +568,27 @@ export function createItemService(deps: ItemServiceDeps): ItemService {
       const item = repos.items.byId(id);
       if (item === null) return err('NOT_FOUND');
       if (item.closedReason === null) return detailResult(id);
+      // [sweep-fix-a] Restore is "Undo dismiss" (ux.md 6.10): an expired / superseded / past / replied card never comes back approvable.
+      if (item.closedReason !== 'dismissed') return err('ACTION_STALE');
       // `ux_items_open` allows exactly one open item per chat; a newer conversation already owns the slot.
       const open = repos.items.openForChat(item.chatId);
       if (open !== null && open.id !== id) return err('ACTION_STALE');
-      repos.items.update(id, { closedReason: null, closedAt: null }, clock.now());
+      const chat = repos.chats.byId(item.chatId);
+      if (chat === null) return err('NOT_FOUND');
+      const now = clock.now();
+      // [sweep-fix-a] ui-sweep finding 1: Dismiss superseded the pending actions, so re-offer the CURRENT proposal as fresh PENDING
+      // actions under the S4 rules (validate.ts reofferCurrentProposal) - the opportunity to approve, never an approval.
+      const offered = repos.db.transaction(() => {
+        repos.items.update(id, { closedReason: null, closedAt: null }, now);
+        return reofferCurrentProposal(repos, {
+          itemId: id,
+          chat: { id: chat.id, sendable: chat.sendable },
+          calendarConnected: deps.calendarConnected(),
+          now,
+        });
+      });
       notifyChanged([id]);
+      log.info('item_restored', { itemId: id, offered: offered.join(',') });
       return detailResult(id);
     },
 
@@ -582,6 +599,9 @@ export function createItemService(deps: ItemServiceDeps): ItemService {
       if (repos.rate.countSince('llm_chat', String(item.chatId), now - HOUR_MS) >= LIMITS.llmRunsPerChatPerHour) {
         return err('RATE_LIMIT_RETRIAGE');
       }
+      // [sweep-fix-a] ui-sweep finding 2: "Analyse again" is not an In-calendar action (ux.md 6.7 / v2-ux 3.4: Open in calendar, Undo,
+      // Cancel event). runChat analyses only the chat's OPEN item, so re-queueing a booked card hid it for good; refuse it instead.
+      if (item.state === 'in_calendar') return err('ACTION_STALE');
       const open = repos.items.openForChat(item.chatId);
       // `[+]` `ux_items_open` keys on STATE, not on closed_reason, and the two disagree: `deriveState` returns
       // 'ignored' for a done item with no draft and no slot even when `closureFor` left closed_reason NULL (an
@@ -686,9 +706,11 @@ export function createItemService(deps: ItemServiceDeps): ItemService {
       const updated =
         'forceKnown' in req
           ? repos.chats.setForceKnown(req.chatRef)
-          : 'autoPolicy' in req
-            ? repos.chats.setAutoPolicy(req.chatRef, req.autoPolicy) // [V2] V2-W1-01 implements the repo member
-            : repos.chats.setPolicy(req.chatRef, req.policy);
+          : 'removeRule' in req
+            ? repos.chats.clearRules(req.chatRef, clock.now()) // [sweep-fix-a] Settings "Remove the rule" (ui-sweep finding 4)
+            : 'autoPolicy' in req
+              ? repos.chats.setAutoPolicy(req.chatRef, req.autoPolicy) // [V2] V2-W1-01 implements the repo member
+              : repos.chats.setPolicy(req.chatRef, req.policy);
       // [fix data-integrity-v4-7] "Never analyse" (9.3, B19): the chat's transcripts, delta / image JSON and cached pictures go at once.
       if ('policy' in req && req.policy === 'never') forgetChatMedia(req.chatRef);
       // "Analyse this chat" releases the held raw card of that chat straight away.

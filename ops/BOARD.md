@@ -142,3 +142,4 @@ Status: `todo` · `doing` · `review` · `done` · `blocked`. Details in `ops/ti
 | T-903 | e2e for the sign-in flow + full run; final proof | agents | done |
 | T-904 | v3 dashboard: dismiss X, schedule-only filter, week calendar, manual time (user request) | orchestrator + Opus workers | done |
 | T-905 | WhatsApp bridge rejected as client outdated: rebuild from vendored source on current whatsmeow + surface BRIDGE_OUTDATED | orchestrator + Opus workers | done |
+| T-906 | Google Connect does nothing + UI sweep of every menu and button (user request): 7 findings fixed, sweep kept as a test | orchestrator + Opus workers | done |

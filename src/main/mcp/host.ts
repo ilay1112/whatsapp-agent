@@ -99,8 +99,9 @@ export const REQUIRED_INPUT_FIELDS: Readonly<Record<string, readonly string[]>> 
   'get-event': ['calendarId', 'eventId'], // [V2] research v2-event-editing 1.7
   'update-event': ['calendarId', 'eventId'], // [V2]
 };
-/** Statuses in which a tool call may leave the app at all. */
-const CALLABLE: readonly McpStatus[] = ['connected', 'needs_sign_in', 'signing_in'];
+/** Statuses in which a tool call may leave the app at all. `reconnect_required` is NOT one of them: the token is dead,
+ *  and googleAuth.startSignIn() recovers by stop -> delete tokens.json -> start, never by calling through it. */
+export const CALLABLE: readonly McpStatus[] = ['connected', 'needs_sign_in', 'signing_in'];
 
 /** Error text -> the two mapped transport-level kinds (build-plan W1-05: invalid_grant => CAL_RECONNECT, EADDRINUSE => CAL_PORT_BUSY). */
 export const AUTH_ERROR_RE =

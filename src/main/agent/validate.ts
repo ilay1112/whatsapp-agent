@@ -15,6 +15,7 @@ import {
   BADGES,
   LIMITS,
   type ActionId,
+  type ApprovalAction,
   type Badge,
   type BusyBlock,
   type ChatRef,
@@ -25,6 +26,7 @@ import {
   type ItemId,
   type Lang,
   type MissingField,
+  type Proposal,
   type ProposedEvent,
   type ProviderClass,
   type ProviderId,
@@ -196,6 +198,130 @@ function defaultProviderClass(p: ProviderId): ProviderClass {
   return 'local';
 }
 
+/** An event the executor can be asked to create: both ends of the slot are known. */
+function isCompleteEvent(event: ProposedEvent | null): event is ProposedEvent {
+  return event !== null && event.startLocal !== '' && event.endLocal !== '';
+}
+
+/**
+ * The pending `send_reply` / `create_event` of ONE proposal version - the single place their payloads are built, shared by S4 (below)
+ * and ItemService.restore (via reofferCurrentProposal). Only INSERTS pending rows (insertPending validates the payload and computes the
+ * hash the approve path checks); it never approves, executes or sends. Callers run it inside their own transaction.
+ */
+function insertReplyAndCreate(
+  repos: Repos,
+  p: {
+    itemId: ItemId;
+    chatId: ChatRef;
+    proposal: Pick<Proposal, 'id' | 'version'>;
+    sendText: string | null;
+    event: ProposedEvent | null;
+    now: EpochMs;
+  },
+): { send: ApprovalAction | null; create: ApprovalAction | null } {
+  const send =
+    p.sendText === null
+      ? null
+      : repos.actions.insertPending({
+          itemId: p.itemId,
+          proposalId: p.proposal.id,
+          chatId: p.chatId,
+          payload: {
+            v: 1,
+            kind: 'send_reply',
+            itemId: p.itemId,
+            chatRef: p.chatId,
+            proposalVersion: p.proposal.version,
+            text: p.sendText,
+          },
+          now: p.now,
+        });
+  const create =
+    p.event === null
+      ? null
+      : repos.actions.insertPending({
+          itemId: p.itemId,
+          proposalId: p.proposal.id,
+          chatId: p.chatId,
+          payload: {
+            v: 1,
+            kind: 'create_event',
+            itemId: p.itemId,
+            chatRef: p.chatId,
+            proposalVersion: p.proposal.version,
+            title: p.event.title,
+            startLocal: p.event.startLocal,
+            endLocal: p.event.endLocal,
+            timeZone: p.event.timeZone,
+            location: p.event.location,
+          },
+          now: p.now,
+        });
+  return { send, create };
+}
+
+/**
+ * [sweep-fix-a] ui-sweep finding 1 - "Undo dismiss" gives the card back WITH its approval buttons (ux.md 6.10, v3 2.1).
+ * Dismiss superseded every pending action; this re-offers the CURRENT proposal under the same S4 rules as validateAndPersist:
+ *   - `send_reply` only for a non-empty draft, a sendable chat, reply state still `draft`, never for a self-triggered run (F28);
+ *   - `create_event` only while the event is `proposed` (the v1 path - a delta card is `change_proposed`), the slot is complete and
+ *     the calendar is connected (ARCHITECTURE 6.5).
+ * `update_event` is NOT re-offered: Dismiss forgets proposals.delta_json at once (ARCHITECTURE-v2 9.3), so a change card has nothing
+ * left to show or approve; "Analyse again" rebuilds it.
+ * `idempotency_key` (itemId:kind:proposalVersion) is UNIQUE and the dismissed rows still hold the current version's keys, so the
+ * current proposal is first copied as version+1 (provider 'user', like the executor's insertChange / revertCard - AutoGate refuses
+ * it as `provider_unsafe`; provenance is copied, never relaxed). Nothing is approved, nothing is executed: the user still clicks.
+ * Must run inside the caller's transaction, AFTER closed_reason was cleared. Returns the kinds offered (empty = nothing to offer).
+ */
+export function reofferCurrentProposal(
+  repos: Repos,
+  p: { itemId: ItemId; chat: { id: ChatRef; sendable: boolean }; calendarConnected: boolean; now: EpochMs },
+): Array<'send_reply' | 'create_event'> {
+  const item = repos.items.byId(p.itemId);
+  const current = repos.proposals.current(p.itemId);
+  if (item === null || current === null || item.closedReason !== null) return [];
+  if (current.triggerAuthor === 'self') return [];
+  const draft = current.draftText ?? '';
+  const sendText = draft !== '' && p.chat.sendable && item.replyState === 'draft' ? draft : null;
+  const event =
+    item.eventState === 'proposed' && p.calendarConnected && isCompleteEvent(current.event) ? current.event : null;
+  if (sendText === null && event === null) return [];
+
+  repos.actions.supersedePending(item.id, p.now); // a card the user can see never keeps two approvable versions (ARCH 8.1)
+  const proposal = repos.proposals.insertNext({
+    itemId: item.id,
+    provider: 'user',
+    model: 'user',
+    extraction: current.extraction,
+    draftText: current.draftText,
+    replyLang: current.replyLang,
+    event: current.event,
+    freeBusy: current.freeBusy,
+    suspicious: current.suspicious,
+    createdAt: p.now,
+    delta: current.delta,
+    imageRead: current.imageRead,
+    blockedCalls: current.blockedCalls,
+    providerClass: current.providerClass,
+    contextFromMeRecent: current.contextFromMeRecent,
+    crossChatRows: current.crossChatRows,
+    triggerAuthor: current.triggerAuthor,
+  });
+  repos.items.update(item.id, { currentProposalId: proposal.id }, p.now);
+  const offered = insertReplyAndCreate(repos, {
+    itemId: item.id,
+    chatId: p.chat.id,
+    proposal,
+    sendText,
+    event,
+    now: p.now,
+  });
+  const kinds: Array<'send_reply' | 'create_event'> = [];
+  if (offered.send !== null) kinds.push('send_reply');
+  if (offered.create !== null) kinds.push('create_event');
+  return kinds;
+}
+
 /** Writes proposal + item update + pending actions in ONE repos.db.transaction. Never sends anything. */
 export function validateAndPersist(repos: Repos, input: ValidateInput, opts: ValidateOptions = {}): ValidateOutcome {
   const { item, chat, extraction, slot, replyLang, busy, now } = input;
@@ -343,9 +469,7 @@ export function validateAndPersist(repos: Repos, input: ValidateInput, opts: Val
       eventState === 'proposed' &&
       calendarConnected &&
       closedReason === null &&
-      event !== null &&
-      event.startLocal !== '' &&
-      event.endLocal !== ''
+      isCompleteEvent(event)
         ? event
         : null;
     // `update_event`: B20's five conditions (+ the item is still open).
@@ -400,44 +524,18 @@ export function validateAndPersist(repos: Repos, input: ValidateInput, opts: Val
       },
       now,
     );
-    if (sendText !== null) {
-      repos.actions.insertPending({
-        itemId: item.id,
-        proposalId: proposal.id,
-        chatId: chat.id,
-        payload: {
-          v: 1,
-          kind: 'send_reply',
-          itemId: item.id,
-          chatRef: chat.id,
-          proposalVersion: proposal.version,
-          text: sendText,
-        },
-        now,
-      });
-      actionsCreated.push('send_reply');
-    }
-    if (eventToPropose !== null) {
-      const a = repos.actions.insertPending({
-        itemId: item.id,
-        proposalId: proposal.id,
-        chatId: chat.id,
-        payload: {
-          v: 1,
-          kind: 'create_event',
-          itemId: item.id,
-          chatRef: chat.id,
-          proposalVersion: proposal.version,
-          title: eventToPropose.title,
-          startLocal: eventToPropose.startLocal,
-          endLocal: eventToPropose.endLocal,
-          timeZone: eventToPropose.timeZone,
-          location: eventToPropose.location,
-        },
-        now,
-      });
+    const offered = insertReplyAndCreate(repos, {
+      itemId: item.id,
+      chatId: chat.id,
+      proposal,
+      sendText,
+      event: eventToPropose,
+      now,
+    });
+    if (offered.send !== null) actionsCreated.push('send_reply');
+    if (offered.create !== null) {
       actionsCreated.push('create_event');
-      calendarActionIds.push(a.id);
+      calendarActionIds.push(offered.create.id);
     }
     if (deltaToPropose !== null) {
       // THE thing the user approves (I3'): target, source item, base revision and `from` are pinned from app rows.

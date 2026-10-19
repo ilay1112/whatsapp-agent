@@ -861,18 +861,21 @@ export function OverflowMenu(props: {
             >
               {t('action.dismiss')}
             </button>
-            <button
-              type="button"
-              role="menuitem"
-              className="btn btn-quiet justify-start"
-              data-testid={`retriage-${props.item.itemId}`}
-              onClick={() => {
-                setOpen(false);
-                props.onRetriage();
-              }}
-            >
-              {t('action.analyseAgain')}
-            </button>
+            {/* [sweep-fix-a] ux.md 6.7: an In-calendar card has nothing to re-analyse (main refuses item:retriage for it) */}
+            {props.item.status !== 'in_calendar' ? (
+              <button
+                type="button"
+                role="menuitem"
+                className="btn btn-quiet justify-start"
+                data-testid={`retriage-${props.item.itemId}`}
+                onClick={() => {
+                  setOpen(false);
+                  props.onRetriage();
+                }}
+              >
+                {t('action.analyseAgain')}
+              </button>
+            ) : null}
             <button
               type="button"
               role="menuitem"

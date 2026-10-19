@@ -78,6 +78,8 @@ export function VoiceNotes() {
   const [deleting, setDeleting] = useState<VoiceTier | null>(null);
   const [testing, setTesting] = useState(false);
   const [bench, setBench] = useState<number | null | undefined>(undefined);
+  /** T-906 finding 6: the last Test run failed (main's `ok:false`, or the IPC call itself); cleared by the next run. */
+  const [testFailed, setTestFailed] = useState(false);
 
   const reload = useCallback(async () => {
     const r = await api.getVoiceState();
@@ -132,11 +134,23 @@ export function VoiceNotes() {
 
   const runTest = async () => {
     setTesting(true);
-    const r = await api.voiceSelfTest();
-    setTesting(false);
-    setBench(r.ok && r.value.ok ? r.value.secPerAudioSec : null);
+    setTestFailed(false);
+    let passed = false;
+    try {
+      const r = await api.voiceSelfTest();
+      passed = r.ok && r.value.ok;
+      setBench(r.ok && r.value.ok ? r.value.secPerAudioSec : null);
+    } catch {
+      setBench(null);
+    } finally {
+      setTesting(false);
+      setTestFailed(!passed);
+    }
     void reload();
   };
+  // The self-test runs the resolved tier's model + the VAD (main's voice selfTest); without both it can only fail at
+  // once, so the button waits for them and says why (T-906 finding 6). Unknown (not loaded yet) = not testable.
+  const testable = voice?.model?.status === 'ready' && voice.vad.status === 'ready';
 
   const secPerAudioSec = bench !== undefined ? bench : (voice?.secPerAudioSec ?? null);
   const suggestLite = (voice?.suggestLite ?? false) || (secPerAudioSec !== null && secPerAudioSec > 2);
@@ -268,12 +282,27 @@ export function VoiceNotes() {
           type="button"
           className="btn btn-outline"
           data-testid="settings-voice-test"
-          disabled={testing}
+          disabled={testing || !testable}
+          aria-describedby={voice && !testable ? 'settings-voice-test-needs-model' : undefined}
           onClick={() => void runTest()}
         >
           {t('settings.voice.test')}
         </button>
       </div>
+      {voice && !testable ? (
+        <p
+          id="settings-voice-test-needs-model"
+          className="m-0 text-sm text-text-muted"
+          data-testid="settings-voice-test-needs-model"
+        >
+          {t('settings.voice.testNeedsModel')}
+        </p>
+      ) : null}
+      {testFailed && !testing ? (
+        <p role="alert" className="m-0 text-sm text-danger" data-testid="settings-voice-test-error">
+          {t('settings.voice.testFailed')}
+        </p>
+      ) : null}
       {suggestLite && checked !== 'voice-lite' ? (
         <p className="m-0 flex flex-wrap items-center gap-2 text-sm" data-testid="settings-voice-suggest-lite">
           <span className="icon icon-alert text-warn" aria-hidden="true" />

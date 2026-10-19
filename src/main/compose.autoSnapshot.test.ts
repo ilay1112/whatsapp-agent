@@ -61,7 +61,12 @@ function session(meta: ReturnType<typeof memoryMeta>, provider: ProviderId = 'lo
   };
   const auth = createGoogleAuth({
     host: {
-      start: async () => status,
+      // Like the real McpHost: start() on a stopped host spawns the child, whose start-up probe finds no tokens after
+      // disconnect() => needs_sign_in. (A start() that answered 'not_configured' would be a host that did not start.)
+      start: async () => {
+        if (status === 'not_configured') status = 'needs_sign_in';
+        return status;
+      },
       stop: async () => {
         status = 'not_configured';
       },

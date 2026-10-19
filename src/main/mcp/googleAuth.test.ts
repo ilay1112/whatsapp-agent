@@ -8,6 +8,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { createFakeMcpCalendar } from '../../../tests/fakes/fake-mcp-calendar';
 import { createMcpAdminClient } from './adminClient';
+import { CALLABLE } from './host';
 import { createMcpReadClient } from './readClient';
 import {
   CREDENTIALS_MAX_BYTES,
@@ -524,6 +525,33 @@ describe('status, disconnect, listCalendars and change events', () => {
     await h.stop();
   });
 
+  // T-906 finding 3: Settings calls google:status on every open (and on google:changed), so it must stay cheap.
+  it('status() makes no round trip while the host cannot answer (not callable) and keeps the last known e-mail', async () => {
+    const h = await harness();
+    await h.auth.importCredentials(good());
+    await h.auth.status();
+    const before = h.fake.calls.length;
+    for (const s of ['starting', 'reconnect_required', 'unavailable', 'port_busy', 'toolset_mismatch'] as const) {
+      h.setStatus(s);
+      await expect(h.auth.status()).resolves.toMatchObject({ status: s, accountEmail: 'user@example.test' });
+    }
+    expect(h.fake.calls.length).toBe(before);
+    await h.stop();
+  });
+
+  it('concurrent status() calls share ONE manage-accounts list round trip', async () => {
+    const h = await harness();
+    await h.auth.importCredentials(good());
+    const before = h.fake.calls.filter((c) => c.tool === 'manage-accounts').length;
+    const all = await Promise.all([h.auth.status(), h.auth.status(), h.auth.status()]);
+    for (const s of all) expect(s.accountEmail).toBe('user@example.test');
+    expect(h.fake.calls.filter((c) => c.tool === 'manage-accounts').length).toBe(before + 1);
+    // a later call (nothing in flight) polls again
+    await h.auth.status();
+    expect(h.fake.calls.filter((c) => c.tool === 'manage-accounts').length).toBe(before + 2);
+    await h.stop();
+  });
+
   it('disconnect stops the host and deletes only tokens.json - never the credentials file', async () => {
     const h = await harness();
     await h.auth.importCredentials(good());
@@ -677,5 +705,265 @@ describe('[V2] B7 account persistence (auto-mode-6)', () => {
     await expect(h.auth.status()).resolves.toMatchObject({ accountEmail: 'user@example.test' });
     await expect(h.auth.disconnect()).resolves.toMatchObject({ ok: true });
     await h.stop();
+  });
+});
+
+// Settings > Google Calendar > Connect after Disconnect did nothing: disconnect() stops the host (status
+// `not_configured`) but keeps the credentials, and the admin facade refuses every call outside a callable host state.
+// startSignIn() must start the host first - exactly like importCredentials - and log every failure by code only.
+describe('startSignIn restarts a stopped host (Settings > Connect after Disconnect)', () => {
+  const mkLog = (): Logger => {
+    const log: Logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn(), child: () => log };
+    return log;
+  };
+
+  /** A host + admin pair that behaves like host.ts: the admin answers `unavailable` while the host is not callable. */
+  async function gated(startResult: McpStatus = 'needs_sign_in', opts: FakeCalendarOptions = {}) {
+    const order: string[] = [];
+    let hostStatus: McpStatus = 'not_configured';
+    const statusCbs: Array<(s: McpStatus) => void> = [];
+    const setHost = (s: McpStatus): void => {
+      hostStatus = s;
+      for (const cb of statusCbs) cb(s);
+    };
+    const start = vi.fn(async () => {
+      order.push('host.start');
+      setHost(startResult);
+      return hostStatus;
+    });
+    let inner: McpAdminClient | null = null;
+    // The real server (build-resources/calendar-mcp index.js addAccount) answers `add` with "already_authenticated" and
+    // NO auth_url while tokens.json still names 'personal' - even when that refresh token is dead (invalid_grant).
+    // The admin facade projects that answer to bad_response; `staleTokens` models it.
+    const tokens = { stale: false };
+    const admin: McpAdminClient = {
+      manageAccounts: async (action) => {
+        order.push(`manage-accounts:${action}`);
+        if (!CALLABLE.includes(hostStatus) || inner === null) return { ok: false, error: 'unavailable' };
+        if (action === 'add' && tokens.stale) return { ok: false, error: 'bad_response' };
+        return inner.manageAccounts(action);
+      },
+      listCalendars: async () => {
+        if (!CALLABLE.includes(hostStatus) || inner === null) return { ok: false, error: 'unavailable' };
+        return inner.listCalendars();
+      },
+    };
+    const log = mkLog();
+    const h = await harness(opts, {
+      host: {
+        start,
+        stop: async () => {
+          order.push('host.stop');
+          setHost('not_configured');
+        },
+        status: () => hostStatus,
+        onStatus: (cb) => {
+          statusCbs.push(cb);
+          return () => undefined;
+        },
+      },
+      admin,
+      log,
+      fs: {
+        writeFile: async () => undefined,
+        unlink: async (file) => {
+          order.push(file === PATHS.googleTokens ? 'unlink:tokens' : 'unlink:other');
+          if (file === PATHS.googleTokens) tokens.stale = false;
+        },
+        exists: () => false,
+      },
+    });
+    inner = createMcpAdminClient(h.fake.callerFor('admin'));
+    return { h, order, start, log, setHost, tokens };
+  }
+
+  // Google expires the refresh token of a testing-mode OAuth client after 7 days, so a personal setup lands in
+  // reconnect_required routinely. The host stays up (a restart would only re-read the same dead tokens.json) and the
+  // server refuses `add` while that file still names the account - so Connect must stop, drop the dead tokens, restart.
+  it('startSignIn from reconnect_required reaches manage-accounts add (no CAL_UNAVAILABLE)', async () => {
+    const { h, order, start, log, setHost, tokens } = await gated();
+    await h.auth.importCredentials(good());
+    setHost('reconnect_required');
+    tokens.stale = true;
+    order.length = 0;
+    start.mockClear();
+
+    const res = await h.auth.startSignIn();
+    expect(res.ok).toBe(true);
+    expect(order.slice(0, 4)).toEqual(['host.stop', 'unlink:tokens', 'host.start', 'manage-accounts:add']);
+    expect(order).not.toContain('unlink:other'); // the credentials file is never touched
+    expect(start).toHaveBeenCalledTimes(1);
+    expect(h.opened).toHaveLength(1);
+    expect(log.warn).not.toHaveBeenCalledWith('google.signin_failed', expect.anything());
+    await h.stop();
+  });
+
+  it('a host that comes back still reconnect_required fails with CAL_RECONNECT and never calls add', async () => {
+    const { h, order, log } = await gated('reconnect_required');
+    await h.auth.importCredentials(good());
+    order.length = 0;
+    await expect(h.auth.startSignIn()).resolves.toEqual({ ok: false, error: { code: 'CAL_RECONNECT' } });
+    expect(order).toEqual(['host.stop', 'unlink:tokens', 'host.start']);
+    expect(log.warn).toHaveBeenCalledWith('google.signin_failed', { code: 'CAL_RECONNECT' });
+    await h.stop();
+  });
+
+  it('startSignIn after disconnect restarts the host then adds the account', async () => {
+    const { h, order, start, log } = await gated();
+    await h.auth.importCredentials(good());
+    await h.auth.disconnect();
+    order.length = 0;
+    start.mockClear();
+
+    const res = await h.auth.startSignIn();
+    expect(res.ok).toBe(true);
+    expect(start).toHaveBeenCalledTimes(1);
+    expect(order.slice(0, 2)).toEqual(['host.start', 'manage-accounts:add']);
+    expect(h.opened).toHaveLength(1);
+    expect(log.info).toHaveBeenCalledWith('google.signin_started', {});
+    expect(log.warn).not.toHaveBeenCalledWith('google.signin_failed', expect.anything());
+    await h.stop();
+  });
+
+  it('does not restart a host that is already callable', async () => {
+    const { h, start } = await gated();
+    await h.auth.importCredentials(good());
+    start.mockClear();
+    await expect(h.auth.startSignIn()).resolves.toMatchObject({ ok: true });
+    expect(start).not.toHaveBeenCalled();
+    await h.stop();
+  });
+
+  it('host.start port_busy -> CAL_PORT_BUSY, no manageAccounts call', async () => {
+    const { h, order, start, setHost } = await gated('port_busy');
+    await h.auth.importCredentials(good()); // fails with CAL_PORT_BUSY too; the credentials are still recorded
+    setHost('not_configured');
+    order.length = 0;
+    start.mockClear();
+    await expect(h.auth.startSignIn()).resolves.toEqual({ ok: false, error: { code: 'CAL_PORT_BUSY' } });
+    expect(start).toHaveBeenCalledTimes(1);
+    expect(order).toEqual(['host.start']);
+    expect(h.fake.calls.filter((c) => c.tool === 'manage-accounts')).toEqual([]);
+    await h.stop();
+  });
+
+  it('maps toolset_mismatch / unavailable / not_configured from host.start like importCredentials', async () => {
+    const cases: Array<[McpStatus, string]> = [
+      ['toolset_mismatch', 'CAL_TOOLSET_MISMATCH'],
+      ['unavailable', 'CAL_UNAVAILABLE'],
+      ['not_configured', 'CAL_UNAVAILABLE'],
+    ];
+    for (const [startResult, code] of cases) {
+      const { h, order, setHost } = await gated(startResult);
+      await h.auth.importCredentials(good());
+      setHost('not_configured');
+      order.length = 0;
+      await expect(h.auth.startSignIn()).resolves.toEqual({ ok: false, error: { code } });
+      expect(order).toEqual(['host.start']);
+      await h.stop();
+    }
+  });
+
+  it('each failure path logs google.signin_failed with the code (never the url, the e-mail or a token)', async () => {
+    const loggedText = (log: Logger): string =>
+      JSON.stringify([
+        (log.info as ReturnType<typeof vi.fn>).mock.calls,
+        (log.warn as ReturnType<typeof vi.fn>).mock.calls,
+        (log.error as ReturnType<typeof vi.fn>).mock.calls,
+      ]);
+    // no credentials
+    {
+      const { h, log } = await gated();
+      await h.auth.startSignIn();
+      expect(log.warn).toHaveBeenCalledWith('google.signin_failed', { code: 'GOOGLE_CREDENTIALS_INVALID' });
+      await h.stop();
+    }
+    // host.start failures
+    const startCases: Array<[McpStatus, string]> = [
+      ['port_busy', 'CAL_PORT_BUSY'],
+      ['toolset_mismatch', 'CAL_TOOLSET_MISMATCH'],
+      ['unavailable', 'CAL_UNAVAILABLE'],
+    ];
+    for (const [startResult, code] of startCases) {
+      const { h, log, setHost } = await gated(startResult);
+      await h.auth.importCredentials(good());
+      setHost('not_configured');
+      await h.auth.startSignIn();
+      expect(log.warn).toHaveBeenCalledWith('google.signin_failed', { code });
+      await h.stop();
+    }
+    // a refused auth url and the sign-in timeout
+    const fakeCases: Array<[FakeCalendarOptions, string]> = [
+      [{ accounts: 'none', scenario: 'auth_url_evil_host' }, 'GOOGLE_CREDENTIALS_INVALID'],
+      [{ accounts: 'none' }, 'GOOGLE_SIGNIN_TIMEOUT'],
+    ];
+    for (const [opts, code] of fakeCases) {
+      const { h, log } = await gated('needs_sign_in', opts);
+      await h.auth.importCredentials(good());
+      await expect(h.auth.startSignIn()).resolves.toEqual({ ok: false, error: { code } });
+      expect(log.warn).toHaveBeenCalledWith('google.signin_failed', { code });
+      expect(loggedText(log)).not.toMatch(/https?:|accounts\.google|@|TESTONLY|GOCSPX/);
+      await h.stop();
+    }
+    // add failure, poll failure, smoke-test failure, calendar-list failure
+    const addOk: McpAdminClient['manageAccounts'] = async (action) =>
+      action === 'add'
+        ? { ok: true, value: { action: 'add', authUrl: 'https://accounts.google.com/x', expiresInMinutes: 5 } }
+        : { ok: true, value: { action: 'list', accounts: [{ accountId: 'personal', status: 'active', email: null }] } };
+    const timeOk: GoogleAuthDeps['read'] = {
+      getCurrentTime: async () => ({
+        ok: true,
+        value: { nowIso: '2026-09-24T09:00:00.000Z', timeZone: 'Asia/Jerusalem' },
+      }),
+    };
+    const directCases: Array<[Partial<GoogleAuthDeps>, string, boolean]> = [
+      [
+        {
+          admin: {
+            manageAccounts: async () => ({ ok: false, error: 'unavailable' }),
+            listCalendars: async () => ({ ok: true, value: [] }),
+          },
+        },
+        'CAL_UNAVAILABLE',
+        false,
+      ],
+      [
+        {
+          admin: {
+            manageAccounts: async (action) => (action === 'add' ? addOk(action) : { ok: false, error: 'auth' }),
+            listCalendars: async () => ({ ok: true, value: [] }),
+          },
+        },
+        'CAL_RECONNECT',
+        true,
+      ],
+      [
+        {
+          admin: { manageAccounts: addOk, listCalendars: async () => ({ ok: true, value: [] }) },
+          read: { getCurrentTime: async () => ({ ok: false, error: 'timeout' }) },
+        },
+        'CAL_UNAVAILABLE',
+        true,
+      ],
+      [
+        {
+          admin: { manageAccounts: addOk, listCalendars: async () => ({ ok: false, error: 'port_busy' }) },
+          read: timeOk,
+        },
+        'CAL_PORT_BUSY',
+        true,
+      ],
+    ];
+    for (const [overrides, code, opened] of directCases) {
+      const log = mkLog();
+      const h = await harness({}, { ...overrides, log });
+      await h.auth.importCredentials(good());
+      await expect(h.auth.startSignIn()).resolves.toEqual({ ok: false, error: { code } });
+      expect(log.warn).toHaveBeenCalledWith('google.signin_failed', { code });
+      if (opened) expect(log.info).toHaveBeenCalledWith('google.signin_started', {});
+      else expect(log.info).not.toHaveBeenCalledWith('google.signin_started', {});
+      expect(loggedText(log)).not.toMatch(/https?:|accounts\.google|@|TESTONLY|GOCSPX/);
+      await h.stop();
+    }
   });
 });

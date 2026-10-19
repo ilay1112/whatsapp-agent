@@ -21,6 +21,11 @@ const voice = (patch: Partial<VoiceState> = {}): VoiceState => ({
   suggestLite: false,
   ...patch,
 });
+/** The resolved tier's model and the VAD are on disk: the self-test can run. */
+const READY_VOICE = voice({
+  model: { id: 'voice-hebrew', sizeBytes: HEBREW_BYTES, status: 'ready', bytesDone: HEBREW_BYTES },
+  vad: { status: 'ready' },
+});
 const withSettings = (patch: Partial<Settings['voice']> = {}) =>
   useSettingsStore.setState({ settings: { ...DEFAULT_SETTINGS, voice: { ...DEFAULT_SETTINGS.voice, ...patch } } });
 
@@ -151,10 +156,11 @@ describe('VoiceNotes', () => {
   });
 
   it('Test runs voice:selfTest and reports seconds per minute; slow suggests Lite but never switches', async () => {
-    mockInvoke('voice:getState', () => ({ ok: true, value: voice() }));
+    mockInvoke('voice:getState', () => ({ ok: true, value: READY_VOICE }));
     mockInvoke('voice:selfTest', () => ({ ok: true, value: { ok: true, secPerAudioSec: 2.5 } }));
     render(<VoiceNotes />);
     expect(screen.getByTestId('settings-voice-bench')).toHaveTextContent('not measured yet');
+    await waitFor(() => expect(screen.getByTestId('settings-voice-test')).toBeEnabled());
     await userEvent.click(screen.getByTestId('settings-voice-test'));
     await waitFor(() => expect(screen.getByTestId('settings-voice-bench')).toHaveTextContent('about 150 s per minute'));
     expect(screen.getByTestId('settings-voice-suggest-lite')).toBeInTheDocument();
@@ -242,5 +248,69 @@ describe('VoiceNotes', () => {
     await i18next.changeLanguage('he');
     render(<VoiceNotes />);
     expect(screen.getByTestId('settings-voice')).toHaveTextContent('הודעות קוליות');
+  });
+});
+
+// T-906 finding 6: with no voice model, "Test" answered instantly with nothing on screen (voice:selfTest returns
+// ok:false without a model). Now the button waits for a model and says so; a run shows "Testing..." and then the speed
+// or an error line (v2-ux 4.2).
+describe('VoiceNotes - Test feedback', () => {
+  it('is disabled with a reason while no voice model is downloaded', async () => {
+    mockInvoke('voice:getState', () => ({ ok: true, value: voice() }));
+    render(<VoiceNotes />);
+    await waitFor(() => expect(invokeMocks['voice:getState']).toHaveBeenCalled());
+    const button = screen.getByTestId('settings-voice-test');
+    await waitFor(() => expect(screen.getByTestId('settings-voice-test-needs-model')).toBeInTheDocument());
+    expect(button).toBeDisabled();
+    expect(button).toHaveAttribute('aria-describedby', 'settings-voice-test-needs-model');
+    expect(screen.getByTestId('settings-voice-test-needs-model')).toHaveTextContent('Download a voice model first');
+    await userEvent.click(button);
+    expect(invokeMocks['voice:selfTest']).not.toHaveBeenCalled();
+  });
+
+  it('a model without the VAD file is not testable either', async () => {
+    mockInvoke('voice:getState', () => ({ ok: true, value: { ...READY_VOICE, vad: { status: 'none' } } }));
+    render(<VoiceNotes />);
+    await waitFor(() => expect(screen.getByTestId('settings-voice-test-needs-model')).toBeInTheDocument());
+    expect(screen.getByTestId('settings-voice-test')).toBeDisabled();
+  });
+
+  it('with a model: "Testing..." while it runs, then the speed line; no reason line', async () => {
+    mockInvoke('voice:getState', () => ({ ok: true, value: READY_VOICE }));
+    let resolve: (v: { ok: true; value: { ok: boolean; secPerAudioSec: number | null } }) => void = () => undefined;
+    mockInvoke('voice:selfTest', () => new Promise((r) => (resolve = r)));
+    render(<VoiceNotes />);
+    await waitFor(() => expect(screen.getByTestId('settings-voice-test')).toBeEnabled());
+    expect(screen.queryByTestId('settings-voice-test-needs-model')).not.toBeInTheDocument();
+    await userEvent.click(screen.getByTestId('settings-voice-test'));
+    expect(screen.getByTestId('settings-voice-bench')).toHaveTextContent('Testing...');
+    expect(screen.getByTestId('settings-voice-test')).toBeDisabled();
+    resolve({ ok: true, value: { ok: true, secPerAudioSec: 0.25 } });
+    await waitFor(() => expect(screen.getByTestId('settings-voice-bench')).toHaveTextContent('about 15 s per minute'));
+    expect(screen.queryByTestId('settings-voice-test-error')).not.toBeInTheDocument();
+  });
+
+  it('a failed run shows an error line; the next good run clears it', async () => {
+    mockInvoke('voice:getState', () => ({ ok: true, value: READY_VOICE }));
+    mockInvoke('voice:selfTest', () => ({ ok: true, value: { ok: false, secPerAudioSec: null } }));
+    render(<VoiceNotes />);
+    await waitFor(() => expect(screen.getByTestId('settings-voice-test')).toBeEnabled());
+    await userEvent.click(screen.getByTestId('settings-voice-test'));
+    const line = await screen.findByTestId('settings-voice-test-error');
+    expect(line).toHaveAttribute('role', 'alert');
+    expect(line).toHaveTextContent('The test did not finish');
+    mockInvoke('voice:selfTest', () => ({ ok: true, value: { ok: true, secPerAudioSec: 0.5 } }));
+    await userEvent.click(screen.getByTestId('settings-voice-test'));
+    await waitFor(() => expect(screen.queryByTestId('settings-voice-test-error')).not.toBeInTheDocument());
+    expect(screen.getByTestId('settings-voice-bench')).toHaveTextContent('about 30 s per minute');
+  });
+
+  it('an IPC failure is reported on the same line', async () => {
+    mockInvoke('voice:getState', () => ({ ok: true, value: READY_VOICE }));
+    mockInvoke('voice:selfTest', () => ({ ok: false, error: { code: 'INTERNAL' } }));
+    render(<VoiceNotes />);
+    await waitFor(() => expect(screen.getByTestId('settings-voice-test')).toBeEnabled());
+    await userEvent.click(screen.getByTestId('settings-voice-test'));
+    expect(await screen.findByTestId('settings-voice-test-error')).toHaveTextContent('The test did not finish');
   });
 });

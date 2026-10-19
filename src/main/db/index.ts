@@ -234,6 +234,9 @@ export interface Repos {
     ): void;
     setPolicy(id: T.ChatRef, policy: T.ChatPolicy): T.Chat;
     setForceKnown(id: T.ChatRef): T.Chat;
+    /** [sweep-fix-a] Settings "Remove the rule": policy='default', force_known=0, auto_policy='inherit' + one 'chat_rules_cleared' audit row
+     *  (the cleared values), ONE transaction. Afterwards withPolicies() no longer lists the chat. */
+    clearRules(id: T.ChatRef, now: T.EpochMs): T.Chat;
     withPolicies(): T.Chat[];
     setAutoPolicy(id: T.ChatRef, p: T.ChatAutoPolicy): T.Chat; // [V2 ADD] chat:setPolicy {autoPolicy}
     taint(id: T.ChatRef, until: T.EpochMs): void; // [V2 ADD] S4: max(auto_tainted_until, until) ; audit auto_taint

@@ -682,6 +682,7 @@ export const AUDIT_KINDS = [
   'cli_run',
   'media_rejected',
   'voice_job',
+  'chat_rules_cleared', // [sweep-fix-a] Settings 'Remove the rule': {chatRef, policy, forceKnown, autoPolicy} = the values cleared
 ] as const; // [V2 CHANGE] + 16 kinds (ARCH-v2 9.1). Details are enums/numbers/booleans/ids only (v1 rule), e.g.
 // cli_run {provider, stage, initOk, toolsCount, extraServers, toolCalls, blockedCalls, stopReason, ms, usageWindowHit} (B13 / ARCH-v2 4.3),
 // auto_write {decisionId, actionId, kind, eventIdSha8}, voice_job {itemId, seconds, wallMs, exitCode, outcome}, media_rejected {reason, bytes, pixels}.

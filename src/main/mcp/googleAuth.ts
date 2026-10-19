@@ -6,7 +6,7 @@ import fsp from 'node:fs/promises';
 import { win32 as path } from 'node:path';
 import type { Clock, Logger } from '../deps';
 import type { AppPaths } from '../paths';
-import type { McpHost } from './host';
+import { CALLABLE, type McpHost } from './host';
 import { calendarRolesOf, type McpAdminClient } from './adminClient';
 import type { McpReadClient, McpErrorKind } from './readClient';
 import type {
@@ -168,6 +168,8 @@ export function createGoogleAuth(deps: GoogleAuthDeps & GoogleAuthExtras): Googl
   let accountEmail: string | null = null;
   let code: ErrorCode | null = null;
   let credentialsProblem: CredentialsProblem | null = null;
+  /** The `manage-accounts list` a status() call is waiting on; concurrent status() calls share it. */
+  let statusPoll: Promise<unknown> | null = null;
 
   const snapshot = (): GoogleWizardState => ({
     status: deps.host.status(),
@@ -262,32 +264,60 @@ export function createGoogleAuth(deps: GoogleAuthDeps & GoogleAuthExtras): Googl
     },
 
     async startSignIn() {
-      if (!hasCredentials) return fail('GOOGLE_CREDENTIALS_INVALID');
+      // Every failure is logged by its code only - never the auth URL, the account e-mail or a token.
+      const failSignIn = (c: ErrorCode): Result<GoogleWizardState> => {
+        deps.log.warn('google.signin_failed', { code: c });
+        return fail(c);
+      };
+      if (!hasCredentials) return failSignIn('GOOGLE_CREDENTIALS_INVALID');
+      // reconnect_required = the refresh token is dead (Google expires a testing-mode client's after 7 days). The live
+      // server cannot recover: it answers `add` with "already_authenticated" (no auth_url) while tokens.json still names
+      // the account, and a bare restart re-reads the same dead file. So: stop, drop the dead tokens (what disconnect()
+      // does; the credentials file stays), then fall through to the start below.
+      if (deps.host.status() === 'reconnect_required') {
+        await deps.host.stop();
+        try {
+          await io.unlink(deps.paths.googleTokens);
+        } catch {
+          deps.log.warn('google.tokens_unlink_failed', {});
+        }
+        setAccount(null);
+      }
+      // After disconnect() (or any host teardown) the credentials are still on disk but the host is stopped, and the
+      // admin facade refuses every call outside a callable state. Start it first, exactly like importCredentials does.
+      if (!CALLABLE.includes(deps.host.status())) {
+        const started = await deps.host.start();
+        if (started === 'toolset_mismatch') return failSignIn('CAL_TOOLSET_MISMATCH');
+        if (started === 'port_busy') return failSignIn('CAL_PORT_BUSY');
+        if (started === 'unavailable' || started === 'not_configured') return failSignIn('CAL_UNAVAILABLE');
+        if (started === 'reconnect_required') return failSignIn('CAL_RECONNECT');
+      }
       const added = await deps.admin.manageAccounts('add');
-      if (!added.ok) return fail(errorCodeFor(added.error));
-      if (added.value.action !== 'add') return fail('CAL_UNAVAILABLE');
+      if (!added.ok) return failSignIn(errorCodeFor(added.error));
+      if (added.value.action !== 'add') return failSignIn('CAL_UNAVAILABLE');
       const authUrl = added.value.authUrl;
       if (!isGoogleAuthUrl(authUrl)) {
         // The URL comes from the MCP server's response: untrusted. It is refused, audited and never opened.
         deps.audit('spawn_refused', null, { what: 'auth_url', reason: 'bad_host' }, deps.clock.now());
         deps.log.error('google.auth_url_refused', { reason: 'bad_host' });
-        return fail('GOOGLE_CREDENTIALS_INVALID');
+        return failSignIn('GOOGLE_CREDENTIALS_INVALID');
       }
       await deps.openExternal(authUrl);
+      deps.log.info('google.signin_started', {});
       const deadline = deps.clock.now() + SIGN_IN_TIMEOUT_MS;
       for (;;) {
         const outcome = await pollAccount();
         if (outcome === 'active') break;
-        if (outcome === 'auth') return fail('CAL_RECONNECT');
-        if (outcome === 'port_busy') return fail('CAL_PORT_BUSY');
-        if (deps.clock.now() >= deadline) return fail('GOOGLE_SIGNIN_TIMEOUT');
+        if (outcome === 'auth') return failSignIn('CAL_RECONNECT');
+        if (outcome === 'port_busy') return failSignIn('CAL_PORT_BUSY');
+        if (deps.clock.now() >= deadline) return failSignIn('GOOGLE_SIGNIN_TIMEOUT');
         await sleep(SIGN_IN_POLL_MS);
       }
       // Smoke test over the read facade (the frozen dep exposes getCurrentTime), then the calendar list for the picker.
       const smoke = await deps.read.getCurrentTime();
-      if (!smoke.ok) return fail(errorCodeFor(smoke.error));
+      if (!smoke.ok) return failSignIn(errorCodeFor(smoke.error));
       const calendars = await deps.admin.listCalendars();
-      if (!calendars.ok) return fail(errorCodeFor(calendars.error));
+      if (!calendars.ok) return failSignIn(errorCodeFor(calendars.error));
       persistRoles(calendars.value);
       deps.audit(
         'settings_changed',
@@ -298,8 +328,15 @@ export function createGoogleAuth(deps: GoogleAuthDeps & GoogleAuthExtras): Googl
       return succeed();
     },
 
+    // Settings calls this on every open and on every `google:changed` (T-906 finding 3), so it stays cheap: no round
+    // trip while the host cannot answer (the admin facade would refuse it anyway; the last known e-mail is kept), and
+    // concurrent callers share ONE `manage-accounts list`.
     async status() {
-      if (deps.host.status() !== 'not_configured') await pollAccount();
+      if (!CALLABLE.includes(deps.host.status())) return snapshot();
+      statusPoll ??= pollAccount().finally(() => {
+        statusPoll = null;
+      });
+      await statusPoll;
       return snapshot();
     },
 

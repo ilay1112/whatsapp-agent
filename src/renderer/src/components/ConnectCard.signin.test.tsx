@@ -258,3 +258,65 @@ describe('ConnectCard - CLI_MODEL_REJECTED: "Choose another model" focuses the m
     expect(await screen.findByTestId('connect-model-antigravity_cli')).toBeInTheDocument();
   });
 });
+
+// T-906 finding 5: in Settings, "Sign in" showed no state change for seconds. Main answers `cli:signIn` only after it
+// pushed the session's `open` phase, and that push re-probes the CLI (`auth status`) whenever the 60 s status cache has
+// expired - which it always has once Settings has been open for a minute (onboarding mounts the card fresh, so the cache
+// was warm there). The card now enters the wait state (v2-ux 7.1) on the click itself, not on main's answer.
+describe('Sign in enters the wait state on the click, before main answers', () => {
+  const pendingSignIn = () => {
+    let resolve: (r: { ok: true; value: { opened: true } } | { ok: false; error: { code: ErrorCode } }) => void = () =>
+      undefined;
+    mockInvoke('cli:signIn', () => new Promise((r) => (resolve = r)));
+    return (r: Parameters<typeof resolve>[0]) => resolve(r);
+  };
+
+  for (const size of ['full', 'compact'] as const) {
+    it(`${size}: "Finish signing in in the window that opened" at once; the Sign in button goes away`, async () => {
+      pendingSignIn();
+      paint(status({ state: 'not_signed_in' }), { size });
+      await userEvent.click(screen.getByTestId('connect-signin-claude_cli'));
+      expect(screen.getByTestId('connect-claude_cli')).toHaveAttribute('data-state', 'waiting_sign_in');
+      expect(screen.getByRole('status')).toHaveTextContent('Finish signing in in the window that opened');
+      expect(screen.queryByTestId('connect-signin-claude_cli')).not.toBeInTheDocument();
+      expect(invokeMocks['cli:signIn']).toHaveBeenCalledWith({ provider: 'claude_cli' });
+    });
+  }
+
+  it('also after an earlier session that ended "not signed in" (a session from main is already on the status)', async () => {
+    pendingSignIn();
+    paint(
+      withSession(status({ state: 'not_signed_in' }), {
+        phase: 'done',
+        outcome: { ok: false, code: 'CLI_NOT_SIGNED_IN' },
+      }),
+    );
+    await userEvent.click(screen.getByTestId('connect-signin-claude_cli'));
+    expect(screen.getByTestId('connect-claude_cli')).toHaveAttribute('data-state', 'waiting_sign_in');
+  });
+
+  it("main's refusal ends the wait: the state line returns with the refusal row", async () => {
+    const answer = pendingSignIn();
+    mockInvoke('cli:getStatus', () => ({ ok: true, value: status({ state: 'not_signed_in' }) }));
+    paint(status({ state: 'not_signed_in' }));
+    await userEvent.click(screen.getByTestId('connect-signin-claude_cli'));
+    expect(screen.getByTestId('connect-claude_cli')).toHaveAttribute('data-state', 'waiting_sign_in');
+    answer({ ok: false, error: { code: 'CLI_VERSION' } });
+    await waitFor(() =>
+      expect(screen.getByTestId('connect-claude_cli')).toHaveAttribute('data-state', 'not_signed_in'),
+    );
+    expect(screen.getByTestId('connect-signin-error-claude_cli')).toBeInTheDocument();
+  });
+
+  it("main's pushed open phase takes over from the click's wait state", async () => {
+    const answer = pendingSignIn();
+    const { rerender } = paint(status({ state: 'not_signed_in' }));
+    await userEvent.click(screen.getByTestId('connect-signin-claude_cli'));
+    const open = withSession(status({ state: 'not_signed_in' }), { phase: 'open', outcome: null });
+    rerender(<ConnectCard provider="claude_cli" size="full" status={open} selected={false} onUse={() => {}} />);
+    expect(screen.getByTestId('connect-claude_cli')).toHaveAttribute('data-state', 'sign_in_open');
+    answer({ ok: true, value: { opened: true } });
+    await waitFor(() => expect(invokeMocks['cli:signIn']).toHaveBeenCalledOnce());
+    expect(screen.getByTestId('connect-claude_cli')).toHaveAttribute('data-state', 'sign_in_open');
+  });
+});

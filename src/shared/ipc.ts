@@ -121,6 +121,8 @@ export const IPC_REQUEST_SCHEMAS = {
     z.strictObject({ chatRef: z.number().int().positive(), policy: z.enum(CHAT_POLICIES) }),
     z.strictObject({ chatRef: z.number().int().positive(), forceKnown: z.literal(true) }),
     z.strictObject({ chatRef: z.number().int().positive(), autoPolicy: z.enum(CHAT_AUTO_POLICIES) }), // [V2 ADD] "Never automatic for this contact"
+    // [sweep-fix-a] Settings "Remove the rule": policy -> default, force_known -> 0, auto_policy -> inherit (one transaction + audit)
+    z.strictObject({ chatRef: z.number().int().positive(), removeRule: z.literal(true) }),
   ]),
   // ---- [V2 ADD] event editing + undo (B10, B19) ----
   'item:undoChange': z.strictObject({ itemId: z.number().int().positive(), revisionId: z.number().int().positive() }), // focused window + focus-steal guard

@@ -66,6 +66,35 @@ describe('chats repo - upsert / touch / policy', () => {
     expect(() => repos.chats.setPolicy(a.id + 999, 'never')).toThrow(RowNotFoundError);
     expect(() => repos.chats.setForceKnown(a.id + 999)).toThrow(RowNotFoundError);
   });
+
+  // [sweep-fix-a] Settings "Remove the rule": every column withPolicies() keys on is reset in ONE transaction, with one audit row.
+  it('clearRules() resets policy, force_known and auto_policy, delists the chat and audits what it cleared', () => {
+    const { repos, db } = memRepos();
+    const a = repos.chats.upsertFromBridge(JID_A, null, false, T0);
+    const b = repos.chats.upsertFromBridge(JID_B, null, false, T0);
+    repos.chats.setForceKnown(a.id);
+    repos.chats.setPolicy(b.id, 'never');
+    repos.chats.setAutoPolicy(b.id, 'never');
+    expect(repos.chats.clearRules(a.id, T0 + 5)).toMatchObject({
+      id: a.id,
+      policy: 'default',
+      forceKnown: false,
+      autoPolicy: 'inherit',
+    });
+    expect(repos.chats.withPolicies().map((c) => c.id)).toEqual([b.id]);
+    repos.chats.clearRules(b.id, T0 + 6);
+    expect(repos.chats.withPolicies()).toEqual([]);
+    const audit = db
+      .prepare<{ ts: number; ref: string; detail_json: string }>(
+        `SELECT ts, ref, detail_json FROM audit_log WHERE kind = 'chat_rules_cleared' ORDER BY id`,
+      )
+      .all();
+    expect(audit.map((r) => [r.ts, r.ref, JSON.parse(r.detail_json)])).toEqual([
+      [T0 + 5, String(a.id), { chatRef: a.id, policy: 'default', forceKnown: true, autoPolicy: 'inherit' }],
+      [T0 + 6, String(b.id), { chatRef: b.id, policy: 'never', forceKnown: false, autoPolicy: 'never' }],
+    ]);
+    expect(() => repos.chats.clearRules(a.id + 999, T0)).toThrow(RowNotFoundError);
+  });
 });
 
 describe('chats repo - [R2] mergeLidInto', () => {

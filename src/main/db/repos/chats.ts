@@ -208,6 +208,29 @@ export function createChatsRepo(db: Db): ChatsRepo {
       return selectById(db, id)!;
     },
 
+    /**
+     * [sweep-fix-a] Settings "Remove the rule" (ui-sweep finding 4): resets EVERY column withPolicies() keys on - policy, force_known,
+     * auto_policy - so the row leaves the list, plus one 'chat_rules_cleared' audit row with the values it cleared (enums/booleans
+     * only), in ONE transaction. Nothing is queued, sent or written here: the next message of the chat simply goes through the
+     * default gates again (unknown sender held, automatic mode per the global policy).
+     */
+    clearRules(id, now) {
+      return db.transaction(() => {
+        const before = selectById(db, id);
+        if (!before) throw new RowNotFoundError('chats', id);
+        db.prepare(
+          `UPDATE chats SET policy = 'default', force_known = 0, auto_policy = 'inherit', updated_at = MAX(updated_at, ?) WHERE id = ?`,
+        ).run(now, id);
+        auditRepo.append(
+          'chat_rules_cleared',
+          String(id),
+          { chatRef: id, policy: before.policy, forceKnown: before.forceKnown, autoPolicy: before.autoPolicy },
+          now,
+        );
+        return selectById(db, id)!;
+      });
+    },
+
     /** chat:listPolicies (C2 8): policy != 'default' or forceKnown ; [V2] or auto_policy = 'never' (the automatic-mode opt-out). */
     withPolicies() {
       return db
