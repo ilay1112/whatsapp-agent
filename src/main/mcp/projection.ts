@@ -154,11 +154,20 @@ export function projectFreeBusy(text: string, timeZone: string): McpResult<BusyB
   return { ok: true, value: blocks };
 }
 
+/**
+ * get-current-time text -> {nowIso (UTC), timeZone}.
+ * VERIFIED wire shape (@cocal/google-calendar-mcp 2.6.3 GetCurrentTimeHandler, createStructuredResponse = JSON.stringify):
+ * `{"currentTime":"2026-10-19T18:40:23.000+03:00","timezone":"Asia/Jerusalem","offset":"+03:00","isDST":false,"dayOfWeek":"Monday"}`
+ * - the zone key is lowercase `timezone`. The camelCase `timeZone` is still accepted; if both are present they must agree.
+ */
 export function projectCurrentTime(text: string): McpResult<CurrentTimeProjection> {
   const root = parseJson(text);
   if (root === null || Array.isArray(root)) return BAD;
   const raw = str(root, 'currentTime') ?? str(root, 'nowIso') ?? str(root, 'now');
-  const zone = str(root, 'timeZone');
+  const camel = str(root, 'timeZone');
+  const lower = str(root, 'timezone');
+  if (camel !== null && lower !== null && camel !== lower) return BAD;
+  const zone = camel ?? lower;
   if (raw === null || zone === null || !TIME_ZONE_RE.test(zone)) return BAD;
   if (!INSTANT_RE.test(raw)) return BAD;
   const ms = Date.parse(raw);

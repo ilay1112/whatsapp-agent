@@ -19,6 +19,7 @@ import {
   GOOGLE_TOKENS_FILE,
   OOB_REDIRECT,
   SIGN_IN_POLL_MS,
+  SIGN_IN_SMOKE_ATTEMPTS,
   SIGN_IN_TIMEOUT_MS,
   createGoogleAuth,
   errorCodeFor,
@@ -494,6 +495,98 @@ describe('startSignIn', () => {
     await listDown.auth.importCredentials(good());
     await expect(listDown.auth.startSignIn()).resolves.toEqual({ ok: false, error: { code: 'CAL_RECONNECT' } });
     await listDown.stop();
+  });
+
+  it('retries a smoke test that fails right after the account turned active, logging each failure by kind only', async () => {
+    const manageAccounts: McpAdminClient['manageAccounts'] = async (action) =>
+      action === 'add'
+        ? { ok: true, value: { action: 'add', authUrl: 'https://accounts.google.com/x', expiresInMinutes: 5 } }
+        : { ok: true, value: { action: 'list', accounts: [{ accountId: 'personal', status: 'active', email: null }] } };
+    const log: Logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn(), child: () => log };
+    const answers: Array<'bad_response' | 'unavailable' | null> = ['bad_response', 'unavailable', null];
+    let calls = 0;
+    const h = await harness(
+      {},
+      {
+        log,
+        admin: { manageAccounts, listCalendars: async () => ({ ok: true, value: [] }) },
+        read: {
+          getCurrentTime: async () => {
+            const kind = answers[calls++] ?? null;
+            return kind === null
+              ? { ok: true, value: { nowIso: '2026-09-24T09:00:00.000Z', timeZone: 'Asia/Jerusalem' } }
+              : { ok: false, error: kind };
+          },
+        },
+      },
+    );
+    await h.auth.importCredentials(good());
+    const res = await h.auth.startSignIn();
+    expect(res.ok).toBe(true);
+    expect(calls).toBe(3);
+    const smokeLogs = vi.mocked(log.warn).mock.calls.filter(([event]) => event === 'google.smoke_failed');
+    expect(smokeLogs).toEqual([
+      ['google.smoke_failed', { kind: 'bad_response', attempt: 1 }],
+      ['google.smoke_failed', { kind: 'unavailable', attempt: 2 }],
+    ]);
+    expect(vi.mocked(log.warn).mock.calls.some(([event]) => event === 'google.signin_failed')).toBe(false);
+    await h.stop();
+  });
+
+  it(`gives up with CAL_UNAVAILABLE after ${SIGN_IN_SMOKE_ATTEMPTS} failed smoke tests`, async () => {
+    const manageAccounts: McpAdminClient['manageAccounts'] = async (action) =>
+      action === 'add'
+        ? { ok: true, value: { action: 'add', authUrl: 'https://accounts.google.com/x', expiresInMinutes: 5 } }
+        : { ok: true, value: { action: 'list', accounts: [{ accountId: 'personal', status: 'active', email: null }] } };
+    const log: Logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn(), child: () => log };
+    let calls = 0;
+    const h = await harness(
+      {},
+      {
+        log,
+        admin: { manageAccounts, listCalendars: async () => ({ ok: true, value: [] }) },
+        read: {
+          getCurrentTime: async () => {
+            calls += 1;
+            return { ok: false, error: 'bad_response' };
+          },
+        },
+      },
+    );
+    await h.auth.importCredentials(good());
+    await expect(h.auth.startSignIn()).resolves.toEqual({ ok: false, error: { code: 'CAL_UNAVAILABLE' } });
+    expect(SIGN_IN_SMOKE_ATTEMPTS).toBe(5);
+    expect(calls).toBe(5);
+    const smokeLogs = vi.mocked(log.warn).mock.calls.filter(([event]) => event === 'google.smoke_failed');
+    expect(smokeLogs.map(([, detail]) => detail)).toEqual(
+      [1, 2, 3, 4, 5].map((attempt) => ({ kind: 'bad_response', attempt })),
+    );
+    expect(log.warn).toHaveBeenCalledWith('google.signin_failed', { code: 'CAL_UNAVAILABLE' });
+    await h.stop();
+  });
+
+  it('does not retry a smoke test that failed on auth (a dead token is not a race)', async () => {
+    const manageAccounts: McpAdminClient['manageAccounts'] = async (action) =>
+      action === 'add'
+        ? { ok: true, value: { action: 'add', authUrl: 'https://accounts.google.com/x', expiresInMinutes: 5 } }
+        : { ok: true, value: { action: 'list', accounts: [{ accountId: 'personal', status: 'active', email: null }] } };
+    let calls = 0;
+    const h = await harness(
+      {},
+      {
+        admin: { manageAccounts, listCalendars: async () => ({ ok: true, value: [] }) },
+        read: {
+          getCurrentTime: async () => {
+            calls += 1;
+            return { ok: false, error: 'auth' };
+          },
+        },
+      },
+    );
+    await h.auth.importCredentials(good());
+    await expect(h.auth.startSignIn()).resolves.toEqual({ ok: false, error: { code: 'CAL_RECONNECT' } });
+    expect(calls).toBe(1);
+    await h.stop();
   });
 
   it('treats an unexpected list answer as a bad response rather than a sign-in', async () => {

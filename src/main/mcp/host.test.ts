@@ -641,7 +641,7 @@ describe('callerFor - the only exit from host.ts', () => {
     expect(res.ok).toBe(true);
     if (!res.ok) return;
     expect(res.value.isError).toBe(false);
-    expect(JSON.parse(res.value.text)).toMatchObject({ timeZone: 'Asia/Jerusalem' });
+    expect(JSON.parse(res.value.text)).toMatchObject({ timezone: 'Asia/Jerusalem' });
   });
 
   it('CALLABLE is exactly the statuses a tool call may leave the app in - never reconnect_required', () => {
@@ -751,6 +751,63 @@ describe('callerFor - the only exit from host.ts', () => {
     // The log line carries the kind, never the provider text.
     expect(warn).toHaveBeenCalledWith('mcp.call_failed', { tool: 'get-current-time', kind: 'unavailable' });
     expect(JSON.stringify(warn.mock.calls)).not.toContain('boom');
+  });
+
+  it('logs a tool-level isError that is neither auth nor port_busy by marker name only (mcp.tool_error)', async () => {
+    const answering = (text: string): McpClientLike => ({
+      connect: async () => undefined,
+      close: async () => undefined,
+      listTools: async () => ({
+        tools: Object.keys(MCP_TOOLS).map((name) => ({
+          name,
+          annotations: {
+            readOnlyHint: READ_ONLY_HINT_TOOLS.includes(name as never),
+            destructiveHint: DESTRUCTIVE_HINT_TOOLS.includes(name as never),
+          },
+          inputSchema: patchedSchemaOf(name),
+        })),
+      }),
+      callTool: async ({ name }) =>
+        name === 'manage-accounts'
+          ? {
+              content: [
+                { type: 'text', text: JSON.stringify({ accounts: [{ account_id: 'personal', status: 'active' }] }) },
+              ],
+            }
+          : { content: [{ type: 'text', text }], isError: true },
+    });
+    const warn = vi.fn();
+    const log = { info: vi.fn(), warn, error: vi.fn(), child: () => log } as unknown as NonNullable<
+      McpHostExtras['log']
+    >;
+    const make = (text: string): ReturnType<typeof createMcpHost> =>
+      createMcpHost({ ...DEPS, transportFactory: stubTransport, clientFactory: () => answering(text), log });
+
+    const failing = make('Unhandled error: quota for owner@example.test SECRET-TEXT');
+    await failing.start();
+    await expect(failing.callerFor('read')('get-current-time', {})).resolves.toEqual({
+      ok: true,
+      value: { text: 'Unhandled error: quota for owner@example.test SECRET-TEXT', isError: true },
+    });
+    expect(warn).toHaveBeenCalledWith('mcp.tool_error', { tool: 'get-current-time', marker: 'error' });
+
+    const odd = make('Calendar said no');
+    await odd.start();
+    await odd.callerFor('read')('get-freebusy', { calendars: [{ id: 'primary' }], timeMin: 'a', timeMax: 'b' });
+    expect(warn).toHaveBeenCalledWith('mcp.tool_error', { tool: 'get-freebusy', marker: 'other' });
+
+    // auth / port_busy keep their own handling and do not log mcp.tool_error.
+    warn.mockClear();
+    const dead = make('invalid_grant');
+    await dead.start();
+    await expect(dead.callerFor('read')('get-current-time', {})).resolves.toEqual({ ok: false, error: 'auth' });
+    const busy = make('listen EADDRINUSE 127.0.0.1:3500');
+    await busy.start();
+    await expect(busy.callerFor('read')('get-current-time', {})).resolves.toEqual({ ok: false, error: 'port_busy' });
+    expect(warn.mock.calls.some(([event]) => event === 'mcp.tool_error')).toBe(false);
+
+    // The text itself never reaches the log.
+    expect(JSON.stringify(warn.mock.calls)).not.toMatch(/SECRET-TEXT|owner@|said no/);
   });
 
   it('times out a hanging tool call inside the per-call budget', async () => {

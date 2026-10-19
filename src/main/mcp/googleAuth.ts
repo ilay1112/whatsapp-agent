@@ -80,6 +80,10 @@ export const CLIENT_ID_SUFFIX = '.apps.googleusercontent.com';
 /** manage-accounts `add` expires after 5 minutes server-side (calendar-mcp.md 2 "OAuth flow"). */
 export const SIGN_IN_POLL_MS = 2_000;
 export const SIGN_IN_TIMEOUT_MS = 5 * 60_000;
+/** Smoke-test attempts after the account turns active (a server-side race right after the OAuth callback is plausible). */
+export const SIGN_IN_SMOKE_ATTEMPTS = 5;
+/** Only these smoke failures are retried; auth / port_busy are definitive answers, not a race. */
+const SMOKE_RETRYABLE: readonly McpErrorKind[] = ['bad_response', 'unavailable', 'timeout'];
 
 type Json = Record<string, unknown>;
 const isObject = (v: unknown): v is Json => typeof v === 'object' && v !== null && !Array.isArray(v);
@@ -314,8 +318,16 @@ export function createGoogleAuth(deps: GoogleAuthDeps & GoogleAuthExtras): Googl
         await sleep(SIGN_IN_POLL_MS);
       }
       // Smoke test over the read facade (the frozen dep exposes getCurrentTime), then the calendar list for the picker.
-      const smoke = await deps.read.getCurrentTime();
-      if (!smoke.ok) return failSignIn(errorCodeFor(smoke.error));
+      // Retried up to SIGN_IN_SMOKE_ATTEMPTS times on a transient kind; each failure is logged by kind + attempt only.
+      for (let attempt = 1; ; attempt += 1) {
+        const smoke = await deps.read.getCurrentTime();
+        if (smoke.ok) break;
+        deps.log.warn('google.smoke_failed', { kind: smoke.error, attempt });
+        if (!SMOKE_RETRYABLE.includes(smoke.error) || attempt >= SIGN_IN_SMOKE_ATTEMPTS) {
+          return failSignIn(errorCodeFor(smoke.error));
+        }
+        await sleep(SIGN_IN_POLL_MS);
+      }
       const calendars = await deps.admin.listCalendars();
       if (!calendars.ok) return failSignIn(errorCodeFor(calendars.error));
       persistRoles(calendars.value);

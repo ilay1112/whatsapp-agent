@@ -177,7 +177,7 @@ Tool behaviour:
 
 | Tool | Fake behaviour |
 |---|---|
-| `get-current-time` | `{currentTime, timeZone}` from the injected clock |
+| `get-current-time` | the REAL 2.6.3 shape `{currentTime (wall clock + offset), timezone, offset, isDST, dayOfWeek}` from the injected clock (mirrors `GetCurrentTimeHandler`; see contracts.md `CurrentTimeProjection`) |
 | `get-freebusy` | computes busy blocks from in-memory events for `calendars[].id`; rejects `timeMax - timeMin > 3 months` like the real one |
 | `list-events` | filters by `calendarId`, window, `privateExtendedProperty` (`key=value`); returns summary/start/end/htmlLink/location/description - including **hostile titles** from the seed (used by the projection and injection tests) |
 | `list-calendars` | configured calendars |

@@ -381,13 +381,64 @@ export function vendoredPreconditionText(): string {
 // [C7] ARCH V4 is UNVERIFIED: these builders are the ONE place to correct after the first supervised real run.
 // =====================================================================================================================
 
+/** Wall-clock parts of `ms` in `timeZone` (sv-SE gives zero-padded ISO-ish parts), as the vendored server reads them. */
+function zoneParts(ms: number, timeZone: string): Record<string, string> {
+  const parts = new Intl.DateTimeFormat('sv-SE', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+  }).formatToParts(new Date(ms));
+  const map: Record<string, string> = {};
+  for (const p of parts) map[p.type] = p.value;
+  return map;
+}
+
+/** Offset of `timeZone` at `ms` in minutes east of UTC. */
+function zoneOffsetMinutes(ms: number, timeZone: string): number {
+  const m = zoneParts(ms, timeZone);
+  const hour = m.hour === '24' ? 0 : Number(m.hour);
+  const wallAsUtc = Date.UTC(
+    Number(m.year),
+    Number(m.month) - 1,
+    Number(m.day),
+    hour,
+    Number(m.minute),
+    Number(m.second),
+  );
+  return Math.round((wallAsUtc - Math.floor(ms / 1000) * 1000) / 60_000);
+}
+
+/** `+03:00` / `-05:30` / `Z` - the vendored server's getTimezoneOffset format. */
+function offsetString(minutes: number): string {
+  if (minutes === 0) return 'Z';
+  const sign = minutes >= 0 ? '+' : '-';
+  const abs = Math.abs(minutes);
+  return `${sign}${String(Math.floor(abs / 60)).padStart(2, '0')}:${String(abs % 60).padStart(2, '0')}`;
+}
+
 const shapes = {
-  currentTime: (nowMs: number, timeZone: string): string =>
-    JSON.stringify({
-      currentTime: new Date(nowMs).toISOString(),
-      timeZone,
-      currentTimeInTimeZone: new Date(nowMs).toISOString(),
-    }),
+  // Mirrors GetCurrentTimeHandler in build-resources/calendar-mcp/node_modules/@cocal/google-calendar-mcp/build/index.js (2.6.3).
+  currentTime: (nowMs: number, timeZone: string): string => {
+    const m = zoneParts(nowMs, timeZone);
+    const hour = m.hour === '24' ? '00' : m.hour;
+    const offset = offsetString(zoneOffsetMinutes(nowMs, timeZone));
+    const ms3 = String(((nowMs % 1000) + 1000) % 1000).padStart(3, '0');
+    const jan = zoneOffsetMinutes(Date.UTC(new Date(nowMs).getUTCFullYear(), 0, 1), timeZone);
+    const jul = zoneOffsetMinutes(Date.UTC(new Date(nowMs).getUTCFullYear(), 6, 1), timeZone);
+    const current = zoneOffsetMinutes(nowMs, timeZone);
+    return JSON.stringify({
+      currentTime: `${m.year}-${m.month}-${m.day}T${hour}:${m.minute}:${m.second}.${ms3}${offset}`,
+      timezone: timeZone,
+      offset,
+      isDST: jan !== jul && current === Math.min(jan, jul), // the server compares with min() - mirrored, not corrected
+      dayOfWeek: new Intl.DateTimeFormat('en-US', { weekday: 'long', timeZone }).format(new Date(nowMs)),
+    });
+  },
   freeBusy: (
     calendars: Array<{ id: string; busy: Array<{ start: string; end: string }> }>,
     timeMin: string,

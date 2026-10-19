@@ -145,6 +145,40 @@ describe('projectCurrentTime', () => {
     });
   });
 
+  it('accepts the VERBATIM @cocal/google-calendar-mcp 2.6.3 get-current-time answer (lowercase `timezone`)', () => {
+    const real =
+      '{"currentTime":"2026-10-19T18:40:23.000+03:00","timezone":"Asia/Jerusalem","offset":"+03:00","isDST":false,"dayOfWeek":"Monday"}';
+    expect(projectCurrentTime(real)).toEqual({
+      ok: true,
+      value: { nowIso: '2026-10-19T15:40:23.000Z', timeZone: 'Asia/Jerusalem' },
+    });
+  });
+
+  it('accepts a real-shape answer in a zero-offset zone (server writes Z)', () => {
+    const real = JSON.stringify({ currentTime: '2026-10-19T15:40:23.123Z', timezone: 'UTC', offset: 'Z' });
+    expect(projectCurrentTime(real)).toEqual({
+      ok: true,
+      value: { nowIso: '2026-10-19T15:40:23.123Z', timeZone: 'UTC' },
+    });
+  });
+
+  it('fails closed on a real-shape answer with a garbage or missing zone', () => {
+    expect(
+      projectCurrentTime(JSON.stringify({ currentTime: '2026-10-19T18:40:23.000+03:00', timezone: 'garbage zone' })),
+    ).toEqual(BAD);
+    expect(
+      projectCurrentTime(JSON.stringify({ currentTime: '2026-10-19T18:40:23.000+03:00', offset: '+03:00' })),
+    ).toEqual(BAD);
+    expect(projectCurrentTime(JSON.stringify({ currentTime: '2026-10-19T18:40:23.000+03:00', timezone: 42 }))).toEqual(
+      BAD,
+    );
+    expect(
+      projectCurrentTime(
+        JSON.stringify({ currentTime: '2026-10-19T18:40:23.000+03:00', timezone: 'Asia/Jerusalem', timeZone: 'UTC' }),
+      ),
+    ).toEqual(BAD);
+  });
+
   it('accepts the nowIso / now aliases', () => {
     expect(projectCurrentTime(JSON.stringify({ nowIso: '2026-09-24T11:00:00Z', timeZone: 'UTC' })).ok).toBe(true);
     expect(projectCurrentTime(JSON.stringify({ now: '2026-09-24T11:00:00Z', timeZone: 'UTC' })).ok).toBe(true);

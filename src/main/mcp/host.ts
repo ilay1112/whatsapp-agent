@@ -480,6 +480,8 @@ export function createMcpHost(deps: McpHostDeps & McpHostExtras): McpHostWithChi
             setStatus('port_busy');
             return { ok: false, error: 'port_busy' };
           }
+          // Redaction rule (header): the marker NAME only, never the server text.
+          log?.warn('mcp.tool_error', { tool, marker: stderrMarkersOf(text)[0] ?? 'other' });
         }
         return { ok: true, value: { text, isError } };
       } catch (err) {

@@ -1311,6 +1311,13 @@ export interface McpCallerSource { callerFor<C extends McpToolClass>(cls: C): Mc
 
 /** Arguments are ALWAYS app-built. calendarIds / timeZone / account come from settings, never from a model. */
 export interface PinnedWindow { timeMinLocal: LocalDateTime; timeMaxLocal: LocalDateTime; timeZone: string; calendarIds: string[]; account: 'personal' }
+/** get-current-time WIRE shape (VERIFIED 2026-10-19 against @cocal/google-calendar-mcp 2.6.3 GetCurrentTimeHandler, build/index.js;
+ *  createStructuredResponse = JSON.stringify):
+ *    {"currentTime":"2026-10-19T18:40:23.000+03:00","timezone":"Asia/Jerusalem","offset":"+03:00","isDST":false,"dayOfWeek":"Monday"}
+ *  - the zone key is LOWERCASE `timezone` (not `timeZone`); currentTime is wall clock with milliseconds and a numeric offset (`Z` in a
+ *    zero-offset zone). projectCurrentTime accepts `timezone` or the legacy `timeZone` (both present => must agree), normalises nowIso to UTC,
+ *    and stays fail-closed on a missing/non-IANA zone or a non-instant. Before this correction the projection required `timeZone`, so every
+ *    real sign-in smoke test failed as bad_response -> CAL_UNAVAILABLE. */
 export interface CurrentTimeProjection { nowIso: string; timeZone: string }
 export interface EventProjection { startLocal: LocalDateTime; endLocal: LocalDateTime; title: string }     // title sanitised, <= 60 chars, UNTRUSTED
 export interface AppEventRef { eventId: string; htmlLink: string | null; startLocal: LocalDateTime }
