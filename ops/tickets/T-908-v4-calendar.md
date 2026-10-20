@@ -1,6 +1,6 @@
 # T-908 — v4: refresh button, sticky menus, theme switch, all calendars + manual event management
 
-**Status:** in progress (2026-10-19)
+**Status:** done (2026-10-20) — see PROGRESS 84, D-089
 **Owner:** orchestrator (plan, Fable 5.1) + Opus 5.5 workers (groups A–D)
 **Spec + plan:** `docs/specs/v4-calendar-handover.md`
 
@@ -16,4 +16,4 @@ Option-dialog answers: fetch the visible week on demand (no disk cache); **full 
 - Keep both extra refusals: events created from a chat card and all-day events stay read-only in the calendar popover (chat events change through their card; all-day needs a date-only form later).
 
 ## Progress
-- [x] A theme + sticky  - [x] B refresh  - [x] C calendar read + view  - [x] D manual management  - [x] docs + D-089  - [x] review (no blockers; 2 should-fix + nits -> fix pass)  - [ ] proof + ship
+- [x] A theme + sticky  - [x] B refresh  - [x] C calendar read + view  - [x] D manual management  - [x] docs + D-089  - [x] review (no blockers; 2 should-fix + nits -> fix pass)  - [x] proof + ship (vitest 8351 green; e2e 65/66, the one failure is the pre-existing cli-connect 7a; Defender clean)
