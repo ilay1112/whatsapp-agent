@@ -32,9 +32,9 @@
     "_comment": "[R2] MSVC CRT copied app-locally from $env:VC_REDIST_CRT_DIR (a Microsoft.VC143.CRT folder). Microsoft permits redistributing these three files. A null sha256 means UNPINNED and fetch-llama.mjs REFUSES to stage that file - an unverified DLL must never reach the installer. The hashes are machine-specific to the redist version being shipped, so they cannot be pre-filled from a spec: on the staging machine set VC_REDIST_CRT_DIR and run `node scripts/fetch-llama.mjs --pin-crt` once, review the printed hashes, commit them, then run the normal fetch. Leaving VC_REDIST_CRT_DIR unset is still allowed and only warns (no CRT is staged at all).",
     "sourceEnvVar": "VC_REDIST_CRT_DIR",
     "files": {
-      "msvcp140.dll": null,
-      "vcruntime140.dll": null,
-      "vcruntime140_1.dll": null
+      "msvcp140.dll": "7c26614e1d733892c2deac7e245ce115504b1d80592dd0a01b08e3e5a55f89ca",
+      "vcruntime140.dll": "d1f4225df2cd877dbf130d5668a021dce3f94118455ff5ec952061c30afc9ce7",
+      "vcruntime140_1.dll": "a7146c08f89fe5b04541ab507cdb59ff7b44534d4ba3c668a426c6450a03434e"
     }
   }
 }
