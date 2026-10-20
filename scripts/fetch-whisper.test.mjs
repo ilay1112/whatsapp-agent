@@ -89,7 +89,9 @@ describe('vendor/whisper.pin.json (ARCH-v2 B18 pin of record)', () => {
     expect(REAL_PIN.whisper.targetDir).toBe('vendor/whisper/win-x64-cpu');
     expect(REAL_PIN.files.exact).toEqual(['whisper-cli.exe', 'whisper.dll', 'ggml.dll', 'ggml-base.dll']);
     expect(REAL_PIN.files.prefix).toEqual(['ggml-cpu-']);
-    expect(Object.values(REAL_PIN.vcRedistCrt.files)).toEqual([null, null, null]);
+    // [v5] pinned on 2026-10-20 from the CI runner (release workflow pin_crt run): three 64-hex sha256 values, never null again.
+    expect(Object.keys(REAL_PIN.vcRedistCrt.files)).toEqual(['msvcp140.dll', 'vcruntime140.dll', 'vcruntime140_1.dll']);
+    for (const v of Object.values(REAL_PIN.vcRedistCrt.files)) expect(v).toMatch(/^[0-9a-f]{64}$/);
   });
 });
 
@@ -198,7 +200,14 @@ describe('main (injected fetch, in-memory fs)', () => {
         env: { VC_REDIST_CRT_DIR: 'C:\\crt' },
         fs: (() => {
           const fs = memoryFs({
-            [path.normalize(path.join(root, PIN_PATH))]: JSON.stringify(pinFor(zip)),
+            // the committed pin is pinned since v5; this case needs an UNPINNED (null) CRT entry on purpose
+            [path.normalize(path.join(root, PIN_PATH))]: JSON.stringify({
+              ...pinFor(zip),
+              vcRedistCrt: {
+                ...REAL_PIN.vcRedistCrt,
+                files: { 'msvcp140.dll': null, 'vcruntime140.dll': null, 'vcruntime140_1.dll': null },
+              },
+            }),
             [path.normalize('C:\\crt\\msvcp140.dll')]: 'crt',
           });
           return fs;
