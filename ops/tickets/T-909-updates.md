@@ -1,6 +1,6 @@
 # T-909 — In-app updates: every push to main → GitHub Release → banner + Settings › Updates
 
-**Status:** in progress (2026-10-20)
+**Status:** done (2026-10-20) — first release v0.1.10 published by run 39449671125; see PROGRESS 85, D-090
 **Owner:** orchestrator (plan, Fable 5.1) + Opus 5.5 workers W1–W3
 **Spec + plan:** `docs/specs/v5-updates-handover.md`
 
@@ -15,4 +15,4 @@ Option-dialog answers: **portable folder update** (zip + SHA-256 on a GitHub Rel
 - Renderer: banner with X, Settings › Updates, toasts after an update.
 
 ## Progress
-- [x] W1 CI + manifest (first CI run must pin the runner CRT hashes: `gh workflow run release.yml -f pin_crt=true`, commit the pins)  - [x] W2 main service + installer  - [ ] W3 renderer + e2e + docs  - [ ] review + proof + ship  - [ ] first CI release observed
+- [x] W1 CI + manifest (first CI run must pin the runner CRT hashes: `gh workflow run release.yml -f pin_crt=true`, commit the pins)  - [x] W2 main service + installer  - [x] W3 renderer + e2e + docs  - [x] review (1 blocker + 4 should-fix, fixed; original-fs follow-up)  - [x] proof + ship  - [x] first CI release observed: v0.1.10 (after three CI-only fixes: LF checkouts via .gitattributes, 30 s test timeout, 8.3 short-name prefix strip; the real-process-table suites stay local, follow-up chip filed)
