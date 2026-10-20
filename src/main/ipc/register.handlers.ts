@@ -20,6 +20,8 @@ import { createCliHandlers } from './handlers/cli';
 import { createVoiceHandlers } from './handlers/voice';
 import { createDashboardHandlers, type RefreshService } from './handlers/dashboard';
 import { createCalendarHandlers } from './handlers/calendar';
+import { createUpdateHandlers } from './handlers/update';
+import type { UpdateService } from '../update/updateService';
 import type { CalendarEventsService } from '../mcp/calendarEvents';
 import type { ManualProposals } from '../exec/manualEvents';
 import type { ActionExecutorV2 } from '../exec/actionExecutor';
@@ -37,6 +39,8 @@ export interface IpcHandlersExtV2 {
   manualProposals?: ManualProposals;
   /** [v4 T6] action:undo (ActionExecutor.undoManual); absent => fail closed (INTERNAL). */
   undoManual?: ActionExecutorV2['undoManual'];
+  /** [v5] update:*; absent => every update channel fails closed (INTERNAL). */
+  update?: UpdateService;
 }
 
 /** Assembles all 13 handler groups; throws when the union is not exactly IPC_CHANNELS. */
@@ -62,6 +66,7 @@ export function createIpcHandlers(deps: HandlerDepsV2, ext: IpcHandlersExtV2): I
       proposals: ext.manualProposals, // [v4 T6]
       undoManual: ext.undoManual,
     }),
+    createUpdateHandlers(ext.update), // [v5]
   ];
   return mergeHandlerGroups(groups);
 }

@@ -37,11 +37,13 @@ import { ConfirmDialog, Group, Row, Toggle } from './settings/parts';
 import { Pictures } from './settings/Pictures';
 import { ReadTools } from './settings/ReadTools';
 import { VoiceNotes } from './settings/VoiceNotes';
+import { Updates } from './settings/Updates';
 import './setup.css';
 
 export { ConfirmDialog, Toggle } from './settings/parts';
 
-export type SettingsGroup = 'general' | 'ai' | 'whatsapp' | 'calendar' | 'auto' | 'rules' | 'replies' | 'privacy';
+export type SettingsGroup =
+  'general' | 'ai' | 'whatsapp' | 'calendar' | 'auto' | 'rules' | 'replies' | 'privacy' | 'updates'; // [v5] T-909
 export interface SettingsProps {
   /** [V2] + 'auto' (a group) and 'activity' (the Automatic activity sub-page, UX2 4.6). */
   initialGroup?: SettingsGroup | 'activity';
@@ -56,6 +58,7 @@ export const SETTINGS_GROUPS: readonly SettingsGroup[] = [
   'rules',
   'replies',
   'privacy',
+  'updates', // [v5] T-909 W3: Check now / Download and install / Show version X again
 ];
 
 const LANGUAGE_CHOICES = ['system', 'he', 'en'] as const;
@@ -1001,6 +1004,9 @@ export function Settings({ initialGroup = 'general' }: SettingsProps) {
             </button>
           </Row>
         </Group>
+
+        {/* ---- [v5] Updates ---- */}
+        <Updates />
       </div>
 
       {active ? (

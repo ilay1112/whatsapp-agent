@@ -85,6 +85,15 @@ exports[`Settings - RTL > RTL snapshot 1`] = `
           פרטיות ונתונים
         </button>
       </li>
+      <li>
+        <button
+          class="btn btn-quiet"
+          data-testid="settings-nav-updates"
+          type="button"
+        >
+          עדכונים
+        </button>
+      </li>
     </ul>
   </nav>
   <div
@@ -2215,6 +2224,98 @@ exports[`Settings - RTL > RTL snapshot 1`] = `
             להציג את הרישיונות
           </button>
         </div>
+      </div>
+    </section>
+    <section
+      aria-labelledby="settings-h-updates"
+      class="border-t border-line pt-4"
+      data-testid="settings-group-updates"
+      id="settings-group-updates"
+    >
+      <h2
+        class="mt-0 mb-1 text-md font-semibold"
+        id="settings-h-updates"
+      >
+        עדכונים
+      </h2>
+      <div
+        class="flex flex-wrap items-center gap-3 border-b border-line py-3 last:border-b-0"
+        data-testid="settings-update-current"
+      >
+        <div
+          class="flex min-w-60 grow basis-60 flex-col"
+        >
+          <span
+            class="font-semibold"
+          >
+            גרסה נוכחית
+          </span>
+        </div>
+        <div
+          class="flex flex-wrap items-center gap-2"
+        >
+          <span
+            class="tnum"
+          >
+            0.1.0
+          </span>
+        </div>
+      </div>
+      <div
+        class="flex flex-wrap items-center gap-3 border-b border-line py-3 last:border-b-0"
+        data-testid="settings-update-latest"
+      >
+        <div
+          class="flex min-w-60 grow basis-60 flex-col"
+        >
+          <span
+            class="font-semibold"
+          >
+            גרסה אחרונה
+          </span>
+          <span
+            class="text-sm text-text-muted"
+          >
+            עדיין לא נבדק
+          </span>
+        </div>
+        <div
+          class="flex flex-wrap items-center gap-2"
+        >
+          <span
+            class="tnum"
+          >
+            -
+          </span>
+        </div>
+      </div>
+      <div
+        class="flex flex-col gap-2 py-3"
+        data-testid="settings-row-update-actions"
+      >
+        <div
+          class="flex flex-wrap items-center gap-2"
+        >
+          <button
+            class="btn btn-outline"
+            data-testid="settings-update-check"
+            type="button"
+          >
+            בדיקה עכשיו
+          </button>
+        </div>
+        <p
+          class="m-0 text-sm text-text-muted"
+          data-testid="settings-update-devonly"
+        >
+          עדכונים מותקנים רק מעותק ארוז של האפליקציה.
+        </p>
+        <p
+          class="m-0 text-sm text-text-muted"
+          data-testid="settings-update-privacy"
+        >
+          האפליקציה בודקת ב-github.com כל 6 שעות ושולחת רק את מספר הגרסה.
+        </p>
       </div>
     </section>
   </div>

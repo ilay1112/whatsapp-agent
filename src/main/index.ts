@@ -93,6 +93,7 @@ const EVENT_CHANNEL: Readonly<Record<AppRuntimeEvent, IpcEvent>> = {
   'cli:changed': 'cli:changed',
   'queue:changed': 'queue:changed',
   'voice:progress': 'voice:progress',
+  'update:changed': 'update:changed', // [v5]
 };
 
 /** [V2] S-IMAGE: Electron's nativeImage behind the injected facade (media/normalizeImage.ts never imports electron). */
@@ -295,6 +296,19 @@ if (!gotLock) {
         dialog: showMessageBox,
         notifyWithActions,
         pickExePath,
+        // [v5] T-909: the install folder is the running exe's; update:install spawns the detached updater (never a managed
+        // child, so killAllSync below cannot reach it) and then asks for this normal quit; --updated-from / --update-failed
+        // arrive on the relaunch.
+        exePath: app.getPath('exe'),
+        requestQuit: () => app.quit(),
+        argv: process.argv,
+        updateProtectedDirs: (['home', 'desktop', 'downloads', 'documents'] as const).flatMap((k) => {
+          try {
+            return [app.getPath(k)];
+          } catch {
+            return [];
+          }
+        }),
       });
       const rt = runtime;
 

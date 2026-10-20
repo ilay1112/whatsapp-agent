@@ -22,10 +22,13 @@ const INVOKE = new Set<string>([
   'auto:listWrites', 'auto:export',
   'cli:getStatus', 'cli:signIn', 'cli:setOverage', 'cli:test', 'cli:pickExe', 'cli:previewWorkspaceChange', 'cli:allowWorkspace',
   'voice:getState', 'voice:selfTest', 'voice:retry',
+  // [v5] T-909 in-app updates
+  'update:getState', 'update:check', 'update:download', 'update:install', 'update:ignore', 'update:unignore',
 ]);
 const EVENTS = new Set<string>([
   'dashboard:changed', 'health:changed', 'pairing:changed', 'model:progress', 'google:changed', 'ui:languageChanged', 'ui:navigate',
   'auto:changed', 'cli:changed', 'queue:changed', 'voice:progress', // [V2 ADD]
+  'update:changed', // [v5]
 ]);
 
 function arg(name: string, allowed: readonly string[], fallback: string): string {

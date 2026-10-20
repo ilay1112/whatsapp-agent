@@ -594,6 +594,16 @@
       "title": "This event is protected",
       "body": "It has other attendees or repeats; change it in Google Calendar.",
       "action": "Open in Google Calendar"
+    },
+    "UPDATE_CHECK_FAILED": {
+      "title": "Could not check for updates",
+      "body": "Check your connection and try again.",
+      "action": "Try again"
+    },
+    "UPDATE_VERIFY_FAILED": {
+      "title": "The downloaded update did not verify",
+      "body": "It was deleted. Try again later.",
+      "action": "Try again"
     }
   },
   "event": {
@@ -622,7 +632,8 @@
     "cancelled": "Cancelled"
   },
   "footer": {
-    "undoDismiss": "Undo dismiss"
+    "undoDismiss": "Undo dismiss",
+    "restartToUpdate": "Restart to update"
   },
   "google": {
     "calendarLabel": "Calendar for new events",
@@ -1276,7 +1287,8 @@
       "replies": "Replies",
       "rules": "Working rules",
       "whatsapp": "WhatsApp",
-      "auto": "Automatic mode"
+      "auto": "Automatic mode",
+      "updates": "Updates"
     },
     "navLabel": "Settings groups",
     "privacy": {
@@ -1447,6 +1459,23 @@
       "confirmKeep": "Keep this chat only",
       "daysValue_one": "{{count}} day",
       "daysValue_other": "{{count}} days"
+    },
+    "update": {
+      "current": "Current version",
+      "latest": "Latest version",
+      "lastChecked": "Checked {{when}}",
+      "notChecked": "Not checked yet",
+      "checking": "Checking…",
+      "check": "Check now",
+      "installAction": "Download and install",
+      "restartAction": "Restart to finish",
+      "unignore": "Show version {{version}} again",
+      "upToDate": "You have the latest version",
+      "privacy": "Checks github.com every 6 hours; sends only the app version.",
+      "devOnly": "Updates install only from a packaged copy.",
+      "downloadFailed": "The update download stopped. Try again.",
+      "diskFull": "Not enough disk space for the update. Free some space and try again.",
+      "actionFailed": "That did not work. Try again in a minute."
     }
   },
   "setup": {
@@ -1995,5 +2024,17 @@
   "filter": {
     "showAll": "Show all ({{count}} hidden)",
     "scheduleOnly": "Only schedules"
+  },
+  "update": {
+    "bannerLabel": "App update",
+    "available": "Version {{version}} is ready",
+    "install": "Update",
+    "ignore": "Ignore this version",
+    "hide": "Hide until the app restarts",
+    "downloading": "Downloading update… {{pct}}%",
+    "ready": "Restart to finish updating",
+    "restart": "Restart now",
+    "installed": "Updated to version {{version}}",
+    "failed": "The update could not be installed; the previous version is running"
   }
 }

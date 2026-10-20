@@ -2217,6 +2217,47 @@ export interface ManualOutcomeView { actionId: ActionId; op: ManualSummary['op']
 - **Server surface**: `MCP_TOOLS['delete-event'] = 'write'`, `ENABLED_TOOLS_ENV` nine names (section 18 checklist item 7 now covers nine), `DESTRUCTIVE_HINT_TOOLS` += `delete-event`, `REQUIRED_INPUT_FIELDS['delete-event'] = ['calendarId','eventId']`. `McpToolCaller` gains a 4th argument `opts?: { source?: 'chat' | 'manual' }`; `callerFor('write')` refuses `delete-event` unless `opts.source === 'manual'` (`invalid_args` + audit `tool_blocked`). Write client: `createManualEvent` (tags `waAgent:'1', waManual:'1', waAction:<action id>`, no `waItem`), `updateManualEvent` (content-only PATCH + `ifMatch`, no `status`, no private map), `deleteManualEvent({ source:'manual', calendarId, eventId })`.
 - **Errors / audit**: `ErrorCode` `CAL_EVENT_FOREIGN_PROTECTED` (action `none`); `AUDIT_KINDS` += `manual_event_proposed {kind, calendarSha8}`, `manual_event_executed {kind, op, calendarSha8, outcome}`, `manual_event_refused {reason, stage, calendarSha8}`; `AUTO_REASONS` += `manual_only`.
 
+## 20. `[v5]` T-909 in-app updates (`update:*`; D-090)
+
+Source: `docs/specs/v5-updates-handover.md` §2.2-2.3, worker notes `ops/agent-notes/v5-update-main.md` (W2) and `v5-update-ui.md` (W3). Copied from `src/shared/ipc.ts` / `types.ts` as implemented (2026-10-20); the code is authoritative if they ever differ. Main is the only process that talks to GitHub (the renderer keeps `connect-src 'none'`); no channel carries a URL, a path or a token. Every `update:` channel is in `NEVER_ON_MCP_PREFIXES`.
+
+```ts
+// src/shared/ipc.ts - IPC_REQUEST_SCHEMAS (additions)
+'update:getState': NoReq,
+'update:check': NoReq, // on demand; at most one real check per 60 s (a faster call answers the current state)
+'update:download': NoReq, // status available|error -> downloading -> ready (sha256 + unzip verified) ; runs in the background
+'update:install': NoReq, // focus-gated ; requires status ready && canInstall ; spawns the updater, then quits the app
+'update:ignore': z.strictObject({ version: VersionSchema }), // the banner X: hides THAT version only (persisted)
+'update:unignore': NoReq, // Settings "Show version X again"
+
+// IpcResMap: every update:* channel answers UpdateState ; IpcEventMap: 'update:changed': UpdateState (every status change; progress <= 4 Hz)
+
+// src/shared/types.ts
+export type UpdateStatus = 'idle' | 'checking' | 'up_to_date' | 'available' | 'downloading' | 'ready' | 'installing' | 'error';
+export interface UpdateState {
+  current: string;                 // the running version (app.getVersion())
+  latest: string | null;           // newest release seen by the last successful check
+  status: UpdateStatus;
+  progress: { bytesDone: number; bytesTotal: number } | null;
+  errorCode: ErrorCode | null;     // UPDATE_CHECK_FAILED | UPDATE_VERIFY_FAILED | DOWNLOAD_FAILED | DISK_FULL (status 'error'; Settings only)
+  ignoredVersion: string | null;
+  lastCheckAt: EpochMs | null;
+  canInstall: boolean;             // false in dev / unpackaged / e2e, when the install folder (or its parent) is not writable, or when it is not exactly a packaged build / is a protected folder (updatePolicy.ts)
+  lastInstall: { outcome: 'installed' | 'failed'; from: string | null; to: string | null } | null; // this launch came from the updater
+}
+```
+
+| Channel | Request | Response | Errors | Notes |
+|---|---|---|---|---|
+| `update:getState` | none | `UpdateState` | `INTERNAL` (service unwired) | read only; the renderer hydrates on boot and when Settings opens |
+| `update:check` | none | `UpdateState` | `INTERNAL` | `GET <api>/repos/ilay1112/whatsapp-agent/releases/latest`, `User-Agent: WhatsAppCalendarAgent/<version>`, no auth; not run while downloading / ready / installing; a failure is status `error` + `UPDATE_CHECK_FAILED` (Settings line, never a banner) |
+| `update:download` | none | `UpdateState` (`downloading`, returns at once) | `BAD_REQUEST` unless `available` or `error` with a known release | allow-list + one redirect hop + size/sha256 pins (ARCHITECTURE 9 "Update downloader"); sha mismatch => deleted, `UPDATE_VERIFY_FAILED`, never `ready` |
+| `update:install` | none | `UpdateState` (`installing`), then the app quits | `BAD_REQUEST` unless `ready && canInstall`; `INTERNAL` if the spawn throws; focus-gated | spawns only the verified `<userData>\updates\<ver>\win-unpacked\WhatsApp Calendar Agent.exe` with `ELECTRON_RUN_AS_NODE=1` + `updater.cjs`; audit `update_install_started {from,to}` |
+| `update:ignore` | `{ version }` (plain `MAJOR.MINOR.PATCH`) | `UpdateState` | `BAD_REQUEST` | persisted in `meta.update_ignored_version`; audit `update_ignored {version}`; a newer release shows the banner again |
+| `update:unignore` | none | `UpdateState` (`ignoredVersion: null`) | - | |
+
+Preload `INVOKE` gains the six channels, `EVENTS` gains `update:changed`. Renderer wrappers (`api.ts`): `api.getUpdateState()`, `api.checkUpdate()`, `api.downloadUpdate()`, `api.installUpdate()`, `api.ignoreUpdate(version)`, `api.unignoreUpdate()`, `events.onUpdateChanged(listener)`; the store is `store/update.ts` (UX 14.3). `ErrorCode` += `UPDATE_CHECK_FAILED`, `UPDATE_VERIFY_FAILED` (action `try_again`); `AUDIT_KINDS` += `update_install_started`, `update_installed`, `update_ignored`; `META_KEYS` += `update_last_check_at`, `update_ignored_version`, `update_latest_seen`; `LIMITS.updateCheckIntervalMs = 6 h`. E2E seams (both locks): `WCA_UPDATE_BASE_URL`, `WCA_UPDATE_SPAWN_JOURNAL`, `WCA_TIMERS.updateFirstCheckMs`. Deviations from the handover, deliberate: `UpdateState.lastInstall` (additive, for the one-time toast) and `errorCode` may also be `DOWNLOAD_FAILED` / `DISK_FULL`.
+
 ## Architecture concerns
 
 Followed as written; flagged for the orchestrator.

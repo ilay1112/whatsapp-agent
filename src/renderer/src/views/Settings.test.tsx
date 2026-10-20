@@ -37,7 +37,17 @@ describe('Settings - shape', () => {
 
   it('renders the groups of ARCH 12.2 + UX2 4 (Automatic mode after Google Calendar) with a nav for each', async () => {
     await paint();
-    expect(SETTINGS_GROUPS).toEqual(['general', 'ai', 'whatsapp', 'calendar', 'auto', 'rules', 'replies', 'privacy']);
+    expect(SETTINGS_GROUPS).toEqual([
+      'general',
+      'ai',
+      'whatsapp',
+      'calendar',
+      'auto',
+      'rules',
+      'replies',
+      'privacy',
+      'updates', // [v5]
+    ]);
     await waitFor(() => expect(screen.getByTestId('auto-state-card')).toBeInTheDocument());
     for (const group of SETTINGS_GROUPS) {
       expect(screen.getByTestId(`settings-group-${group}`)).toBeInTheDocument();

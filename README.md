@@ -169,7 +169,8 @@ Full design: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) (v1) and [`docs/ARCH
 | Your calendar | The AI sees only busy/free times ("busy 15:00–16:00"), never other events' titles. Events are written by the app only after your click, or by automatic mode if you turned it on. The week view reads the events of the calendars you pick **for the visible week only, into memory** (up to 5 minutes, never saved to disk, never shown to the AI). | per analysed message / per approval / per week you open |
 | Google credentials | Stay on your PC, in your user profile. Your own Google Cloud project. | — |
 | Model downloads | HTTPS from Hugging Face, pinned by commit and SHA-256 (language models, picture add-ons, speech models). | when you pick a local model or turn on voice notes |
-| Anything else | **No** analytics, **no** crash reporting, **no** update check, **no** account. | never |
+| Update check | One request to `api.github.com` (this project's public releases) carrying only `User-Agent: WhatsAppCalendarAgent/<version>` — no account, no ID, no cookie. Plus `release.json` and, only when you click **Update**, the update zip from `github.com` (HTTPS, size and SHA-256 checked before anything is unpacked). Nothing else is sent. | at launch (+30 s), every 6 hours, and on **Check now** |
+| Anything else | **No** analytics, **no** crash reporting, **no** account. | never |
 
 Message snapshots and drafts are kept for 30 days, then deleted.
 
@@ -355,7 +356,7 @@ These are real and deliberate. Read them before you install.
 - **Other software running as you can read everything.** The WhatsApp session, the message database and your Google tokens sit in your user profile. Windows protects them from other *users*, not from a program you run yourself.
 - **`runAsNode` is enabled.** The bundled calendar server needs the app's own binary to run as Node — a real hardening concession forced by that design.
 - **Nothing is code-signed yet.** The app, the bridge, the model server, the voice transcriber and their DLLs are unsigned. Where Smart App Control is on, Windows **blocks** the app outright; elsewhere expect SmartScreen friction on first run. The signing pipeline is ready but needs a Trusted Root Program certificate ([details](docs/WINDOWS-SECURITY.md)).
-- **No auto-update.**
+- **Updates are not code-signed.** The app checks this project's GitHub Releases (on launch and every 6 hours); when you click **Update** it downloads the zip and verifies it against the SHA-256 published in `release.json` by the same CI run, and on **Restart now** it swaps its own folder. The trust root is TLS plus the GitHub account that publishes the releases: whoever controls that account (or its CI workflow) can ship you a build. The X on the update banner ignores that one version; Settings › Updates can show it again. A copy run from source checks but never installs.
 - **The bridge is an opaque prebuilt binary.** Its Go source is vendored for reference, but when WhatsApp changes its protocol it will eventually fail with "client outdated" until a new build is supplied.
 - **Google setup is fiddly**, and the bundled server asks for the full calendar scope although the app only reads busy/free and creates or changes its own events.
 - **The calendar server is a patched copy.** Seven small insertions to `@cocal/google-calendar-mcp` 2.6.3, pinned by SHA-256 before and after; a newer server needs the patch re-done.

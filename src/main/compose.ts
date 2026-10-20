@@ -67,6 +67,15 @@ export interface ComposeDeps {
     onAction: (index: number) => void,
     onClick: () => void,
   ) => void;
+  // ---- [v5] T-909 in-app updates (each optional: the harness and older callers keep compiling) ----
+  /** app.getPath('exe') - the running exe; its folder is the install folder the updater swaps. Default: execPath. */
+  exePath?: string;
+  /** app.quit() - update:install asks for the normal quit sequence after spawning the updater. Absent => no quit. */
+  requestQuit?: () => void;
+  /** process.argv - `--updated-from <v>` / `--update-failed <v>` written by the updater. Default: []. */
+  argv?: readonly string[];
+  /** app.getPath('home' | 'desktop' | 'downloads' | 'documents'): never an install folder (the updater's folder rule). */
+  updateProtectedDirs?: readonly string[];
 }
 /** [V2-W2-01] the v1 events plus the four v2 push events, named after their IpcEvent channel (C2 8). */
 export type AppRuntimeEvent =
@@ -80,7 +89,8 @@ export type AppRuntimeEvent =
   | 'auto:changed'
   | 'cli:changed'
   | 'queue:changed'
-  | 'voice:progress';
+  | 'voice:progress'
+  | 'update:changed'; // [v5]
 export interface AppRuntime {
   handlers: IpcHandlers; // registered by index.ts via ipc/register.ts
   start(): Promise<void>; // recoverOnStartup, reaper, supervisor children (bridge only after ToS), queue, timers
@@ -242,6 +252,10 @@ import { createAutoPolicyService, type AutoPolicyService } from './exec/autoPoli
 import { createUndo } from './exec/undo';
 import { createAutoDialog, type AutoDialog } from './app/autoDialog';
 import type { ImageFacade, ShowMessageBoxFn } from './deps';
+// ---- [v5] T-909 in-app updates ----
+import { createUpdateService, type UpdateService } from './update/updateService';
+import { createUpdateHandlers } from './ipc/handlers/update';
+import { UPDATE_API_BASE } from '../shared/update';
 
 /**
  * The window slice `compose()` needs. `index.ts` hands the real `BrowserWindow` to `attachWindow()`; the integration
@@ -1070,6 +1084,57 @@ export async function compose(deps: ComposeDeps): Promise<AppRuntimeHandle> {
     log,
   });
   modelManager.onProgress((p) => emit('model', p));
+
+  // ---------------------------------------------------------------------------------------------------------------
+  // 11b. [v5] T-909 in-app updates: the only GitHub client. A test build (seams !== null) talks to nothing unless the
+  //      WCA_UPDATE_BASE_URL seam names the loopback fake; production uses https://api.github.com with the loopback gate shut.
+  //      The updater is spawned through the plain S-SPAWN function, detached and unref'd - never through the Supervisor, so
+  //      killAllSync() on the way out cannot reach it (it waits for this pid to exit).
+  // ---------------------------------------------------------------------------------------------------------------
+  const updateJournal = seams?.updateSpawnJournal;
+  const updates: UpdateService = createUpdateService({
+    currentVersion: version,
+    fetch,
+    clock,
+    log,
+    meta: repos.meta,
+    audit: repos.audit,
+    updatesDir: nodePath.join(paths.userData, 'updates'),
+    logsDir: paths.logsDir,
+    apiBase: seams === null ? UPDATE_API_BASE : (seams.updateBaseUrl ?? null),
+    allowHttpLoopback: seams !== null && seams.updateBaseUrl !== undefined,
+    install: { isPackaged, exePath: deps.exePath ?? execPath, pid: process.pid },
+    spawnDetached: (command, args, opts) => {
+      if (updateJournal !== undefined) {
+        // e2e: record the argv, never start anything (and never quit - see requestQuit below)
+        nodeFs.appendFileSync(
+          updateJournal,
+          `${JSON.stringify({ command, args, cwd: opts.cwd })}
+`,
+          'utf8',
+        );
+        return;
+      }
+      const child = spawn(command, args, {
+        cwd: opts.cwd,
+        env: opts.env,
+        detached: true,
+        stdio: 'ignore',
+        windowsHide: true,
+        shell: false,
+      });
+      child.on('error', () => log.warn('update_spawn_failed', {}));
+      child.unref();
+    },
+    requestQuit: () => {
+      if (updateJournal === undefined) deps.requestQuit?.();
+    },
+    argv: deps.argv ?? [],
+    protectedDirs: deps.updateProtectedDirs ?? [],
+    freeDiskBytes: () => freeDiskBytesOf(paths.userData),
+    ...(seamTimers?.updateFirstCheckMs === undefined ? {} : { firstCheckDelayMs: seamTimers.updateFirstCheckMs }),
+  });
+  updates.onChange((s) => emit('update:changed', s));
 
   const effectiveTier = async (): Promise<import('../shared/types').ModelTier> => {
     const selected = settings().llm.local.tier;
@@ -2144,6 +2209,7 @@ export async function compose(deps: ComposeDeps): Promise<AppRuntimeHandle> {
       }),
       log,
     ),
+    createUpdateHandlers(updates), // [v5] update:*
     // [v4 T4] calendar:listEvents / calendar:invalidate ; [v4 T6] calendar:propose* (pending only) + action:undo (manual)
     createCalendarHandlers({
       calendarEvents,
@@ -2440,6 +2506,7 @@ export async function compose(deps: ComposeDeps): Promise<AppRuntimeHandle> {
         }
       }
     });
+    updates.start(); // [v5] first GitHub check 30 s from now, then every 6 h (nothing in a test build without the seam)
     every(BACKUP_INTERVAL_MS, () => {
       const last = Number(repos.meta.get('last_backup_at') ?? 0);
       if (now() - last < BACKUP_INTERVAL_MS) return;
@@ -2458,6 +2525,7 @@ export async function compose(deps: ComposeDeps): Promise<AppRuntimeHandle> {
     lifecycle.closing = true; // [v2-closeout] before the first await: no new CLI job is even attempted from here on
     for (const handle of timers) clock.clearTimeout(handle);
     timers.clear();
+    updates.stop(); // [v5] timers + a running update download
     if (dashboardTimer !== null) clock.clearTimeout(dashboardTimer);
     notifier.dispose();
     await runQuitSequence({

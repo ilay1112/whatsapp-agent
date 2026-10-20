@@ -24,6 +24,8 @@ export interface SeamTimers {
   authStatusMinIntervalMs?: number;
   mediaRetryMs?: number;
   jobGraceMs?: { cli: number; voice: number };
+  /** [v5] delay of the first automatic update check after start() (production 30 s). A delay only, like the rest. */
+  updateFirstCheckMs?: number;
 }
 export interface SeamHardware {
   ramGiB: number;
@@ -76,6 +78,14 @@ export interface Seams {
   /** [D-080] WCA_CONSOLE_DIR - absolute drive path. Set: the e2e S-CONSOLE recorder is TRACKED (writes console-<n>.json with argv / cwd /
    *  env, never spawns anything; `exited` resolves once console-<n>.exit appears). Unset: record-only, untracked (T2 4.2). */
   consoleDir?: string | undefined;
+  // ---- [v5] T-909 in-app updates ----
+  /** WCA_UPDATE_BASE_URL - `http://127.0.0.1:<port>` only (the fake GitHub Releases host, tests/fakes/fake-github-releases.ts). It
+   *  replaces https://api.github.com and opens the http-loopback gate of the update allow-list. Unset in e2e => the update service
+   *  makes no request at all (nothing scheduled; a manual check answers UPDATE_CHECK_FAILED). */
+  updateBaseUrl?: string | undefined;
+  /** WCA_UPDATE_SPAWN_JOURNAL - absolute drive path, no `..`. Set: update:install APPENDS one JSON line {command, args, cwd} to
+   *  it instead of spawning the updater, and does not quit. (In e2e canInstall is always false, so it stays empty.) */
+  updateSpawnJournal?: string | undefined;
 }
 
 export interface ReadSeamsInput {
@@ -190,6 +200,12 @@ export function readSeams(input: ReadSeamsInput): Seams | null {
   const rawConsoleDir = env.WCA_CONSOLE_DIR ?? '';
   const consoleDir =
     /^[A-Za-z]:\\/.test(rawConsoleDir) && !/(^|[\\/])\.\.([\\/]|$)/.test(rawConsoleDir) ? rawConsoleDir : undefined;
+  // [v5] the update seams: a loopback base with a port and nothing else; a journal under the WCA_CONSOLE_DIR path rule
+  const rawUpdateBase = env.WCA_UPDATE_BASE_URL ?? '';
+  const updateBaseUrl = /^http:\/\/127\.0\.0\.1:\d{1,5}$/.test(rawUpdateBase) ? rawUpdateBase : undefined;
+  const rawJournal = env.WCA_UPDATE_SPAWN_JOURNAL ?? '';
+  const updateSpawnJournal =
+    /^[A-Za-z]:\\/.test(rawJournal) && !/(^|[\\/])\.\.([\\/]|$)/.test(rawJournal) ? rawJournal : undefined;
   return {
     userDataDir: udd ? udd.slice('--user-data-dir='.length) || undefined : undefined,
     bridgeCmd: parseCommand(env.WCA_BRIDGE_CMD),
@@ -210,6 +226,8 @@ export function readSeams(input: ReadSeamsInput): Seams | null {
     whisperCmd: validFakeCommand(parseCommand(env.WCA_WHISPER_CMD), input.appPath, ['whisper-cli.mjs']),
     dialogScript: parseDialogScript(env.WCA_DIALOG_SCRIPT),
     ...(consoleDir === undefined ? {} : { consoleDir }),
+    ...(updateBaseUrl === undefined ? {} : { updateBaseUrl }),
+    ...(updateSpawnJournal === undefined ? {} : { updateSpawnJournal }),
   };
 }
 

@@ -17,6 +17,7 @@ import {
   fetchText,
   fetchVerified,
   isAllowedFile,
+  isCi,
   main,
   pinCrt,
   pinFiles,
@@ -488,6 +489,40 @@ describe('main', () => {
       .get(path.normalize(path.join(root, ...pin.llama.targetDir.split('/'), MANIFEST_NAME)))
       .toString('utf8');
     expect(manifest.trim().split('\n')).toEqual(result.files);
+  });
+
+  // [v5-W1] the release workflow must ship the CRT (U10): on CI an unset VC_REDIST_CRT_DIR fails BEFORE any download,
+  // while a local run keeps the warn-and-continue path above. The script itself still never searches the disk - the
+  // workflow globs for the Microsoft.VC14x.CRT folder and exports the variable.
+  it.each([[{ CI: 'true' }], [{ GITHUB_ACTIONS: 'true' }]])(
+    'on CI (%j) refuses to run without VC_REDIST_CRT_DIR, before any download',
+    async (env) => {
+      const fs = memoryFs({ [path.normalize(path.join(root, PIN_PATH))]: JSON.stringify(pin) });
+      let fetched = 0;
+      await expect(
+        main({
+          root,
+          fs,
+          env,
+          log: () => undefined,
+          fetch: async () => {
+            fetched += 1;
+            return okResponse(zip);
+          },
+        }),
+      ).rejects.toThrow(/VC_REDIST_CRT_DIR.*CI/);
+      expect(fetched).toBe(0);
+      expect([...fs.files.keys()]).toEqual([path.normalize(path.join(root, PIN_PATH))]);
+    },
+  );
+
+  it('isCi only trusts the exact CI markers', () => {
+    expect(isCi({})).toBe(false);
+    expect(isCi({ CI: 'false' })).toBe(false);
+    expect(isCi({ CI: '' })).toBe(false);
+    expect(isCi({ CI: 'true' })).toBe(true);
+    expect(isCi({ CI: '1' })).toBe(true);
+    expect(isCi({ GITHUB_ACTIONS: 'true' })).toBe(true);
   });
 
   it('fails when the pinned asset does not contain llama-server.exe', async () => {

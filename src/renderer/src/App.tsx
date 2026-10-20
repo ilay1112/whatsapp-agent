@@ -32,6 +32,7 @@ import { installFocusGuard, useHealthStore, type SetupTask } from './store/healt
 import { useSettingsStore } from './store/settings';
 import { useAutoStore } from './store/auto';
 import { useCliStore } from './store/cli';
+import { useUpdateStore } from './store/update';
 import { formatDate, formatWeekdayTime } from '@shared/i18n/format';
 import { ConsentDialog, cloudConsentKindOf } from './components/ConsentDialog';
 import { downloadKindOf, downloadTargetOf } from './components/DownloadPill';
@@ -40,6 +41,7 @@ import { useDashboardStore } from './store/dashboard';
 import { HealthPill, type HealthPart } from './components/HealthPill';
 import { DownloadPill, type DownloadPillProgress } from './components/DownloadPill';
 import { SetupStrip } from './components/SetupStrip';
+import { UpdateBanner } from './components/UpdateBanner';
 import { LanguageToggle } from './components/LanguageToggle';
 import { applyDocumentTheme, ThemeToggle } from './components/ThemeToggle';
 import type { Theme } from '@shared/settings';
@@ -317,6 +319,8 @@ export function App() {
         // [V2] automatic-mode state + strip rows (hydrate only READS - nothing here can enable), and the Connect cards.
         void useAutoStore.getState().hydrate();
         void useCliStore.getState().refresh();
+        // [v5] T-909: the update state (read only; main decides what is newer / ignored / installable).
+        void useUpdateStore.getState().hydrate();
       })
       .catch(() => {
         // A REJECTED invoke (preload gone, channel torn down) used to leave the window on "Loading..." for ever with
@@ -344,6 +348,7 @@ export function App() {
       useAutoStore.getState().subscribe(),
       events.onCliChanged((status) => useCliStore.getState().setStatus(status)),
       events.onQueueChanged((q) => store.setQueue(q)),
+      useUpdateStore.getState().subscribe(), // [v5] update:changed
       on('ui:languageChanged', ({ lang, dir }) => {
         void i18nRef.current.changeLanguage(lang);
         applyDocumentLanguage(lang, dir);
@@ -452,6 +457,20 @@ export function App() {
       }),
     [announce],
   );
+
+  // [v5] T-909: a launch started by the updater shows ONE toast per window ("Updated to version X" / "could not be installed").
+  const lastInstall = useUpdateStore((s) => s.state?.lastInstall ?? null);
+  const updateReady = useUpdateStore((s) => s.state?.status === 'ready');
+  useEffect(() => {
+    const updates = useUpdateStore.getState();
+    if (lastInstall === null || updates.installNoticeShown) return;
+    updates.markInstallNoticeShown();
+    setToast(
+      lastInstall.outcome === 'installed'
+        ? { key: 'update.installed', values: { version: lastInstall.to ?? updates.state?.current ?? '' } }
+        : { key: 'update.failed' },
+    );
+  }, [lastInstall, setToast]);
 
   // ---- toast: one at a time, 6 s, pauses on hover/focus ---------------------------------------------------------------
   const [toastPaused, setToastPaused] = useState(false);
@@ -791,6 +810,8 @@ export function App() {
       {tasks.length > 0 ? (
         <SetupStrip tasks={tasks} details={setupDetails} onAction={onSetupAction} onHide={hideSetupTask} />
       ) : null}
+      {/* [v5] T-909: the update row sits in the same non-scrolling block as the setup strip (never inside app-scroll). */}
+      {!onboarding ? <UpdateBanner /> : null}
 
       <div className="flex min-h-0 grow flex-col overflow-y-auto" data-testid="app-scroll">
         {onboarding ? (
@@ -832,6 +853,17 @@ export function App() {
           <span className="tnum" data-testid="app-version">
             {t('app.version', { version: bootstrap.version })}
           </span>
+          {updateReady ? (
+            // [v5] a downloaded update waits for a restart: the link opens Settings > Updates (the Restart button lives there).
+            <button
+              type="button"
+              className="btn btn-quiet text-xs"
+              data-testid="app-version-update"
+              onClick={() => openSettings('updates')}
+            >
+              {t('footer.restartToUpdate')}
+            </button>
+          ) : null}
         </footer>
       ) : null}
 
@@ -853,7 +885,7 @@ export function App() {
           onFocus={() => setToastPaused(true)}
           onBlur={() => setToastPaused(false)}
         >
-          <span>{t(toast.key)}</span>
+          <span>{t(toast.key, toast.values)}</span>
           {toast.itemId != null || toast.onUndo ? (
             <button
               type="button"

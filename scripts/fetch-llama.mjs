@@ -14,7 +14,7 @@
 //     `THIRD_PARTY_NOTICES.txt`, and either script may run first, alone, or twice.
 //   - copies `msvcp140.dll`, `vcruntime140.dll`, `vcruntime140_1.dll` from `$env:VC_REDIST_CRT_DIR` when the user set it,
 //     verifying each against the sha256 pins in `vendor/llama.pin.json`; prints a loud warning and continues when unset
-//     (never searches the disk). A file whose pin is `null` (UNPINNED) is REFUSED, never staged: an unverified binary
+//     (never searches the disk; [v5-W1] on CI an unset variable is fatal). A file whose pin is `null` (UNPINNED) is REFUSED, never staged: an unverified binary
 //     must not reach the installer. `node scripts/fetch-llama.mjs --pin-crt` records the hashes of the folder the
 //     staging machine actually owns, and is the only way those nulls are ever filled.
 //   - writes the resulting file list to `vendor/llama/MANIFEST.txt`.
@@ -129,6 +129,16 @@ export function crtPlan({ env, pin }) {
   const names = Object.keys(pin.vcRedistCrt.files).filter((n) => !n.startsWith('_'));
   if (typeof dir !== 'string' || dir === '') return { dir: null, names, warning: 'VC_REDIST_CRT_DIR_UNSET' };
   return { dir, names, warning: null };
+}
+
+/**
+ * [v5-W1] true on a CI runner (GitHub Actions sets both markers). The release workflow must ship the CRT (U10), so
+ * there an unset VC_REDIST_CRT_DIR is fatal; locally it stays a warning. The workflow - not this script - locates the
+ * Microsoft.VC14x.CRT folder and exports the variable: this script still never searches the disk.
+ */
+export function isCi(env) {
+  const ci = env.CI;
+  return (typeof ci === 'string' && ci !== '' && ci !== 'false' && ci !== '0') || env.GITHUB_ACTIONS === 'true';
 }
 
 export async function stageCrt({ plan, pin, fs, targetDir, log }) {
@@ -320,6 +330,13 @@ export async function main(io = {}) {
   const root = io.root ?? path.resolve(fileURLToPath(new URL('..', import.meta.url)));
 
   const pin = JSON.parse(await fs.readFile(path.join(root, PIN_PATH), 'utf8'));
+  const crt = crtPlan({ env, pin });
+  if (crt.dir === null && isCi(env)) {
+    throw new Error(
+      `fetch-llama: ${pin.vcRedistCrt.sourceEnvVar} is not set on CI - a release must ship the VC++ CRT (U10). ` +
+        'The workflow step "Locate the VC++ CRT" sets it from the Visual Studio redist folder.',
+    );
+  }
   const targetDir = path.join(root, ...pin.llama.targetDir.split('/'));
   await fs.mkdir(targetDir, { recursive: true });
 
@@ -354,7 +371,7 @@ export async function main(io = {}) {
   // reproduces it under a section heading that already names the tag and the release URL.
   await fs.writeFile(llamaMitPath, `${license.trim()}\n`, 'utf8');
 
-  const staged = await stageCrt({ plan: crtPlan({ env, pin }), pin, fs, targetDir, log });
+  const staged = await stageCrt({ plan: crt, pin, fs, targetDir, log });
   const all = [...written, ...staged].sort();
   await fs.writeFile(path.join(root, ...pin.llama.targetDir.split('/'), MANIFEST_NAME), `${all.join('\n')}\n`, 'utf8');
   log(`fetch-llama: staged ${String(all.length)} files into ${pin.llama.targetDir}`);

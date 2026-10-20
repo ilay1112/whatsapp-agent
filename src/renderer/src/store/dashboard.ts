@@ -78,7 +78,8 @@ export interface DashboardStore {
   sectionOpen: Record<ListKey, boolean>;
   undoDrawerOpen: boolean;
   /** `onUndo` [V2]: the toast's Undo runs it instead of `item:restore` (e.g. "Never automatic" -> inherit again). */
-  toast: { key: string; itemId?: ItemId; onUndo?: () => void } | null;
+  /** `values` [v5]: interpolation values for `key` (app facts only, e.g. a version string - never message text). */
+  toast: { key: string; values?: Record<string, string | number>; itemId?: ItemId; onUndo?: () => void } | null;
   /** [V2] Last `queue:changed` payload; null until the first one arrives. */
   queue: QueueState | null;
   setQueue(q: QueueState | null): void;

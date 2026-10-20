@@ -31,6 +31,7 @@
     "test:defender": "node scripts/defender-scan.mjs",
     "audit:prod": "npm audit --omit=dev",
     "fetch:whisper": "node scripts/fetch-whisper.mjs",
+    "release:manifest": "node scripts/release-manifest.mjs",
     "gen:fixtures": "node scripts/gen-v3-fixture.mjs && node scripts/gen-golden-images.mjs",
     "bench:wa": "vitest run --project integration tests/bench/wa-bridgedb.bench.test.ts",
     "verify": "npm run lint && npm run format:check && npm run typecheck && npm run stage:mcp && npm run test:coverage && npm run test:e2e && npm run fetch:whisper && npm run test:smoke && npm run test:defender && npm run audit:prod"

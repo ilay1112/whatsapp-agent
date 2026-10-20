@@ -165,6 +165,13 @@ const VALID: Record<IpcChannel, unknown> = {
   'voice:getState': undefined,
   'voice:selfTest': undefined,
   'voice:retry': { itemId: 1 },
+  // [v5]
+  'update:getState': undefined,
+  'update:check': undefined,
+  'update:download': undefined,
+  'update:install': undefined,
+  'update:ignore': { version: '0.1.9' },
+  'update:unignore': undefined,
 };
 
 function stubHandlers(): {

@@ -304,6 +304,18 @@ function MANUAL_PROPOSAL(
     summary: { op, calendarId: 'primary', before: null, after: null },
   };
 }
+/** [v5] default update:* answer: nothing newer known, installing unavailable (a dev / test run). */
+export const DEFAULT_UPDATE_STATE: IpcRes<'update:getState'> = {
+  current: '0.1.0',
+  latest: null,
+  status: 'idle',
+  progress: null,
+  errorCode: null,
+  ignoredVersion: null,
+  lastCheckAt: null,
+  canInstall: false,
+  lastInstall: null,
+};
 export const IPC_DEFAULTS: { [C in IpcChannel]: IpcRes<C> } = {
   'app:getBootstrap': {
     lang: 'en',
@@ -433,6 +445,13 @@ export const IPC_DEFAULTS: { [C in IpcChannel]: IpcRes<C> } = {
   'voice:getState': voiceState,
   'voice:selfTest': { ok: true, secPerAudioSec: null },
   'voice:retry': defaultDetail,
+  // [v5] T-909 (W2 placeholder defaults; W3 owns the renderer side)
+  'update:getState': DEFAULT_UPDATE_STATE,
+  'update:check': DEFAULT_UPDATE_STATE,
+  'update:download': DEFAULT_UPDATE_STATE,
+  'update:install': DEFAULT_UPDATE_STATE,
+  'update:ignore': DEFAULT_UPDATE_STATE,
+  'update:unignore': DEFAULT_UPDATE_STATE,
 };
 
 // ---------------------------------------------------------------------------------------------------------------------

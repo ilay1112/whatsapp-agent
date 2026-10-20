@@ -79,6 +79,8 @@ export const ERROR_CODES = [
   'VOICE_TOO_LONG_FOR_DEVICE', // [F33] predicted transcription time > LIMITS.voiceJobMaxMs on this PC
   'CLI_MODEL_REJECTED', // [D-080] the CLI refused the selected model / flag combination (agy 1.2.16 "--model X-high conflicts with --effort")
   'CLI_UNSAFE_CONFIG', // [F3] agy global-profile fallback: the user's global mcp_config.json has an enabled server / hooks.json a hook / unparsable
+  'UPDATE_CHECK_FAILED', // [v5] T-909: the GitHub release check failed (offline, API error, bad release.json) - Settings line only
+  'UPDATE_VERIFY_FAILED', // [v5] the downloaded zip did not match release.json's sha256 / size, or did not extract: deleted, never installed
 ] as const;
 export type ErrorCode = (typeof ERROR_CODES)[number];
 
@@ -190,6 +192,8 @@ export const ERROR_ACTION: Record<ErrorCode, ErrorAction> = {
   VOICE_TOO_LONG_FOR_DEVICE: 'open_ai_settings', // copy "Use Lite" (the Voice notes sub-row)
   CLI_UNSAFE_CONFIG: 'open_ai_settings',
   CLI_MODEL_REJECTED: 'choose_model', // [D-080] the renderer focuses the model dropdown
+  UPDATE_CHECK_FAILED: 'try_again', // [v5] update:check
+  UPDATE_VERIFY_FAILED: 'try_again', // [v5] update:download
 };
 // [V2] CLOUD_QUOTA keeps 'open_ai_settings' (one action per code, v1 rule): for the CLI providers the AI settings row carries the
 //      "usage resets HH:MM" line and the external:open {target:'claude_usage'} link (see Architecture concerns #9).

@@ -59,6 +59,7 @@ describe('Settings v2 - shape', () => {
       'settings-group-rules',
       'settings-group-replies',
       'settings-group-privacy',
+      'settings-group-updates', // [v5] T-909
     ]);
     const ai = screen.getByTestId('settings-group-ai');
     expect(within(ai).getByTestId('settings-voice')).toBeInTheDocument();

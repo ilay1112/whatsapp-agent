@@ -595,6 +595,16 @@
       "title": "האירוע מוגן",
       "body": "יש בו משתתפים נוספים או שהוא חוזר; שנו אותו ביומן Google.",
       "action": "פתיחה ביומן Google"
+    },
+    "UPDATE_CHECK_FAILED": {
+      "title": "לא ניתן לבדוק אם יש עדכונים",
+      "body": "בדקו את החיבור ונסו שוב.",
+      "action": "ניסיון נוסף"
+    },
+    "UPDATE_VERIFY_FAILED": {
+      "title": "העדכון שהורד לא עבר אימות",
+      "body": "הקובץ נמחק. נסו שוב מאוחר יותר.",
+      "action": "ניסיון נוסף"
     }
   },
   "event": {
@@ -623,7 +633,8 @@
     "cancelled": "בוטל"
   },
   "footer": {
-    "undoDismiss": "ביטול התעלמות"
+    "undoDismiss": "ביטול התעלמות",
+    "restartToUpdate": "הפעלה מחדש לעדכון"
   },
   "google": {
     "calendarLabel": "היומן לאירועים חדשים",
@@ -1282,7 +1293,8 @@
       "replies": "תשובות",
       "rules": "כללי עבודה",
       "whatsapp": "וואטסאפ",
-      "auto": "מצב אוטומטי"
+      "auto": "מצב אוטומטי",
+      "updates": "עדכונים"
     },
     "navLabel": "קבוצות ההגדרות",
     "privacy": {
@@ -1454,6 +1466,23 @@
       "daysValue_one": "יום אחד",
       "daysValue_two": "יומיים",
       "daysValue_other": "{{count}} ימים"
+    },
+    "update": {
+      "current": "גרסה נוכחית",
+      "latest": "גרסה אחרונה",
+      "lastChecked": "נבדק {{when}}",
+      "notChecked": "עדיין לא נבדק",
+      "checking": "בודק…",
+      "check": "בדיקה עכשיו",
+      "installAction": "הורדה והתקנה",
+      "restartAction": "הפעלה מחדש לסיום",
+      "unignore": "הצגת גרסה {{version}} שוב",
+      "upToDate": "יש לך את הגרסה האחרונה",
+      "privacy": "האפליקציה בודקת ב-github.com כל 6 שעות ושולחת רק את מספר הגרסה.",
+      "devOnly": "עדכונים מותקנים רק מעותק ארוז של האפליקציה.",
+      "downloadFailed": "הורדת העדכון נעצרה. נסו שוב.",
+      "diskFull": "אין מספיק מקום בדיסק לעדכון. פנו מקום ונסו שוב.",
+      "actionFailed": "זה לא הצליח. נסו שוב בעוד דקה."
     }
   },
   "setup": {
@@ -2008,5 +2037,17 @@
   "filter": {
     "showAll": "הצג הכל ({{count}} מוסתרים)",
     "scheduleOnly": "רק פגישות"
+  },
+  "update": {
+    "bannerLabel": "עדכון האפליקציה",
+    "available": "גרסה {{version}} מוכנה",
+    "install": "עדכון",
+    "ignore": "התעלמות מגרסה זו",
+    "hide": "הסתרה עד ההפעלה הבאה",
+    "downloading": "מוריד עדכון… {{pct}}%",
+    "ready": "הפעלה מחדש לסיום העדכון",
+    "restart": "הפעלה מחדש",
+    "installed": "עודכן לגרסה {{version}}",
+    "failed": "העדכון לא הותקן; הגרסה הקודמת פועלת"
   }
 }

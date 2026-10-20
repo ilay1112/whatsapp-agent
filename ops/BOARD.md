@@ -145,3 +145,4 @@ Status: `todo` · `doing` · `review` · `done` · `blocked`. Details in `ops/ti
 | T-906 | Google Connect does nothing + UI sweep of every menu and button (user request): 7 findings fixed, sweep kept as a test | orchestrator + Opus workers | done |
 | T-907 | CAL_UNAVAILABLE banner after a successful Google sign-in: get-current-time `timezone` vs `timeZone`, fake hid it | orchestrator + Opus worker | done |
 | T-908 | v4: refresh button, sticky menus, theme switch, all calendars in the week view + manual create/move/edit/delete under I9′ | orchestrator + Opus workers | done |
+| T-909 | In-app updates: CI release per push to main, update check every 6 h, banner with X, Settings › Updates, sha-pinned folder swap | orchestrator + Opus workers | in progress |

@@ -232,3 +232,42 @@ describe('api.ts - v2 wrappers (C2 8)', () => {
     expect(seen).toEqual(['auto', 'cli', 'queue', 'voice']);
   });
 });
+
+// [v5] T-909 W3: the six update:* wrappers + the update:changed subscription (spec v5-updates-handover 2.3).
+describe('api.ts - v5 update wrappers', () => {
+  const V5_CHANNELS = [
+    'update:getState',
+    'update:check',
+    'update:download',
+    'update:install',
+    'update:ignore',
+    'update:unignore',
+  ] as const;
+
+  it('every update channel has a wrapper that sends a schema-valid payload (no url, no path)', async () => {
+    await Promise.all([
+      api.getUpdateState(),
+      api.checkUpdate(),
+      api.downloadUpdate(),
+      api.installUpdate(),
+      api.ignoreUpdate('0.1.9'),
+      api.unignoreUpdate(),
+    ]);
+    for (const channel of V5_CHANNELS) {
+      expect(invokeMocks[channel], channel).toHaveBeenCalledOnce();
+      const req = invokeMocks[channel].mock.calls[0]![0];
+      expect(IPC_REQUEST_SCHEMAS[channel].safeParse(req).success, channel).toBe(true);
+    }
+    expect(invokeMocks['update:ignore']).toHaveBeenCalledWith({ version: '0.1.9' });
+    expect(invokeMocks['settings:set']).not.toHaveBeenCalled();
+  });
+
+  it('events.onUpdateChanged subscribes and unsubscribes', () => {
+    const seen: string[] = [];
+    const off = events.onUpdateChanged((s) => seen.push(s.status));
+    emitPush('update:changed', { ...IPC_DEFAULTS['update:getState'], status: 'checking' });
+    off();
+    emitPush('update:changed', IPC_DEFAULTS['update:getState']);
+    expect(seen).toEqual(['checking']);
+  });
+});

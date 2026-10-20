@@ -1,8 +1,6 @@
 // src/main/llm/local/download.ts - resumable GGUF downloader + ModelManager (build-plan section 3; owner W1-07). S-FETCH / S-FS / S-CLOCK.
 import fsp from 'node:fs/promises';
 import path from 'node:path';
-import { createHash } from 'node:crypto';
-import { createReadStream } from 'node:fs';
 import type { Clock, FetchFn, Logger } from '../../deps';
 import type { Repos } from '../../db/index';
 import type {
@@ -24,6 +22,7 @@ import {
   type MediaModelManifestEntry,
   type ModelManifestEntry,
 } from './manifest';
+import { PinnedTransferError, isAllowedUrl, sha256OfFile, transferToPart } from '../../net/pinnedDownload';
 
 /** [V2 CHANGE, V2-W1-07] every member takes a ModelFileId (widening from ModelTier): ONE downloader queue for the LLM tiers, the
  *  projectors and the voice files (C2 1.5 DownloadProgress.tier). An LLM tier keeps the v1 behaviour byte for byte; a media file
@@ -92,18 +91,7 @@ export function requiredFreeBytes(remainingBytes: number): number {
  * `allowHttpLoopback` is the `WCA_MODEL_MANIFEST` e2e seam and is false in production.
  */
 export function isAllowedDownloadUrl(raw: string, allowHttpLoopback = false): boolean {
-  let url: URL;
-  try {
-    url = new URL(raw);
-  } catch {
-    return false;
-  }
-  const host = url.hostname.toLowerCase();
-  if (allowHttpLoopback && url.protocol === 'http:' && (host === '127.0.0.1' || host === '[::1]' || host === '::1'))
-    return true;
-  if (url.protocol !== 'https:') return false;
-  if (DOWNLOAD_HOST_ALLOWLIST.exact.some((h) => h === host)) return true;
-  return DOWNLOAD_HOST_ALLOWLIST.suffix.some((s) => host.endsWith(s));
+  return isAllowedUrl(raw, DOWNLOAD_HOST_ALLOWLIST, allowHttpLoopback); // [v5] the shared rule (net/pinnedDownload.ts)
 }
 
 interface Sidecar {
@@ -231,15 +219,6 @@ export function createModelManager(deps: ModelManagerDeps): ModelManager {
     }
   };
 
-  const sha256OfFile = (file: string): Promise<string> =>
-    new Promise((resolve, reject) => {
-      const hash = createHash('sha256');
-      const stream = createReadStream(file);
-      stream.on('data', (c) => hash.update(c));
-      stream.on('error', reject);
-      stream.on('end', () => resolve(hash.digest('hex')));
-    });
-
   const hasMagic = async (file: string, magic: string): Promise<boolean> => {
     let handle: fsp.FileHandle | null = null;
     try {
@@ -269,64 +248,38 @@ export function createModelManager(deps: ModelManagerDeps): ModelManager {
       offset = 0;
     }
 
-    const rangeHeaders = (from: number): Record<string, string> =>
-      from > 0 ? { range: `bytes=${String(from)}-` } : {};
-    // Always re-request the pinned `resolve/<commit>/` URL: the CDN redirect is signed and expires.
-    let res = await deps.fetch(entry.url, { method: 'GET', redirect: 'manual', headers: rangeHeaders(offset), signal });
-
-    if (res.status >= 300 && res.status < 400) {
-      const location = res.headers.get('location');
-      await res.body?.cancel();
-      if (location === null || !isAllowedDownloadUrl(location, deps.allowHttpLoopback ?? false)) {
-        throw new DownloadAbort('DOWNLOAD_FAILED', 'redirect_host_refused');
-      }
-      const linkedSize = res.headers.get('x-linked-size');
-      if (linkedSize !== null && Number(linkedSize) !== entry.size)
-        throw new DownloadAbort('DOWNLOAD_FAILED', 'linked_size_mismatch');
-      const linkedEtag = res.headers.get('x-linked-etag');
-      if (linkedEtag !== null && linkedEtag.replace(/"/g, '').toLowerCase() !== entry.sha256) {
-        throw new DownloadAbort('DOWNLOAD_FAILED', 'linked_etag_mismatch');
-      }
-      await writeSidecar(tier, { url: entry.url, size: entry.size, sha256: entry.sha256, etag: linkedEtag });
-      // ONE hop only: `redirect:'error'` makes a second redirect throw.
-      res = await deps.fetch(location, { method: 'GET', redirect: 'error', headers: rangeHeaders(offset), signal });
-    } else {
-      await writeSidecar(tier, {
-        url: entry.url,
-        size: entry.size,
-        sha256: entry.sha256,
-        etag: res.headers.get('x-linked-etag'),
-      });
-    }
-
-    if (res.status === 416) {
-      await res.body?.cancel();
-      return offset; // the part is already complete
-    }
-    if (res.status === 200 && offset > 0) {
-      await removeQuietly(part); // server ignored Range: restart from zero
-      offset = 0;
-    }
-    if (res.status !== 200 && res.status !== 206) {
-      await res.body?.cancel();
-      throw new DownloadAbort('DOWNLOAD_FAILED', `http_${String(res.status)}`);
-    }
-    const body = res.body;
-    if (body === null) throw new DownloadAbort('DOWNLOAD_FAILED', 'empty_body');
-
-    const handle = await fsp.open(part, offset > 0 ? 'a' : 'w');
-    const reader = body.getReader();
-    let done = offset;
+    // [v5] one redirect hop, Range resume, 416 / 200-restart handling and the streamed write are the shared helper's
+    // (net/pinnedDownload.ts); the Hugging Face pins (x-linked-size / x-linked-etag) and the sidecar stay here.
     const startedAt = deps.clock.now();
-    try {
-      for (;;) {
-        const chunk = await reader.read();
-        if (chunk.done) break;
-        const buf = Buffer.from(chunk.value);
-        await handle.write(buf);
-        done += buf.length;
+    return transferToPart({
+      fetch: deps.fetch,
+      url: entry.url, // always the pinned `resolve/<commit>/` URL: the CDN redirect is signed and expires
+      partPath: part,
+      offset,
+      isAllowed: (u) => isAllowedDownloadUrl(u, deps.allowHttpLoopback ?? false),
+      signal,
+      onFirstResponse: async (res, redirected) => {
+        if (redirected) {
+          const linkedSize = res.headers.get('x-linked-size');
+          if (linkedSize !== null && Number(linkedSize) !== entry.size)
+            throw new DownloadAbort('DOWNLOAD_FAILED', 'linked_size_mismatch');
+          const linkedEtag = res.headers.get('x-linked-etag');
+          if (linkedEtag !== null && linkedEtag.replace(/"/g, '').toLowerCase() !== entry.sha256) {
+            throw new DownloadAbort('DOWNLOAD_FAILED', 'linked_etag_mismatch');
+          }
+          await writeSidecar(tier, { url: entry.url, size: entry.size, sha256: entry.sha256, etag: linkedEtag });
+          return;
+        }
+        await writeSidecar(tier, {
+          url: entry.url,
+          size: entry.size,
+          sha256: entry.sha256,
+          etag: res.headers.get('x-linked-etag'),
+        });
+      },
+      onBytes: (done, from) => {
         const elapsed = Math.max(1, deps.clock.now() - startedAt);
-        const bytesPerSec = Math.round(((done - offset) / elapsed) * 1000);
+        const bytesPerSec = Math.round(((done - from) / elapsed) * 1000);
         emit(
           progressOf(tier, {
             status: 'downloading',
@@ -335,11 +288,8 @@ export function createModelManager(deps: ModelManagerDeps): ModelManager {
             etaSec: bytesPerSec > 0 ? Math.max(0, Math.round((entry.size - done) / bytesPerSec)) : null,
           }),
         );
-      }
-    } finally {
-      await handle.close();
-    }
-    return done;
+      },
+    });
   };
 
   const verifyAndPromote = async (tier: ModelFileId): Promise<void> => {
@@ -376,8 +326,9 @@ export function createModelManager(deps: ModelManagerDeps): ModelManager {
           emit(progressOf(tier, { status: paused ? 'paused' : 'none', bytesDone: bytes }), true);
           return;
         }
-        const reason = err instanceof DownloadAbort ? err.message : 'network';
-        const fatal = err instanceof DownloadAbort && /redirect_host_refused|linked_/.test(err.message);
+        const refusal = err instanceof DownloadAbort || err instanceof PinnedTransferError;
+        const reason = refusal ? err.message : 'network';
+        const fatal = refusal && /redirect_host_refused|linked_/.test(err.message);
         log.warn('model_download_failed', { tier, reason, attempt });
         // A corrupt body is deleted and re-downloaded exactly once; a refused redirect is never retried.
         if (/sha256_mismatch|bad_magic|size_mismatch/.test(reason)) await removeQuietly(partPath(tier));

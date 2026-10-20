@@ -1,0 +1,274 @@
+# .github/workflows/release.yml - v5 in-app updates (docs/specs/v5-updates-handover.md 2.1, owner v5-W1; hardened in the
+# v5 review fix pass). Every push to main builds the portable win-unpacked folder, zips it under ONE top folder
+# `WhatsAppCalendarAgent/`, writes release.json (size + sha256 of the zip) and publishes the GitHub Release v0.1.<run_number>
+# that the app's UpdateService checks. No secrets: GITHUB_TOKEN only. Signing stays off (WCA_SIGN_MODE is never set here).
+# e2e and the Defender scan are not part of CI.
+#
+# Least privilege (review fix pass):
+#   - `build` runs every third-party code path (npm ci lifecycle scripts, the build, electron-builder) with `contents: read`
+#     and NO persisted git credentials; it hands the zip + release.json to `publish` as an artifact.
+#   - `publish` has `contents: write` but checks out nothing and runs nothing of the repo: it downloads the artifact,
+#     verifies release.json against the zip (name, size, sha256, version, commit) and runs `gh release create`.
+#   - `crt-pins` is read-only and has no publish step.
+#   - Every action is pinned to a full commit SHA (tag in the comment; looked up with `git ls-remote <repo> refs/tags/v4`).
+#
+# Bootstrap of the VC++ CRT pins (U10): vendor/llama.pin.json + vendor/whisper.pin.json hold null CRT pins until a human
+# commits the hashes of the CRT this runner image ships; fetch-llama refuses unpinned DLLs, so the build job fails
+# until then. Run this workflow by hand with `pin_crt: true` to print those hashes (nothing is built or published),
+# review them, commit them to both pin files, push.
+name: release
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      pin_crt:
+        description: 'Only print the sha256 pins of the runner VC++ CRT (no build, no release)'
+        type: boolean
+        default: false
+
+concurrency:
+  group: release
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  crt-pins:
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.pin_crt }}
+    runs-on: windows-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 24
+      - name: Locate the VC++ CRT
+        run: |
+          # keep in sync with the same step of the build job
+          $pattern = 'C:\Program Files\Microsoft Visual Studio\*\*\VC\Redist\MSVC\*\x64\Microsoft.VC14*.CRT'
+          $dlls = 'msvcp140.dll', 'vcruntime140.dll', 'vcruntime140_1.dll'
+          $hits = @(Get-ChildItem -Path $pattern -Directory -ErrorAction SilentlyContinue |
+            Where-Object { $_.Parent.Parent.Name -match '^\d+(\.\d+)+$' } |
+            Where-Object { $d = $_.FullName; @($dlls | Where-Object { -not (Test-Path -LiteralPath (Join-Path $d $_)) }).Count -eq 0 } |
+            Sort-Object -Property @{ Expression = { [version]$_.Parent.Parent.Name }; Descending = $true }, FullName)
+          if ($hits.Count -eq 0) {
+            Write-Error "No Microsoft.VC14x.CRT folder with $($dlls -join ', ') matches $pattern - the release must ship the CRT (U10)."
+            exit 1
+          }
+          $dir = $hits[0].FullName
+          Write-Host "VC_REDIST_CRT_DIR = $dir ($($hits.Count) candidate(s))"
+          "VC_REDIST_CRT_DIR=$dir" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+      - name: Print the CRT pins (review, then commit them to vendor/llama.pin.json and vendor/whisper.pin.json)
+        run: |
+          node scripts/fetch-llama.mjs --pin-crt
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          git diff -- vendor/llama.pin.json
+
+  build:
+    if: ${{ !inputs.pin_crt }}
+    runs-on: windows-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Locate the VC++ CRT
+        run: |
+          # keep in sync with the same step of the crt-pins job; fails the release when no CRT is found (U10)
+          $pattern = 'C:\Program Files\Microsoft Visual Studio\*\*\VC\Redist\MSVC\*\x64\Microsoft.VC14*.CRT'
+          $dlls = 'msvcp140.dll', 'vcruntime140.dll', 'vcruntime140_1.dll'
+          $hits = @(Get-ChildItem -Path $pattern -Directory -ErrorAction SilentlyContinue |
+            Where-Object { $_.Parent.Parent.Name -match '^\d+(\.\d+)+$' } |
+            Where-Object { $d = $_.FullName; @($dlls | Where-Object { -not (Test-Path -LiteralPath (Join-Path $d $_)) }).Count -eq 0 } |
+            Sort-Object -Property @{ Expression = { [version]$_.Parent.Parent.Name }; Descending = $true }, FullName)
+          if ($hits.Count -eq 0) {
+            Write-Error "No Microsoft.VC14x.CRT folder with $($dlls -join ', ') matches $pattern - the release must ship the CRT (U10)."
+            exit 1
+          }
+          $dir = $hits[0].FullName
+          Write-Host "VC_REDIST_CRT_DIR = $dir ($($hits.Count) candidate(s))"
+          "VC_REDIST_CRT_DIR=$dir" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Fetch pinned llama.cpp (+ CRT)
+        run: node scripts/fetch-llama.mjs
+
+      - name: Fetch pinned whisper.cpp (+ CRT)
+        run: npm run fetch:whisper
+
+      - name: Regenerate third-party notices (CRT now shipped)
+        run: node scripts/smoke-packaged.notices.mjs
+
+      - name: Stage the calendar MCP server
+        run: npm run stage:mcp
+
+      - name: Verify the bridge pin
+        run: node scripts/hash-bridge.mjs
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Unit tests (main + renderer; e2e is not run in CI)
+        run: npx vitest run --project main --project renderer
+
+      - name: Set the release version
+        id: version
+        run: |
+          $version = "0.1.${{ github.run_number }}"
+          npm version $version --no-git-tag-version
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          "version=$version" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          "zip=WhatsAppCalendarAgent-win-x64-$version.zip" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+
+      - name: Build
+        run: npm run build
+
+      - name: Package (win-unpacked)
+        run: npx electron-builder --win --x64 --dir --publish never
+
+      - name: Packaged smoke test (gate)
+        run: node scripts/smoke-packaged.mjs dist/win-unpacked
+
+      - name: Zip win-unpacked under one top folder
+        env:
+          ZIP: ${{ steps.version.outputs.zip }}
+        # Not Compress-Archive: Windows PowerShell's Archive module and .NET Framework's CreateFromDirectory both wrote
+        # backslash separators in the local dry run (ops/agent-notes/v5-ci.md). Entries are added explicitly instead, in
+        # ordinal order, with '/' names, at Optimal compression, every one under `WhatsAppCalendarAgent/` (src/shared/update.ts
+        # UPDATE_ZIP_TOP_FOLDER): "Extract here" then always creates the app's own folder, and the app's stager refuses any
+        # other layout.
+        run: |
+          $top = 'WhatsAppCalendarAgent'
+          $src = (Resolve-Path -LiteralPath 'dist/win-unpacked').Path.TrimEnd('\')
+          $out = Join-Path (Get-Location).Path $env:ZIP
+          Add-Type -AssemblyName System.IO.Compression, System.IO.Compression.FileSystem
+          $map = @{}
+          foreach ($f in Get-ChildItem -LiteralPath $src -Recurse -File -Force) {
+            $map["$top/" + $f.FullName.Substring($src.Length + 1).Replace('\', '/')] = $f.FullName
+          }
+          $names = [string[]]@($map.Keys)
+          [Array]::Sort($names, [StringComparer]::Ordinal)
+          $stream = [System.IO.File]::Open($out, [System.IO.FileMode]::CreateNew)
+          $archive = New-Object System.IO.Compression.ZipArchive($stream, [System.IO.Compression.ZipArchiveMode]::Create)
+          try {
+            foreach ($n in $names) {
+              [void][System.IO.Compression.ZipFileExtensions]::CreateEntryFromFile($archive, $map[$n], $n, [System.IO.Compression.CompressionLevel]::Optimal)
+            }
+          } finally {
+            $archive.Dispose()
+            $stream.Dispose()
+          }
+          # Prove the shape before anything is published (the updater extracts this zip): every file present, all of them
+          # inside the one top folder, '/' separators only, no absolute or parent-relative names.
+          $reader = [System.IO.Compression.ZipFile]::OpenRead($out)
+          try {
+            $all = @($reader.Entries | ForEach-Object { $_.FullName })
+          } finally {
+            $reader.Dispose()
+          }
+          $entries = @($all | Where-Object { -not $_.EndsWith('/') })
+          $bad = @($all | Where-Object { $_.Contains('\') -or $_.StartsWith('/') -or $_ -match '(^|/)\.\.(/|$)' })
+          if ($bad.Count -gt 0) { Write-Error "zip has malformed entry names: $($bad[0..4] -join ', ')"; exit 1 }
+          $outside = @($all | Where-Object { -not $_.StartsWith("$top/", [StringComparison]::Ordinal) })
+          if ($outside.Count -gt 0) { Write-Error "zip has entries outside $top/: $($outside[0..4] -join ', ')"; exit 1 }
+          if ($entries.Count -ne $names.Count) { Write-Error "zip has $($entries.Count) files, win-unpacked has $($names.Count)"; exit 1 }
+          foreach ($need in "$top/WhatsApp Calendar Agent.exe", "$top/resources/app.asar") {
+            if ($entries -notcontains $need) { Write-Error "zip lacks $need"; exit 1 }
+          }
+          Write-Host "$env:ZIP : $($entries.Count) files under $top/, $((Get-Item -LiteralPath $out).Length) bytes"
+
+      - name: Write release.json
+        env:
+          ZIP: ${{ steps.version.outputs.zip }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          $subject = git log -1 --format=%s
+          node scripts/release-manifest.mjs $env:ZIP $env:VERSION $env:GITHUB_SHA --notes "$subject" --out release.json
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Get-Content release.json
+
+      - name: Hand the zip + release.json to the publish job
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: release-bundle
+          path: |
+            ${{ steps.version.outputs.zip }}
+            release.json
+          if-no-files-found: error
+          retention-days: 3
+          compression-level: 0
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    steps:
+      - name: Download the build artifact
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: release-bundle
+          path: bundle
+
+      - name: Verify release.json against the zip
+        shell: bash
+        working-directory: bundle
+        env:
+          # derived here from the run number, never taken from the build job's outputs
+          VERSION: 0.1.${{ github.run_number }}
+        run: |
+          set -euo pipefail
+          zip="WhatsAppCalendarAgent-win-x64-${VERSION}.zip"
+          ls -la
+          [ "$(ls -1 | sort | tr '\n' ' ')" = "$(printf '%s\n' release.json "$zip" | sort | tr '\n' ' ')" ] \
+            || { echo "::error::the artifact must hold exactly release.json and $zip"; exit 1; }
+          [ "$(jq -r .schema release.json)" = "1" ] || { echo "::error::release.json schema"; exit 1; }
+          [ "$(jq -r .version release.json)" = "$VERSION" ] || { echo "::error::release.json version"; exit 1; }
+          [ "$(jq -r .commit release.json)" = "$GITHUB_SHA" ] || { echo "::error::release.json commit"; exit 1; }
+          [ "$(jq -r .asset.name release.json)" = "$zip" ] || { echo "::error::release.json asset name"; exit 1; }
+          [ "$(jq -r .asset.size release.json)" = "$(stat -c %s "$zip")" ] || { echo "::error::zip size mismatch"; exit 1; }
+          want="$(jq -r .asset.sha256 release.json)"
+          got="$(sha256sum "$zip" | cut -d' ' -f1)"
+          [ "$want" = "$got" ] || { echo "::error::zip sha256 $got does not match release.json $want"; exit 1; }
+          echo "verified $zip ($got)"
+
+      - name: Publish the GitHub Release
+        shell: bash
+        working-directory: bundle
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          VERSION: 0.1.${{ github.run_number }}
+        run: |
+          set -euo pipefail
+          zip="WhatsAppCalendarAgent-win-x64-${VERSION}.zip"
+          subject="$(jq -r .notes release.json)"
+          notes="$(printf '%s\n\ncommit %s' "$subject" "$GITHUB_SHA")"
+          gh release create "v${VERSION}" "$zip" release.json --title "v${VERSION}" --notes "$notes" --target "$GITHUB_SHA" --latest

@@ -85,6 +85,7 @@ export const events = {
   onCliChanged: (listener: (status: IpcEventMap['cli:changed']) => void) => on('cli:changed', listener),
   onQueueChanged: (listener: (queue: IpcEventMap['queue:changed']) => void) => on('queue:changed', listener),
   onVoiceProgress: (listener: (p: IpcEventMap['voice:progress']) => void) => on('voice:progress', listener),
+  onUpdateChanged: (listener: (state: IpcEventMap['update:changed']) => void) => on('update:changed', listener), // [v5]
 } as const;
 
 export const api = {
@@ -204,5 +205,14 @@ export const api = {
   getVoiceState: () => invoke('voice:getState'),
   voiceSelfTest: () => invoke('voice:selfTest'),
   retryVoice: (itemId: number) => invoke('voice:retry', { itemId }),
+
+  // ---- [v5] T-909 in-app updates. Main is the only process that talks to GitHub; these carry no URL or path. `installUpdate`
+  // is focus-gated in main (FOCUS_GATED_CHANNELS) and is called only from a click handler behind isActivationBlocked(). ----
+  getUpdateState: () => invoke('update:getState'),
+  checkUpdate: () => invoke('update:check'),
+  downloadUpdate: () => invoke('update:download'),
+  installUpdate: () => invoke('update:install'),
+  ignoreUpdate: (version: string) => invoke('update:ignore', { version }),
+  unignoreUpdate: () => invoke('update:unignore'),
 } as const;
 export type Api = typeof api;

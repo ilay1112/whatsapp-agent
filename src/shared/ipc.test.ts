@@ -27,9 +27,10 @@ describe('IPC contract shape', () => {
   // [V2] C2 8: + 24 invoke channels (20 + item:restoreOriginal, item:cancelEvent, wa:setReadScope, cli:setOverage) and 4 events
   // [v4] + dashboard:refreshNow (T3), calendar:listEvents, calendar:invalidate (T4)
   // [v4 T6] + calendar:proposeCreate | proposeEdit | proposeDelete, action:undo
-  it('83 invoke channels, 11 push events, 4 views', () => {
-    expect(IPC_CHANNELS).toHaveLength(83);
-    expect(IPC_EVENTS).toHaveLength(11);
+  // [v5] + update:getState | check | download | install | ignore | unignore, + update:changed
+  it('89 invoke channels, 12 push events, 4 views', () => {
+    expect(IPC_CHANNELS).toHaveLength(89);
+    expect(IPC_EVENTS).toHaveLength(12);
     expect(VIEWS).toHaveLength(4);
     expect(new Set(IPC_CHANNELS).size).toBe(IPC_CHANNELS.length);
   });

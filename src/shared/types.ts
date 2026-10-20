@@ -276,6 +276,10 @@ export const META_KEYS = [
   'agy_last_version',
   'agy_workspace_trusted_at',
   'google_account_sha8',
+  // [v5] T-909 in-app updates (src/main/update/updateService.ts): EpochMs | a plain version | a plain version ('' = none)
+  'update_last_check_at',
+  'update_ignored_version',
+  'update_latest_seen',
 ] as const; // [V2 CHANGE] + six keys (ARCH-v2 9.1). calendar_roles_json = {[calendarId]: CalendarAccessRole} from the last list-calendars;
 //             cli_exe_paths_json = {claude_cli?: string, antigravity_cli?: string} recorded at provider start (reaper B31); never sent to the renderer.
 // [v2-fix auto-mode-6] google_account_sha8 = googleAccountEmailSha8 of the last account answer ('' = none); binds auto_policies.snapshot_sha across restarts.
@@ -286,6 +290,7 @@ export type MetaKey = (typeof META_KEYS)[number];
 
 // ---------- limits (single place; tests import these) ----------
 export const LIMITS = {
+  updateCheckIntervalMs: 6 * 3600_000, // [v5] T-909: GitHub release check on launch (+30 s) and every 6 h
   contextMessages: 12,
   contextChars: 6000,
   messageChars: 2000,
@@ -712,6 +717,9 @@ export const AUDIT_KINDS = [
   'manual_event_proposed', // [v4 T6] calendar:propose* {kind, calendarSha8} (ref = action id)
   'manual_event_executed', // [v4 T6] {kind, op, calendarSha8, outcome} (ref = action id)
   'manual_event_refused', // [v4 T6] {reason, stage} (ref = action id or null) - I9' refusals in main
+  'update_install_started', // [v5] {from, to} - versions only (the helper is spawned right after)
+  'update_installed', // [v5] {from, to} - logged once on the first start of the new build (--updated-from)
+  'update_ignored', // [v5] {version} - the banner X / update:ignore
 ] as const; // [V2 CHANGE] + 16 kinds (ARCH-v2 9.1). Details are enums/numbers/booleans/ids only (v1 rule), e.g.
 // cli_run {provider, stage, initOk, toolsCount, extraServers, toolCalls, blockedCalls, stopReason, ms, usageWindowHit} (B13 / ARCH-v2 4.3),
 // auto_write {decisionId, actionId, kind, eventIdSha8}, voice_job {itemId, seconds, wallMs, exitCode, outcome}, media_rejected {reason, bytes, pixels}.
@@ -1391,4 +1399,35 @@ export interface Bootstrap {
   settingsPublic: import('./settings').Settings; // Settings contains no secrets
   version: string;
   trayHintSeen: boolean; // [C+]
+}
+
+// ---------- [v5] T-909 in-app updates (docs/specs/v5-updates-handover.md 2.2) ----------
+export const UPDATE_STATUSES = [
+  'idle',
+  'checking',
+  'up_to_date',
+  'available',
+  'downloading',
+  'ready',
+  'installing',
+  'error',
+] as const;
+export type UpdateStatus = (typeof UPDATE_STATUSES)[number];
+/** Pushed on `update:changed` and answered by every `update:*` channel. Versions are plain MAJOR.MINOR.PATCH strings. */
+export interface UpdateState {
+  current: string;
+  /** Newest release seen by the last successful check (null before one). */
+  latest: string | null;
+  status: UpdateStatus;
+  /** While downloading (and the final size once ready). */
+  progress: { bytesDone: number; bytesTotal: number } | null;
+  /** UPDATE_CHECK_FAILED | UPDATE_VERIFY_FAILED | DOWNLOAD_FAILED | DISK_FULL while status is 'error' (Settings only; never a banner). */
+  errorCode: import('./errors').ErrorCode | null;
+  ignoredVersion: string | null;
+  lastCheckAt: EpochMs | null;
+  /** false in dev / unpackaged / e2e runs, or when the install folder (or its parent) is not writable. */
+  canInstall: boolean;
+  /** [v5, additive] set for this launch only when it was started by the updater: --updated-from <from> => 'installed',
+   *  --update-failed <to> => 'failed' (the renderer shows one toast). null otherwise. */
+  lastInstall: { outcome: 'installed' | 'failed'; from: string | null; to: string | null } | null;
 }

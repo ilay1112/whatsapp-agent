@@ -14,6 +14,8 @@ import {
   DOWNLOAD_TARGETS,
 } from './types'; // [V2 CHANGE] import list (MODEL_TIERS -> DOWNLOAD_TARGETS)
 import type { AutoState, AutoWriteView, CliStatus, VoiceState, EventContentView } from './types'; // [V2 ADD]
+import type { UpdateState } from './types'; // [v5]
+import { VersionSchema } from './update'; // [v5]
 import type {
   Bootstrap,
   DashboardData,
@@ -238,6 +240,13 @@ export const IPC_REQUEST_SCHEMAS = {
   ]),
   'data:purgeNow': ConfirmReq,
   'diagnostics:export': NoReq, // save dialog opened IN MAIN
+  // ---- [v5] T-909 in-app updates (main is the only process that talks to GitHub; the renderer stays connect-src 'none') ----
+  'update:getState': NoReq,
+  'update:check': NoReq, // on demand; at most one real check per 60 s (a faster call answers the current state)
+  'update:download': NoReq, // status available|error -> downloading -> ready (sha256 + unzip verified) ; runs in the background
+  'update:install': NoReq, // focus-gated ; requires status ready && canInstall ; spawns the updater, then quits the app
+  'update:ignore': z.strictObject({ version: VersionSchema }), // the banner X: hides THAT version only (persisted)
+  'update:unignore': NoReq, // Settings "Show version X again"
 } as const;
 
 export type IpcChannel = keyof typeof IPC_REQUEST_SCHEMAS;
@@ -330,6 +339,12 @@ export interface IpcResMap {
   'external:open': null;
   'data:purgeNow': { itemsPurged: number };
   'diagnostics:export': { saved: boolean };
+  'update:getState': UpdateState; // [v5]
+  'update:check': UpdateState;
+  'update:download': UpdateState; // BAD_REQUEST when there is nothing to download
+  'update:install': UpdateState; // BAD_REQUEST unless ready && canInstall ; status 'installing', then the app quits
+  'update:ignore': UpdateState;
+  'update:unignore': UpdateState;
   'item:undoChange': ApproveOutcome; // [V2 ADD] the undo action is approved immediately through the normal executor
   'item:getImage': { dataUrl: string }; // [V2 ADD] 'data:image/jpeg;base64,...'
   'item:restoreOriginal': ApproveOutcome; // [F1]
@@ -371,6 +386,7 @@ export interface IpcEventMap {
   'cli:changed': CliStatus; // [V2 ADD] Connect card (sign-in poll, quota line) ; [D-080] + every sign-in session phase (CliStatus.signIn)
   'queue:changed': { pending: number; running: number; transcribing: { seconds: number } | null }; // [V2 ADD] header "Transcribing a voice note (0:42)..."
   'voice:progress': { itemId: ItemId; phase: 'fetch' | 'decode' | 'transcribe'; audioSeconds: number }; // [V2 ADD] 2 Hz max ; numbers only
+  'update:changed': UpdateState; // [v5] every status change; download progress at 4 Hz max
 }
 export type IpcEvent = keyof IpcEventMap;
 export const IPC_EVENTS = [
@@ -385,6 +401,7 @@ export const IPC_EVENTS = [
   'cli:changed',
   'queue:changed',
   'voice:progress',
+  'update:changed', // [v5]
 ] as const satisfies readonly IpcEvent[];
 
 /** [V2 ADD] Channels that require ctx.windowFocused && ctx.windowVisible and the focus-steal guard (same gate as action:approve).
@@ -403,6 +420,7 @@ export const FOCUS_GATED_CHANNELS = [
   'cli:setOverage', // [F11] focus-gated in both directions (the control lives on the focused Settings page); only {allow:true} shows the native confirmation
   'wa:setReadScope', // [F11] focus-gated in both directions; only {scope:'all_chats'} shows the native confirmation
   'action:undo', // [v4 T6] an undo of a manual action is a calendar write approved by this click
+  'update:install', // [v5] quits the app and swaps its folder: only from a click in the focused window
 ] as const satisfies readonly IpcChannel[];
 /** [V2 ADD] Nothing on an MCP surface (the loopback tool server, the calendar child) may ever carry one of these (B29, test A18). */
 export const NEVER_ON_MCP_PREFIXES = [
@@ -416,6 +434,7 @@ export const NEVER_ON_MCP_PREFIXES = [
   'cli:',
   'consent:',
   'wa:',
+  'update:', // [v5]
 ] as const;
 
 // ---------- preload API (window.api) ----------
