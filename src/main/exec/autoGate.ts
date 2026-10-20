@@ -188,6 +188,11 @@ function* checks(
 ): Generator<Check> {
   const now = i.now;
   const policy = i.policy;
+  // ---- [v4 T6] I9': a user-authored calendar-view action is NEVER automatic, whatever else is true (evaluated first, ends the run) ----
+  yield {
+    reason: 'manual_only',
+    failed: i.action.source === 'manual' || (i.payload as { source?: unknown }).source === 'manual',
+  };
   // ---- policy ----
   yield { reason: 'no_policy', failed: policy === null || policy.state === 'disabled' };
   const p = policy!;
@@ -389,7 +394,7 @@ function run(input: AutoGateInput, mode: Mode): AutoGateResult | null {
     failed.push(c.reason);
     if (first === null) first = c;
     // The first failure decides; a failing guard in the policy group (no_policy) ends evaluation because later checks need the row.
-    if (c.reason === 'no_policy') break;
+    if (c.reason === 'no_policy' || c.reason === 'manual_only') break;
     if (c.reason === 'unknown_prev_state' && mode === 'full') break;
   }
   if (first === null) {

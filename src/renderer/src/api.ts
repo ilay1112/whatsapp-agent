@@ -1,5 +1,14 @@
 // src/renderer/src/api.ts - typed wrappers over window.api (UX 14.3; owner W1-14, v2: V2-W1-12). Components call these, never window.api directly.
-import type { IpcChannel, IpcEvent, IpcEventMap, IpcReq, IpcRes } from '@shared/ipc';
+import type {
+  ApproveOutcome,
+  ChatApproveOutcome,
+  IpcChannel,
+  IpcEvent,
+  IpcEventMap,
+  IpcReq,
+  IpcRes,
+  ManualApproveOutcome,
+} from '@shared/ipc';
 import type { ActionKind, ItemDetail, Result } from '@shared/types';
 
 type InvokeArgs<C extends IpcChannel> = undefined extends IpcReq<C> ? [] : [req: IpcReq<C>];
@@ -53,7 +62,18 @@ export function onUndoSuccess(listener: UndoListener): () => void {
   };
 }
 function notifyUndo(door: UndoSuccess['door'], r: Result<IpcRes<'item:undoChange'>>): void {
-  if (r.ok && r.value.outcome === 'done') for (const listener of undoListeners) listener({ door, item: r.value.item });
+  const item = r.ok && r.value.outcome === 'done' ? r.value.item : null;
+  if (item !== null) for (const listener of undoListeners) listener({ door, item });
+}
+/** [v4 T6] A card's door never gets a manual outcome; if it ever did, it is a stale card (never shown as a success). */
+function asChat(r: Result<ApproveOutcome>): Result<ChatApproveOutcome> {
+  if (!r.ok) return r;
+  return r.value.item === null ? { ok: false, error: { code: 'ACTION_STALE' } } : { ok: true, value: r.value };
+}
+/** [v4 T6] The calendar view's approval: only a manual outcome is a success there. */
+function asManual(r: Result<ApproveOutcome>): Result<ManualApproveOutcome> {
+  if (!r.ok) return r;
+  return r.value.item === null ? { ok: true, value: r.value } : { ok: false, error: { code: 'ACTION_STALE' } };
 }
 
 /**
@@ -73,19 +93,23 @@ export const api = {
   getHealth: () => invoke('health:get'),
   getDashboard: () => invoke('dashboard:get'),
   getIgnored: () => invoke('dashboard:getIgnored'),
+  refreshNow: () => invoke('dashboard:refreshNow'), // [v4 T3]
   getItem: (itemId: number) => invoke('item:get', { itemId }),
   dismiss: (itemId: number) => invoke('item:dismiss', { itemId }),
   restore: (itemId: number) => invoke('item:restore', { itemId }),
   retriage: (itemId: number) => invoke('item:retriage', { itemId }),
   setEditing: (itemId: number, editing: boolean) => invoke('item:setEditing', { itemId, editing }),
   completeEvent: (req: IpcReq<'item:completeEvent'>) => invoke('item:completeEvent', req),
-  approve: async (req: IpcReq<'action:approve'>) => {
-    const r = await invoke('action:approve', req);
+  approve: async (req: IpcReq<'action:approve'>): Promise<Result<ChatApproveOutcome>> => {
+    const r = asChat(await invoke('action:approve', req));
     if (r.ok && r.value.outcome === 'done') {
       for (const listener of approvalListeners) listener({ kind: req.kind, item: r.value.item });
     }
     return r;
   },
+  /** [v4 T6] the confirm dialog (`cal-confirm`) of a manual proposal: the SAME action:approve channel, manual outcome only. */
+  approveManual: async (req: IpcReq<'action:approve'>): Promise<Result<ManualApproveOutcome>> =>
+    asManual(await invoke('action:approve', req)),
   reject: (actionId: string) => invoke('action:reject', { actionId }),
   setPaused: (paused: boolean) => invoke('agent:setPaused', { paused }),
   setChatPolicy: (req: IpcReq<'chat:setPolicy'>) => invoke('chat:setPolicy', req),
@@ -122,6 +146,15 @@ export const api = {
   getGoogleStatus: () => invoke('google:status'),
   disconnectGoogle: () => invoke('google:disconnect', { confirm: true }),
   listCalendars: () => invoke('google:listCalendars'),
+  // [v4 T4] the calendar view's read of every calendar for the visible week (main-side, cached <= 5 min) and its cache reset
+  listCalendarEvents: (req: IpcReq<'calendar:listEvents'>) => invoke('calendar:listEvents', req),
+  invalidateCalendarEvents: () => invoke('calendar:invalidate'),
+  // [v4 T6] manual management: propose = pending only; approve via api.approve; undo = action:undo
+  proposeCreate: (req: IpcReq<'calendar:proposeCreate'>) => invoke('calendar:proposeCreate', req),
+  proposeEdit: (req: IpcReq<'calendar:proposeEdit'>) => invoke('calendar:proposeEdit', req),
+  proposeDelete: (req: IpcReq<'calendar:proposeDelete'>) => invoke('calendar:proposeDelete', req),
+  undoManual: async (actionId: string): Promise<Result<ManualApproveOutcome>> =>
+    asManual(await invoke('action:undo', { actionId })),
   getSettings: () => invoke('settings:get'),
   setSettings: (patch: IpcReq<'settings:set'>) => invoke('settings:set', patch),
   openExternal: (req: IpcReq<'external:open'>) => invoke('external:open', req),

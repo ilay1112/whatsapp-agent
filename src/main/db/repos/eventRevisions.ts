@@ -3,11 +3,11 @@
 // bookkeeping columns reverted_by / post_etag / post_updated may change, and prev_json / next_json are NULLed by retention.
 // Undo is defined over the revision CHAIN (F1): see undoCandidate() and unrevertedAutoSpan().
 import { EventContentWithStatusSchema } from '../../../shared/schemas';
-import { REVISION_KINDS } from '../../../shared/types';
+import { MANUAL_REVISION_KINDS, REVISION_KINDS } from '../../../shared/types';
 import type * as T from '../../../shared/types';
 import { RepoContractError, RowNotFoundError } from '../errors';
 import type { Db, Repos } from '../index';
-import { EVENT_REVISION_COLUMNS, type EventRevisionRow, toEventRevision } from './rows';
+import { EVENT_REVISION_COLUMNS, type EventRevisionRow, toEventRevision, toManualRevision } from './rows';
 
 export type EventRevisionsRepo = Repos['eventRevisions'];
 
@@ -15,7 +15,8 @@ export type EventRevisionsRepo = Repos['eventRevisions'];
 const newestFirst = (db: Db, calendarEventId: string): T.EventRevisionRecord[] =>
   db
     .prepare<EventRevisionRow>(
-      `SELECT ${EVENT_REVISION_COLUMNS} FROM event_revisions WHERE calendar_event_id = ? ORDER BY revision DESC`,
+      // [v4 T6] the CHAT chain only: manual (calendar-view) rows carry item_id NULL and are read through the manual* members
+      `SELECT ${EVENT_REVISION_COLUMNS} FROM event_revisions WHERE calendar_event_id = ? AND item_id IS NOT NULL ORDER BY revision DESC`,
     )
     .all(calendarEventId)
     .map(toEventRevision);
@@ -23,9 +24,19 @@ const newestFirst = (db: Db, calendarEventId: string): T.EventRevisionRecord[] =
 export function createEventRevisionsRepo(db: Db): EventRevisionsRepo {
   const byId = (id: number): T.EventRevisionRecord | null => {
     const row = db
-      .prepare<EventRevisionRow>(`SELECT ${EVENT_REVISION_COLUMNS} FROM event_revisions WHERE id = ?`)
+      .prepare<EventRevisionRow>(
+        `SELECT ${EVENT_REVISION_COLUMNS} FROM event_revisions WHERE id = ? AND item_id IS NOT NULL`,
+      )
       .get(id);
     return row ? toEventRevision(row) : null;
+  };
+  const manualById = (id: number): T.ManualRevisionRecord | null => {
+    const row = db
+      .prepare<EventRevisionRow>(
+        `SELECT ${EVENT_REVISION_COLUMNS} FROM event_revisions WHERE id = ? AND item_id IS NULL`,
+      )
+      .get(id);
+    return row ? toManualRevision(row) : null;
   };
   const contentJson = (c: T.EventRevisionRecord['prev']): string | null =>
     c === null ? null : JSON.stringify(EventContentWithStatusSchema.parse(c));
@@ -94,12 +105,54 @@ export function createEventRevisionsRepo(db: Db): EventRevisionsRepo {
         .map(toEventRevision);
     },
 
+    // ---- [v4 T6] manual (calendar-view) rows: item_id NULL, manual kinds (DB CHECK) ----
+    /** The pre-write snapshot row of a manual action, inserted by the executor in its write-ahead transaction (I8): revision =
+     *  the event's highest revision + 1 (ux_event_rev). post_* are filled by recordManualOutcome after the readback. */
+    insertManual(r) {
+      if (!(MANUAL_REVISION_KINDS as readonly string[]).includes(r.kind))
+        throw new RepoContractError('unknown manual revision kind');
+      const revision =
+        (db
+          .prepare<{ n: number | null }>(`SELECT MAX(revision) AS n FROM event_revisions WHERE calendar_event_id = ?`)
+          .get(r.calendarEventId)?.n ?? 0) + 1;
+      const info = db
+        .prepare(
+          `INSERT INTO event_revisions(calendar_event_id, item_id, revision, kind, prev_json, next_json, action_id, applied_at,
+                                       reverted_by, post_etag, post_updated)
+           VALUES (?, NULL, ?, ?, ?, ?, ?, ?, NULL, NULL, NULL)`,
+        )
+        .run(r.calendarEventId, revision, r.kind, contentJson(r.prev), contentJson(r.next), r.actionId, r.appliedAt);
+      return manualById(info.lastInsertRowid)!;
+    },
+
+    manualById,
+
+    manualForAction(actionId) {
+      const row = db
+        .prepare<EventRevisionRow>(
+          `SELECT ${EVENT_REVISION_COLUMNS} FROM event_revisions WHERE action_id = ? AND item_id IS NULL ORDER BY id DESC LIMIT 1`,
+        )
+        .get(actionId);
+      return row ? toManualRevision(row) : null;
+    },
+
+    /** Readback bookkeeping of a manual write (next_json / post_* are not frozen by trg_event_rev_frozen). */
+    recordManualOutcome(id, o) {
+      const changes = db
+        .prepare(
+          `UPDATE event_revisions SET next_json = ?, post_etag = ?, post_updated = ? WHERE id = ? AND item_id IS NULL`,
+        )
+        .run(contentJson(o.next), o.postEtag, o.postUpdated, id).changes;
+      if (changes === 0) throw new RowNotFoundError('event_revisions', id);
+    },
+
     /** UPDATE ... SET reverted_by WHERE reverted_by IS NULL: the first undo wins, a second call is a no-op; an unknown id throws. */
     markReverted(id, byRevisionId) {
       const changes = db
         .prepare(`UPDATE event_revisions SET reverted_by = ? WHERE id = ? AND reverted_by IS NULL`)
         .run(byRevisionId, id).changes;
-      if (changes === 0 && byId(id) === null) throw new RowNotFoundError('event_revisions', id);
+      if (changes === 0 && byId(id) === null && manualById(id) === null)
+        throw new RowNotFoundError('event_revisions', id);
     },
   };
 }

@@ -1,13 +1,15 @@
-// tests/security/never-delete.test.ts - security gate group 22 (never-delete half; T2 8.2; owner V2-W1-02).
-// Invariants I3'/I7' (D-036): the app can create and change an event, it can NEVER delete one. A cancel is `update-event {status:
-// 'cancelled'}` through the vendored patch (B4). This file proves, against production objects and the fake calendar:
-//   1. `delete-event` is not in ENABLED_TOOLS / MCP_TOOLS / the fake's table / the staged-server tool-list pin;
-//   2. `delete-event` (any spelling) is not a string literal anywhere under `src/` except the refusal list BLOCKED_NAMES (source walk
-//      with the TypeScript scanner - comments do not count, template literals do);
-//   3. a model (in-process loop) or a CLI (whose tool server forwards every call to the same `gate.invoke`, B16) asking for it is
-//      blocked with the synthetic error, a sha8-only audit row and zero calendar traffic;
-//   4. no facade can reach it: every `callerFor(cls)` rejects it with McpCapabilityError before the server sees a byte;
-//   5. were it ever called, the fake records `write_or_disabled_tool_called:delete-event` and ledger rule 8 fails the test.
+// tests/security/never-delete.test.ts - security gate group 22 (never-delete half; T2 8.2; owner V2-W1-02; [v4 T6] I9').
+// v2 (I3'/I7', D-036): the app never deleted an event; a cancel is `update-event {status:'cancelled'}` (B4).
+// [v4 T6] I9' (handover §2.5) keeps that for every CHAT action and for the model, and adds ONE exception: a user-authored calendar-view
+// action (source 'manual', approved by a click) may delete an event without attendees / recurrence. This file proves:
+//   1. `delete-event` is enabled as a WRITE tool (ENABLED_TOOLS / MCP_TOOLS / the fake / the staged pin agree) and is still on the
+//      model's refusal list BLOCKED_NAMES;
+//   2. the tool-name literal appears in src/ ONLY in the refusal list, the tool tables, the host's guard and the ONE manual write
+//      method; the action-kind literal `delete_event` only in the shared contract, the migration and exec/manualEvents.ts;
+//   3. a model (in-process loop) or a CLI asking for it is blocked with the synthetic error, a sha8-only audit row and zero traffic;
+//   4. read / admin callers reject it with McpCapabilityError; the WRITE caller refuses it unless the call says source 'manual';
+//   5. the fake still records `write_or_disabled_tool_called:delete-event` when the tool is not enabled, and ledger rule 8 fails any
+//      delete-event that rule 13 did not prove to be a click-approved manual action.
 import { createHash } from 'node:crypto';
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join, relative } from 'node:path';
@@ -59,15 +61,18 @@ afterEach(async () => {
 // 1. tables
 // ---------------------------------------------------------------------------------------------------------------------
 
-describe('1. delete-event is enabled nowhere', () => {
-  it('not in ENABLED_TOOLS (the env the server gets), MCP_TOOLS, the fake table or the tool-list pin', () => {
-    expect(ENABLED_TOOLS_ENV.split(',')).not.toContain('delete-event');
-    expect(buildMcpEnv({ credentialsPath: 'C:/x', tokenPath: 'C:/y' }).ENABLED_TOOLS).not.toMatch(DELETE_RE);
-    expect(Object.keys(MCP_TOOLS)).not.toContain('delete-event');
-    expect(Object.keys(FAKE_MCP_TOOLS)).not.toContain('delete-event');
-    expect(EXPECTED_TOOLS).not.toContain('delete-event');
-    expect((readJson(PIN_PATH) as { enabledTools: string[] }).enabledTools).not.toContain('delete-event');
-    for (const name of Object.keys(MCP_TOOLS)) expect(name).not.toMatch(DELETE_RE);
+describe('1. delete-event is a write tool for manual actions only, and never a model tool', () => {
+  it('ENABLED_TOOLS (the env the server gets), MCP_TOOLS, the fake table and the tool-list pin agree: class write', () => {
+    expect(ENABLED_TOOLS_ENV.split(',')).toContain('delete-event');
+    expect(String(buildMcpEnv({ credentialsPath: 'C:/x', tokenPath: 'C:/y' }).ENABLED_TOOLS).split(',')).toContain(
+      'delete-event',
+    );
+    expect(MCP_TOOLS['delete-event']).toBe('write');
+    expect(FAKE_MCP_TOOLS['delete-event']).toBe('write');
+    expect(EXPECTED_TOOLS).toContain('delete-event');
+    expect((readJson(PIN_PATH) as { enabledTools: string[] }).enabledTools).toContain('delete-event');
+    // no OTHER spelling is enabled
+    expect(Object.keys(MCP_TOOLS).filter((n) => DELETE_RE.test(n))).toEqual(['delete-event']);
   });
 
   it('the refusal list names it in both spellings (compared case-insensitively by the gate)', () => {
@@ -136,21 +141,48 @@ function deleteLiterals(file: string): Array<{ text: string; owner: string | nul
  * The only literals allowed. BLOCKED_NAMES is the refusal list (spec). `*.fixtures.ts` modules are test support (excluded from coverage and
  * from the production entry graph): `src/main/llm/scripted.fixtures.ts` is the ATTACKER's scripted output (a model asking for
  * delete-event), which is exactly what section 3 proves is refused.
+ * [v4 T6] The TOOL NAME (`delete-event`) may also appear in the tool tables (readClient MCP_TOOLS / ENABLED_TOOLS_ENV, host's
+ * DESTRUCTIVE_HINT_TOOLS / REQUIRED_INPUT_FIELDS), the host's source guard (callerFor, no const) and the ONE write method
+ * (writeClient.deleteManualEvent: `const res = await call('delete-event', ...)`). The ACTION KIND (`delete_event`) may appear in the
+ * shared contract (types / schemas / ipc), the migration and exec/manualEvents.ts - and nowhere in a chat path.
  */
 const ALLOWED = [
   { file: 'src/main/agent/toolGate.ts', owner: 'BLOCKED_NAMES' },
   { file: 'src/main/llm/scripted.fixtures.ts', owner: null },
+  { file: 'src/main/mcp/readClient.ts', owner: 'MCP_TOOLS' },
+  { file: 'src/main/mcp/readClient.ts', owner: 'ENABLED_TOOLS_ENV' },
+  { file: 'src/main/mcp/host.ts', owner: 'DESTRUCTIVE_HINT_TOOLS' },
+  { file: 'src/main/mcp/host.ts', owner: 'REQUIRED_INPUT_FIELDS' },
+  { file: 'src/main/mcp/host.ts', owner: null, text: 'delete-event' },
+  { file: 'src/main/mcp/writeClient.ts', owner: 'res', text: 'delete-event' },
 ];
+const KIND_FILES = new Set([
+  'src/shared/types.ts',
+  'src/shared/schemas.ts',
+  'src/shared/ipc.ts',
+  'src/main/db/migrations.ts',
+  'src/main/exec/manualEvents.ts',
+  'src/renderer/src/components/ManualEventDialog.tsx',
+  'src/renderer/src/components/ManualEventActions.tsx',
+]);
 
-describe('2. no src/ string literal names delete-event outside BLOCKED_NAMES', () => {
+describe('2. delete-event literals in src/ only where the manual path and the refusal list need them', () => {
   it('source walk (TypeScript scanner: comments ignored, template literals and JSX text included)', () => {
     const offenders: string[] = [];
     let blockedListHits = 0;
     for (const file of sourceFiles(join(REPO, 'src'))) {
       const rel = relative(REPO, file).replace(/\\/g, '/');
       for (const hit of deleteLiterals(file)) {
-        const allowed = ALLOWED.find((a) => a.file === rel && (a.owner === null || a.owner === hit.owner));
-        if (allowed === undefined) offenders.push(`${rel}:${hit.line} (${hit.owner ?? 'no const'})`);
+        // the action kind (snake case, a complete literal) lives in the manual contract only
+        if (/delete_event/.test(hit.text) && !/delete-event/i.test(hit.text) && KIND_FILES.has(rel)) continue;
+        const allowed = ALLOWED.find(
+          (a) =>
+            a.file === rel &&
+            (a.owner === null ? hit.owner === null || a.text === undefined : a.owner === hit.owner) &&
+            (a.text === undefined || a.text === hit.text),
+        );
+        if (allowed === undefined)
+          offenders.push(`${rel}:${hit.line} (${hit.owner ?? 'no const'}) ${hit.text.slice(0, 40)}`);
         else if (allowed.owner === 'BLOCKED_NAMES') blockedListHits += 1;
       }
     }
@@ -235,8 +267,8 @@ describe('3. a model / CLI asking for delete-event is blocked by the gate', () =
 // 4. no facade can reach it
 // ---------------------------------------------------------------------------------------------------------------------
 
-describe('4. no capability class reaches delete-event', () => {
-  it('callerFor(read|write|admin) rejects it with McpCapabilityError + a tool_blocked audit before the server sees a call', async () => {
+describe('4. only a manual WRITE call reaches delete-event', () => {
+  it('callerFor(read|admin) reject it with McpCapabilityError; callerFor(write) refuses it without source manual', async () => {
     const fake = createFakeMcpCalendar({ timeZone: 'Asia/Jerusalem' });
     open.push(fake);
     const transport = fake.clientTransport();
@@ -253,16 +285,29 @@ describe('4. no capability class reaches delete-event', () => {
     });
     await host.start();
     const before = fake.calls.length;
-    for (const cls of ['read', 'write', 'admin'] as McpToolClass[]) {
+    for (const cls of ['read', 'admin'] as McpToolClass[]) {
       await expect(
         (host.callerFor(cls) as unknown as McpToolCaller)('delete-event' as never, {}),
       ).rejects.toBeInstanceOf(McpCapabilityError);
     }
+    const writeCaller = host.callerFor('write') as unknown as McpToolCaller;
+    for (const opts of [undefined, {}, { source: 'chat' as const }]) {
+      await expect(
+        writeCaller('delete-event' as never, { calendarId: 'primary', eventId: 'x' }, undefined, opts),
+      ).resolves.toEqual({
+        ok: false,
+        error: 'invalid_args',
+      });
+    }
     expect(fake.calls).toHaveLength(before);
-    expect(audits.filter((a) => a.kind === 'tool_blocked')).toHaveLength(3);
-    // The facades have no such method at all.
+    expect(audits.filter((a) => a.kind === 'tool_blocked')).toHaveLength(5);
+    // The facades: no generic delete; the write facade's only delete is the manual one, which refuses anything but 'manual'.
     const write = createMcpWriteClient(host.callerFor('write'));
-    expect(Object.keys(write)).toEqual(['createEvent', 'updateEvent']);
+    expect(Object.keys(write)).not.toContain('deleteEvent');
+    await expect(
+      write.deleteManualEvent({ source: 'chat' as never, calendarId: 'primary', eventId: 'abcdefgh01' }),
+    ).resolves.toEqual({ ok: false, error: 'invalid_args' });
+    expect(fake.calls).toHaveLength(before);
     expect(Object.keys(createMcpReadClient(host.callerFor('read')))).not.toContain('deleteEvent');
     expect(fake.violations).toEqual([]);
     await host.stop();
@@ -273,9 +318,9 @@ describe('4. no capability class reaches delete-event', () => {
 // 5. the net behind the nets
 // ---------------------------------------------------------------------------------------------------------------------
 
-describe('5. were it ever called, the fake and ledger rule 8 catch it', () => {
-  it('a raw MCP client calling delete-event records the violation even though the name is not registered', async () => {
-    const fake = createFakeCalendar({});
+describe('5. were it ever called outside the manual path, the fake and ledger rule 8 catch it', () => {
+  it('a raw MCP client calling delete-event records the violation when the name is not registered', async () => {
+    const fake = createFakeCalendar({ enabledTools: Object.keys(FAKE_MCP_TOOLS).filter((n) => n !== 'delete-event') });
     const [c, s] = InMemoryTransport.createLinkedPair();
     await fake.server.connect(s);
     const client = new Client({ name: 'raw', version: '0' });

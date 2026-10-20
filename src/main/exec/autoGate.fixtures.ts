@@ -390,6 +390,8 @@ export const REASON_FLIPS: Record<Exclude<AutoReason, 'ok' | 'policy_shadow' | '
     base: 'create',
     apply: (i) => ({ ...i, proposal: { ...i.proposal, providerClass: 'cli_unproven' } }),
   },
+  // [v4 T6] a source:'manual' action (calendar view) is never automatic
+  manual_only: { base: 'update', apply: (i) => ({ ...i, action: { ...i.action, source: 'manual' } }) },
   beyond_horizon: {
     base: 'create',
     apply: (i) => ({

@@ -590,6 +590,11 @@
       "title": "{{cli}} לא קיבל את המודל שנבחר",
       "body": "{{cli}} דחה את המודל שנבחר עם ההגדרות שהאפליקציה משתמשת בהן. בחרו מודל אחר והריצו בדיקה.",
       "action": "בחירת מודל אחר"
+    },
+    "CAL_EVENT_FOREIGN_PROTECTED": {
+      "title": "האירוע מוגן",
+      "body": "יש בו משתתפים נוספים או שהוא חוזר; שנו אותו ביומן Google.",
+      "action": "פתיחה ביומן Google"
     }
   },
   "event": {
@@ -968,6 +973,11 @@
     "he": "עברית",
     "label": "שפה"
   },
+  "theme": {
+    "system": "לפי המערכת",
+    "light": "בהיר",
+    "dark": "כהה"
+  },
   "list": {
     "analysing_one": "מנתח שיחה אחת...",
     "analysing_other": "מנתח {{count}} שיחות...",
@@ -1251,6 +1261,7 @@
         "system": "השפה של Windows"
       },
       "languageLabel": "שפה",
+      "themeLabel": "מראה",
       "notif": {
         "generic": "פועלות",
         "off": "כבויות"
@@ -1736,7 +1747,8 @@
       "undo_unavailable": "אי אפשר לשנות אירועים כרגע, ולכן לא היה אפשר לבטל את זה",
       "content_rejected": "הכותרת או המקום מכילים קישור, מספר או תווים חריגים",
       "cross_chat_rows": "הבינה קראה הודעות משיחות אחרות",
-      "multiple_events": "יש בצ'אט הזה יותר מאירוע אחד"
+      "multiple_events": "יש בצ'אט הזה יותר מאירוע אחד",
+      "manual_only": "עשיתם את השינוי הזה בעצמכם בתצוגת היומן"
     },
     "dialog": {
       "title": "להפעיל מצב אוטומטי?",
@@ -1945,14 +1957,53 @@
     "prev": "שבוע קודם",
     "next": "שבוע הבא",
     "today": "היום",
-    "scopeNote": "מציג את השיחות שהאפליקציה ניתחה, לא את כל יומן Google שלך.",
+    "scopeNote": "מציג את כל היומנים שסימנתם; אירועים מיומנים אחרים ניתנים לשינוי מכאן רק אם אין בהם משתתפים נוספים ואינם חוזרים.",
     "gotIt": "הבנתי",
     "empty": "אין כלום השבוע",
-    "undated": "עדיין בלי תאריך"
+    "undated": "עדיין בלי תאריך",
+    "picker": "יומנים",
+    "refresh": "רענון אירועים",
+    "failedFor": "לא ניתן לטעון את {{name}}",
+    "readOnlyCalendar": "יומן לקריאה בלבד",
+    "refusedAttendees": "יש משתתפים נוספים — לא משתנה מכאן",
+    "refusedRecurring": "אירוע חוזר — לא משתנה מכאן",
+    "newEvent": "אירוע חדש",
+    "edit": "עריכה",
+    "move": "הזזה",
+    "delete": "מחיקה",
+    "undoLast": "ביטול השינוי האחרון",
+    "confirmCreate": "להוסיף ל-{{calendar}}?",
+    "confirmEdit": "לשנות את האירוע?",
+    "confirmDelete": "למחוק את האירוע?",
+    "refusedFromChat": "נוסף משיחה — שנו אותו מהכרטיס שלו",
+    "refusedAllDay": "אירוע של יום שלם — שנו אותו ביומן Google",
+    "confirm": "אישור",
+    "save": "המשך",
+    "fieldCalendar": "יומן",
+    "fieldTitle": "כותרת",
+    "fieldDate": "תאריך",
+    "fieldStart": "התחלה",
+    "fieldEnd": "סיום",
+    "fieldLocation": "מקום",
+    "before": "עכשיו",
+    "after": "חדש",
+    "invalidTime": "הסיום חייב להיות אחרי ההתחלה (5 דקות עד 12 שעות).",
+    "invalidTitle": "הזינו כותרת.",
+    "doneCreate": "האירוע נוסף",
+    "doneEdit": "האירוע שונה",
+    "doneDelete": "האירוע נמחק",
+    "doneUndo": "השינוי בוטל",
+    "undoUnavailable": "כבר אי אפשר לבטל את השינוי הזה"
   },
   "view": {
     "cards": "כרטיסים",
     "calendar": "יומן"
+  },
+  "refresh": {
+    "now": "רענון",
+    "running": "מרענן…",
+    "done": "{{newRows}} הודעות חדשות, {{queued}} שיחות בתור, {{skipped}} דולגו, {{nothing}} ללא שינוי",
+    "cooldown": "רוענן הרגע — נסו שוב בעוד רגע"
   },
   "filter": {
     "showAll": "הצג הכל ({{count}} מוסתרים)",

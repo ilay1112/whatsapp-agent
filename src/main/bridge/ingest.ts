@@ -41,6 +41,19 @@ export interface Ingest {
   resolveLidChats(): Promise<{ merged: number }>;
   /** Context window for S1/S3 (live read of ONE chat) - the only path from message text to the agent. */
   contextFor(chatId: import('../../shared/types').ChatRef, n: number): import('../../shared/types').Message[];
+  /**
+   * [v4 T3] Refresh (v4-calendar-handover 2.1): a chat with NO open item is analysed again by re-running THIS file's inbound path
+   * (handleInbound: Stage 0, backlog gate, holds, item creation, trigger kind, queue row) for its newest trigger-eligible row.
+   * 'nothing' when the chat has an open item, no such row, the newest row is the user's own (answered), the row is older than
+   * LIMITS.syncMaxAgeMs, or Stage 0 makes no item. Optional so v1-shaped doubles stay assignable.
+   */
+  reanalyseChat?(chatId: ChatRef): { outcome: 'queued' | 'held' | 'nothing'; itemId: ItemId | null };
+  /**
+   * [v4 review fix] The wa id of the chat's newest trigger-eligible row when that row is inbound; null when the user's own row is
+   * newest, the chat has no such row, the chat is unknown or the bridge store is closed. Refresh compares it with the trigger of
+   * the chat's newest card: a card already made from this row is not analysed again (no LLM run). Optional (v1-shaped doubles).
+   */
+  newestInboundMsgId?(chatId: ChatRef): string | null;
 }
 // ---------- supplementary seam (build-plan section 3; W0-authored, frozen in Wave 1) ----------
 export interface IngestDeps {
@@ -62,6 +75,8 @@ type Liveness = 'context' | 'live' | 'older';
 
 const BUSY_RE = /SQLITE_BUSY|database is locked|database table is locked/i;
 const LID_CHATS_SQL = `SELECT id, jid FROM chats WHERE jid LIKE '%@lid'`;
+/** [v4 review fix] The chat's newest card (any state) - Refresh's "already analysed / dismissed" check. */
+const LATEST_ITEM_SQL = `SELECT trigger_msg_id, closed_reason FROM items WHERE chat_id = ? ORDER BY id DESC LIMIT 1`;
 /** [V2-W1-07, F28] Items of this chat holding a send_reply the app sent (or may have sent). Read-only; bounded. */
 const SENT_REPLY_ITEMS_SQL = `SELECT DISTINCT item_id AS itemId FROM actions
   WHERE chat_id = ? AND kind = 'send_reply' AND state IN ('executing','done','unknown_outcome')
@@ -558,7 +573,50 @@ export function createIngest(deps: IngestDeps): Ingest {
     return out.slice(-want);
   };
 
-  return { poke, scanNow, resolveLidChats, contextFor };
+  /** [v4 T3] Refresh: see Ingest.reanalyseChat. Synchronous; the caller pushes dashboard:changed for the returned item. */
+  const REANALYSE_ROWS = 50;
+  /** ARCHITECTURE 4.6 steps 5-6, as handleChat: the NEWEST trigger-eligible row of the chat decides. */
+  const newestEligible = (jid: string): Message | null => {
+    let newest: Message | null = null;
+    for (const m of bridgeDb.lastMessages(jid, REANALYSE_ROWS).map(toMessage)) if (!isNeverTrigger(m)) newest = m;
+    return newest;
+  };
+  const newestInboundMsgId = (chatId: ChatRef): string | null => {
+    const chat = repos.chats.byId(chatId);
+    if (chat === null || !bridgeDb.open()) return null;
+    const newest = newestEligible(chat.jid);
+    return newest === null || newest.fromMe ? null : newest.waMsgId;
+  };
+  const reanalyseChat = (chatId: ChatRef): { outcome: 'queued' | 'held' | 'nothing'; itemId: ItemId | null } => {
+    const nothing = { outcome: 'nothing' as const, itemId: null };
+    const chat = repos.chats.byId(chatId);
+    if (chat === null || !bridgeDb.open()) return nothing;
+    if (repos.items.openForChat(chat.id) !== null) return nothing;
+    const newest = newestEligible(chat.jid);
+    if (newest === null || newest.fromMe) return nothing; // the user's own row is newest: the chat was answered
+    // [v4 review fix] Refresh never resurrects a decision: when the chat's newest card (closed - there is no open one) was
+    // dismissed by the user, or was already made from this very row (the agent decided "no action", or any other close), there
+    // is nothing new to analyse and no LLM run is spent. A later NEW message still makes a card through normal ingest.
+    const latest = repos.db
+      .prepare<{ trigger_msg_id: string; closed_reason: string | null }>(LATEST_ITEM_SQL)
+      .get(chat.id);
+    if (latest !== undefined && (latest.closed_reason === 'dismissed' || latest.trigger_msg_id === newest.waMsgId))
+      return nothing;
+    const now = clock.now();
+    // Refresh's window is the history-replay cap (LIMITS.syncMaxAgeMs): an older row is backlog, never re-analysed from here.
+    if (newest.ts === null || now - newest.ts > LIMITS.syncMaxAgeMs) return nothing;
+    const touched: ItemId[] = [];
+    const stats: IngestStats = { scanned: 0, kept: 0, unparseableTs: 0, watermark: 0, olderLive: 0 };
+    const m = newest;
+    repos.db.transaction(() => handleInbound(chat, m, now, stats, touched));
+    const itemId = touched[0] ?? null;
+    if (itemId === null) return nothing;
+    const item = repos.items.byId(itemId);
+    if (item === null) return nothing;
+    return { outcome: item.analysis === 'queued' ? 'queued' : 'held', itemId };
+  };
+
+  return { poke, scanNow, resolveLidChats, contextFor, reanalyseChat, newestInboundMsgId };
 }
 
 function withOlderBadge(badges: readonly Badge[]): Badge[] {

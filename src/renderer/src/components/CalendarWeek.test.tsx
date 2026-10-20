@@ -277,7 +277,7 @@ describe('CalendarWeek - scope note', () => {
   it('noteSeen false -> the note is shown; Got it calls onNoteSeen', async () => {
     const { props, user } = setup({ noteSeen: false });
     expect(screen.getByTestId('cal-note')).toHaveTextContent(
-      'Shows the chats this app analysed, not your whole Google calendar.',
+      'Shows every calendar you ticked; events from other calendars can be changed here only if they have no other attendees and do not repeat.',
     );
     await user.click(screen.getByTestId('cal-note-dismiss'));
     expect(props.onNoteSeen).toHaveBeenCalledTimes(1);

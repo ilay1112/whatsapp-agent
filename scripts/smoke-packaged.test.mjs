@@ -78,9 +78,10 @@ const clean = (over = {}) =>
   });
 
 describe('smoke-packaged: frozen expectations', () => {
-  it('[V2] asserts exactly the eight ARCH-v2 B3 tool names, the same set vendor/calendar-mcp.pin.json pins', () => {
+  it('[V2] asserts exactly the nine ([v4 T6]) ARCH-v2 B3 tool names, the same set vendor/calendar-mcp.pin.json pins', () => {
     expect([...EXPECTED_MCP_TOOLS].sort()).toEqual([
       'create-event',
+      'delete-event',
       'get-current-time',
       'get-event',
       'get-freebusy',
@@ -90,7 +91,8 @@ describe('smoke-packaged: frozen expectations', () => {
       'update-event',
     ]);
     expect([...EXPECTED_MCP_TOOLS].sort()).toEqual(CAL_PIN.enabledTools);
-    expect(EXPECTED_MCP_TOOLS).not.toContain('delete-event');
+    // [v4 T6] delete-event is enabled for manual (calendar-view) actions only - McpHost.callerFor refuses every other caller
+    expect(EXPECTED_MCP_TOOLS).toContain('delete-event');
   });
 
   it('uses the exact ARCH 15.4 [R2] credentials fixture, including redirect_uris[0]', () => {
@@ -182,14 +184,14 @@ describe('fuseProblems', () => {
 });
 
 describe('toolListProblems', () => {
-  it('accepts the eight names in any order', () => {
+  it('accepts the nine names in any order', () => {
     expect(toolListProblems([...EXPECTED_MCP_TOOLS].reverse())).toEqual([]);
   });
   it('rejects a missing tool', () => {
     expect(toolListProblems(EXPECTED_MCP_TOOLS.slice(1))[0]).toMatch(/missing get-current-time/);
   });
   it('rejects an extra tool (CAL_TOOLSET_MISMATCH is fail-closed)', () => {
-    expect(toolListProblems([...EXPECTED_MCP_TOOLS, 'delete-event'])[0]).toMatch(/unexpected delete-event/);
+    expect(toolListProblems([...EXPECTED_MCP_TOOLS, 'search-events'])[0]).toMatch(/unexpected search-events/);
   });
 });
 

@@ -26,7 +26,11 @@ interface Chain {
   repos: Repos;
   created: ReturnType<typeof seedCreatedEvent>;
   policy: T.AutoPolicyRecord;
-  rev(kind: T.RevisionKind, by: 'user' | 'user_toast' | 'auto', opts?: { revertOf?: number }): T.EventRevisionRecord;
+  rev(
+    kind: Exclude<T.RevisionKind, T.ManualRevisionKind>,
+    by: 'user' | 'user_toast' | 'auto',
+    opts?: { revertOf?: number },
+  ): T.EventRevisionRecord;
 }
 
 /** A created event (revision 1 = the user's create) plus a helper that applies one more revision through a real approved action. */

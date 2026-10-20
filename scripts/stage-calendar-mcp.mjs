@@ -49,6 +49,7 @@ export const PRECONDITION_ERROR_TEXT =
 /** The v2 ENABLED_TOOLS (C2 11 ENABLED_TOOLS_ENV), sorted - the tool-list pin of the staged server (B3). */
 export const EXPECTED_TOOLS = [
   'create-event',
+  'delete-event', // [v4 T6] manual (calendar-view) actions only - McpHost.callerFor refuses every other caller
   'get-current-time',
   'get-event',
   'get-freebusy',

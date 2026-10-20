@@ -87,7 +87,7 @@ const REPO_ROOT = fileURLToPath(new URL('../', import.meta.url)); // never URL.p
 // =====================================================================================================================
 
 /**
- * ARCH-v2 B3 `ENABLED_TOOLS` (eight names), in the order the architecture lists them. `tools/list` must equal this SET
+ * ARCH-v2 B3 `ENABLED_TOOLS` (eight names; [v4 T6] + delete-event = nine), in the order the architecture lists them. `tools/list` must equal this SET
  * exactly. The same set is pinned in `vendor/calendar-mcp.pin.json` `enabledTools` (unit test asserts both agree).
  */
 export const EXPECTED_MCP_TOOLS = [
@@ -98,6 +98,7 @@ export const EXPECTED_MCP_TOOLS = [
   'list-calendars',
   'create-event',
   'update-event',
+  'delete-event', // [v4 T6] manual (calendar-view) actions only
   'manage-accounts',
 ];
 
@@ -633,7 +634,7 @@ export function toolListProblems(names) {
   const parts = [];
   if (missing.length > 0) parts.push(`missing ${missing.join(', ')}`);
   if (extra.length > 0) parts.push(`unexpected ${extra.join(', ')}`);
-  return [`tools/list does not equal the eight ARCH-v2 B3 names (${parts.join('; ')})`];
+  return [`tools/list does not equal the nine (v4) ARCH-v2 B3 names (${parts.join('; ')})`];
 }
 
 /**
@@ -1185,7 +1186,10 @@ async function check1Mcp({ exePath, resourcesDir, tmpDir, state, log, problems }
     return;
   }
   state.calendarToolDefs = r.toolDefs;
-  ok(log, `check 1 - the packaged exe ran as Node and the real MCP server listed exactly the eight ARCH-v2 B3 tools`);
+  ok(
+    log,
+    `check 1 - the packaged exe ran as Node and the real MCP server listed exactly the nine (v4) ARCH-v2 B3 tools`,
+  );
 }
 
 async function check2ToolCall({ exePath, tmpDir, log, problems }) {

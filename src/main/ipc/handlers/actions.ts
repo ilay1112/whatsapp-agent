@@ -29,15 +29,20 @@ export function createActionsHandlers(deps: HandlerDeps): Pick<IpcHandlers, Acti
       }
       const res = await deps.executor.approve(req, ctx);
       if (!res.ok) return res;
+      // [v4 T6] a manual (calendar-view) action has no item: its outcome already says everything (ManualOutcomeView)
+      if (res.value.item === null) return res;
       const action = deps.repos.actions.byId(req.actionId);
       if (action === null) return res;
       return { ok: true, value: { ...res.value, item: detailOr(action.itemId, res.value.item) } };
     },
 
-    'action:reject': async (req): Promise<Result<ItemDetail>> => {
+    'action:reject': async (req): Promise<Result<ItemDetail | null>> => {
       const action = deps.repos.actions.byId(req.actionId);
+      // [v4 review fix] a manual (calendar-view) proposal has no item: Cancel on cal-confirm rejects it, the answer is null
+      const manual = action === null && deps.repos.actions.manualById(req.actionId) !== null;
       const res = await deps.executor.reject(req.actionId);
       if (!res.ok) return res;
+      if (manual) return { ok: true, value: null };
       if (action === null) return { ok: false, error: { code: 'NOT_FOUND' } };
       return deps.items.detail(action.itemId);
     },

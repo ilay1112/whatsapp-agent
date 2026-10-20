@@ -6,13 +6,15 @@ import {
   projectAppEvent,
   projectCurrentTime,
   projectFreeBusy,
+  projectListedEvents,
   projectOwnedEvent,
 } from './projection';
 import type { BusyBlock, LocalDateTime, ActionId } from '../../shared/types';
 
-/** [V2 CHANGE] The EIGHT tools enabled at the MCP server and their class (B3). Anything else in tools/list => CAL_TOOLSET_MISMATCH (fail closed).
+/** [V2 CHANGE] The NINE tools enabled at the MCP server and their class (B3). Anything else in tools/list => CAL_TOOLSET_MISMATCH (fail closed).
  *  get-event is an app-side READ class (executor pre-flight + reconcile) that NO ToolSpec references; update-event is WRITE (executor only);
- *  delete-event is never enabled. */
+ *  [v4 T6] delete-event is WRITE and reachable ONLY for a source:'manual' action: McpHost.callerFor('write') refuses it unless the call
+ *  carries `{ source: 'manual' }` (writeClient.deleteManualEvent is the one caller; a chat cancel stays update-event status 'cancelled'). */
 export const MCP_TOOLS = {
   'get-current-time': 'read',
   'get-freebusy': 'read',
@@ -22,11 +24,12 @@ export const MCP_TOOLS = {
   'manage-accounts': 'admin',
   'create-event': 'write',
   'update-event': 'write',
+  'delete-event': 'write', // [v4 T6] manual (calendar-view) actions only - see callerFor
 } as const;
 export type McpToolName = keyof typeof MCP_TOOLS;
 export type McpToolClass = (typeof MCP_TOOLS)[McpToolName];
 export const ENABLED_TOOLS_ENV =
-  'get-current-time,get-freebusy,list-events,get-event,list-calendars,create-event,update-event,manage-accounts'; // [V2 CHANGE]
+  'get-current-time,get-freebusy,list-events,get-event,list-calendars,create-event,update-event,delete-event,manage-accounts'; // [V2 CHANGE] [v4 T6] + delete-event
 
 /** [V2 CHANGE] + 'not_found' (404 / 410 / "deleted" on OUR OWN get-event / update-event request - projection regex only on that error text)
  *  and 'precondition' (HTTP 412 from the vendored If-Match insertion, B4). */
@@ -57,7 +60,12 @@ export type McpToolCaller<C extends McpToolClass = McpToolClass> = (
   tool: McpToolNameOf<C>,
   args: Record<string, unknown>,
   signal?: AbortSignal,
+  /** [v4 T6] who the call is for. 'manual' = a calendar-view action approved by a click; required for delete-event. */
+  opts?: McpCallOptions,
 ) => Promise<McpResult<{ text: string; isError: boolean }>>;
+export interface McpCallOptions {
+  source?: 'chat' | 'manual';
+}
 export class McpCapabilityError extends Error {
   constructor(public readonly cls: McpToolClass) {
     super('mcp_capability');
@@ -131,6 +139,32 @@ export interface McpReadClient {
   getEvent(calendarId: string, eventId: string): Promise<McpResult<OwnedEventProjection>>;
 }
 // [R2] `listEvents()` (EventProjection with titles) is REMOVED from the facade with the `list_events` LLM tool; EventProjection stays for reconcile's projection only.
+
+/** [V4] T-908 §2.4: one event of a list-events answer, for the calendar view (projection.ts projectListedEvents). title cleaned,
+ *  <= 60, UNTRUSTED; attendees is a COUNT only (no address leaves projection.ts). */
+export interface ListedEventProjection {
+  eventId: string;
+  startLocal: LocalDateTime;
+  endLocal: LocalDateTime;
+  allDay: boolean;
+  title: string;
+  attendees: number;
+  recurring: boolean; // recurrence present OR recurringEventId present
+  ownedByApp: boolean; // extendedProperties.private.waAgent === '1'
+  fromChat: boolean; // [v4 T6] extendedProperties.private.waItem is set (a chat card's create)
+  location: string; // [v4 review fix] UNTRUSTED, cleaned, <= LOCATION_MAX (the manual edit form pre-fills it)
+}
+/** [V4] The wall-clock window of one calendar-view read (calendar id and account are pinned by the facade). */
+export type ListWindow = Pick<PinnedWindow, 'timeMinLocal' | 'timeMaxLocal' | 'timeZone'>;
+/**
+ * [V4] T-908 §2.4: the calendar view's read. A SEPARATE facade from McpReadClient on purpose: ToolGate and the agent hold an
+ * McpReadClient; this one is handed only to mcp/calendarEvents.ts (compose.ts), so the model's tool table gains nothing (I2').
+ * Same narrowed 'read' caller, same tool ('list-events', already an enabled read tool).
+ */
+export interface McpCalendarListClient {
+  /** list-events of ONE calendar for a PinnedWindow-valid window (<= MAX_WINDOW_DAYS), singleEvents, account pinned. */
+  listEventsInWindow(calendarId: string, w: ListWindow): Promise<McpResult<ListedEventProjection[]>>;
+}
 
 // ---------------------------------------------------------------------------------------------------------------------
 // implementation (W1-05)
@@ -221,4 +255,40 @@ export function createMcpReadClient(call: McpToolCaller<'read'>): McpReadClient 
       return projectOwnedEvent(res.value.text, eventId);
     },
   };
+}
+
+/** [V4] The calendar view's read facade (see McpCalendarListClient). Holds ONE narrowed read caller and nothing else. */
+export function createMcpCalendarListClient(call: McpToolCaller<'read'>): McpCalendarListClient {
+  return {
+    async listEventsInWindow(calendarId, w) {
+      if (w === null || typeof w !== 'object') return INVALID;
+      const pinned: PinnedWindow = {
+        timeMinLocal: w.timeMinLocal,
+        timeMaxLocal: w.timeMaxLocal,
+        timeZone: w.timeZone,
+        calendarIds: [calendarId],
+        account: 'personal',
+      };
+      if (!isPinnedWindowValid(pinned)) return INVALID;
+      // singleEvents: the 2.6.3 server always expands recurring events itself (and strips the unknown key); it is sent so the
+      // request states what the projection assumes.
+      const res = await call('list-events', {
+        calendarId,
+        timeMin: pinned.timeMinLocal,
+        timeMax: pinned.timeMaxLocal,
+        timeZone: pinned.timeZone,
+        singleEvents: true,
+        account: pinned.account,
+      });
+      if (!res.ok) return res;
+      if (res.value.isError) return { ok: false, error: classifyListErrorText(res.value.text) };
+      return projectListedEvents(res.value.text, pinned.timeZone);
+    },
+  };
+}
+
+/** [V4] A failed list of ONE calendar: an auth failure is 'auth', everything else (403 on a calendar, 404, garbage) is
+ *  'bad_response' - that calendar lands in CalendarEventsRes.failed. The text itself never leaves this module. */
+function classifyListErrorText(text: string): McpErrorKind {
+  return typeof text === 'string' && /invalid_grant|no authenticated accounts/i.test(text) ? 'auth' : 'bad_response';
 }

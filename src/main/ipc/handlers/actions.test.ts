@@ -25,6 +25,8 @@ interface Doubles {
   reject?: (id: ActionId) => Promise<Result<null>>;
   serviceDetail?: (itemId: number) => Result<ItemDetail>;
   action?: ApprovalAction | null;
+  /** [v4 review fix] a manual (calendar-view) row of this id, seen by repos.actions.manualById */
+  manual?: boolean;
 }
 
 function harness(d: Doubles = {}) {
@@ -52,6 +54,7 @@ function harness(d: Doubles = {}) {
   const repos = {
     actions: {
       byId: () => (d.action === undefined ? ({ id: ACTION_ID, itemId: ITEM_ID } as ApprovalAction) : d.action),
+      manualById: () => (d.manual === true ? { id: ACTION_ID, source: 'manual' } : null),
     },
   } as unknown as Repos;
 
@@ -171,6 +174,12 @@ describe('action:reject', () => {
       error: { code: 'ACTION_STALE' },
     });
     expect(calls.map((c) => c[0])).toEqual(['reject']);
+  });
+
+  it('[v4 review fix] a manual (calendar-view) proposal is rejected through the same door and answers null (no item)', async () => {
+    const { h, calls } = harness({ action: null, manual: true });
+    expect(await h['action:reject']({ actionId: ACTION_ID }, CTX)).toEqual({ ok: true, value: null });
+    expect(calls).toEqual([['reject', ACTION_ID]]);
   });
 
   it('answers NOT_FOUND when the row disappeared between the read and the reject', async () => {

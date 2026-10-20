@@ -2,7 +2,7 @@
 // Frozen signatures pasted verbatim from docs/specs/contracts.md (owner W1-05); bodies implemented by W1-05.
 // Safety-critical (TESTS 13, 100 % lines): this file is the ONLY path from app code to a calendar write, and it is reachable
 // only from ActionExecutor, which runs only from the `action:approve` IPC handler (ARCHITECTURE A10).
-import { classifyEventErrorText, projectCreateEvent, projectUpdatedEvent } from './projection';
+import { classifyEventErrorText, projectCreateEvent, projectDeletedEvent, projectUpdatedEvent } from './projection';
 import type { LocalDateTime, ActionId, ItemId } from '../../shared/types';
 import type { McpResult, McpToolCaller } from './readClient';
 
@@ -73,8 +73,67 @@ export interface UpdateEventResult {
   endLocal: LocalDateTime;
 }
 
+// ---------------------------------------------------------------------------------------------------------------------
+// [v4 T6] manual (calendar-view) writes - handover §2.5, I9'. Built ONLY by exec/manualEvents.ts from an APPROVED manual payload,
+// reached ONLY through ActionExecutor.approve (the action:approve click) / undoManual (the action:undo click).
+// ---------------------------------------------------------------------------------------------------------------------
+/** create-event on any writable calendar of the account; tagged app-owned + manual (never a waItem: no chat card owns it). */
+export interface ManualCreateEventArgs {
+  calendarId: string; // from the approved payload (main checked the stored role owner|writer)
+  account: 'personal';
+  summary: string;
+  start: LocalDateTime;
+  end: LocalDateTime;
+  timeZone: string;
+  location?: string;
+  description: string; // fixed app template
+  sendUpdates: 'none';
+  eventId: string; // main-generated (payload.eventId): a retry of the same action answers 409 => done
+  extendedProperties: { private: { waAgent: '1'; waManual: '1'; waAction: string } }; // waAction = the manual action id
+}
+/** Absolute PATCH of the content fields ONLY: no status, no extendedProperties (a foreign event is never tagged as ours), no
+ *  description, never attendees / recurrence / scope keys. If-Match = the pre-flight etag. */
+export interface ManualUpdateEventArgs {
+  calendarId: string;
+  account: 'personal';
+  eventId: string;
+  summary: string;
+  start: LocalDateTime;
+  end: LocalDateTime;
+  timeZone: string;
+  location: string;
+  sendUpdates: 'none';
+  checkConflicts: false;
+  ifMatch: string;
+}
+export const MANUAL_UPDATE_EVENT_KEYS = [
+  'calendarId',
+  'account',
+  'eventId',
+  'summary',
+  'start',
+  'end',
+  'timeZone',
+  'location',
+  'sendUpdates',
+  'checkConflicts',
+  'ifMatch',
+] as const satisfies readonly (keyof ManualUpdateEventArgs)[];
+/** delete-event. `source: 'manual'` is checked here AND by McpHost.callerFor('write') (a chat action can never delete). */
+export interface ManualDeleteEventArgs {
+  source: 'manual';
+  calendarId: string;
+  eventId: string;
+}
+
 export interface McpWriteClient {
   createEvent(args: CreateEventArgs): Promise<McpResult<CreateEventResult>>; // 'duplicate' => CAL_DUPLICATE ; 'id_exists' => done (see section 14)
+  /** [v4 T6] manual only (see ManualCreateEventArgs). */
+  createManualEvent(args: ManualCreateEventArgs): Promise<McpResult<CreateEventResult>>;
+  /** [v4 T6] manual only (see ManualUpdateEventArgs); 'precondition' (412) => ACTION_STALE. */
+  updateManualEvent(args: ManualUpdateEventArgs): Promise<McpResult<UpdateEventResult>>;
+  /** [v4 T6] manual only; the ONLY delete-event caller of the app. */
+  deleteManualEvent(args: ManualDeleteEventArgs): Promise<McpResult<{ eventId: string }>>;
   /** [V2 ADD] 'precondition' (412) => needs_confirm_drift (manual) / fallback modified_in_google (auto) ; 'not_found' => CAL_EVENT_GONE ;
    *  'invalid_args' => CAL_UPDATE_FAILED ; 'timeout' => unknown_outcome. `done` is decided by the executor's get-event READBACK, not by this result. */
   updateEvent(args: UpdateEventArgs): Promise<McpResult<UpdateEventResult>>;
@@ -137,9 +196,98 @@ function isValidUpdate(args: UpdateEventArgs): boolean {
   return (['waItem', 'waAction', 'waUpdate', 'waRev'] as const).every((k) => isStr(priv[k]) && TAG_RE.test(priv[k]));
 }
 
-/** WRITE facade. One narrowed caller, two methods (create + update), no read, no admin and no delete capability. */
+/** [v4 T6] Defence in depth below exec/manualEvents.ts: a manual PATCH that is not exactly the content patch never leaves the app. */
+function isValidManualUpdate(args: ManualUpdateEventArgs): boolean {
+  if (args === null || typeof args !== 'object') return false;
+  if (!isStr(args.calendarId) || !CALENDAR_ID_RE.test(args.calendarId)) return false;
+  if (args.account !== 'personal') return false;
+  if (!isStr(args.eventId) || !EVENT_ID_RE.test(args.eventId)) return false;
+  if (!isStr(args.summary) || args.summary.trim().length === 0 || !isStr(args.location)) return false;
+  if (!isStr(args.start) || !LOCAL_DT_RE.test(args.start) || !isStr(args.end) || !LOCAL_DT_RE.test(args.end))
+    return false;
+  if (args.end <= args.start) return false;
+  if (!isStr(args.timeZone) || !TIME_ZONE_RE.test(args.timeZone)) return false;
+  if (args.sendUpdates !== 'none' || args.checkConflicts !== false) return false;
+  return isStr(args.ifMatch) && args.ifMatch.length > 0 && args.ifMatch.length <= 256;
+}
+function isValidManualCreate(args: ManualCreateEventArgs): boolean {
+  if (args === null || typeof args !== 'object') return false;
+  if (!isStr(args.calendarId) || !CALENDAR_ID_RE.test(args.calendarId)) return false;
+  if (!isStr(args.eventId) || !EVENT_ID_RE.test(args.eventId)) return false;
+  if (!isStr(args.summary) || args.summary.trim().length === 0) return false;
+  if (!isStr(args.start) || !LOCAL_DT_RE.test(args.start) || !isStr(args.end) || !LOCAL_DT_RE.test(args.end))
+    return false;
+  if (args.end <= args.start) return false;
+  if (!isStr(args.timeZone) || !TIME_ZONE_RE.test(args.timeZone)) return false;
+  const tag = (args.extendedProperties as { private?: { waAction?: unknown } } | undefined)?.private?.waAction;
+  return isStr(tag) && TAG_RE.test(tag);
+}
+
+/** WRITE facade. One narrowed caller: create + update (chat), and [v4 T6] the three manual methods (delete only for 'manual'). */
 export function createMcpWriteClient(call: McpToolCaller<'write'>): McpWriteClient {
   return {
+    // [v4 T6] manual create: built key by key; tags = waAgent '1' + waManual '1' + waAction (no waItem: no chat card owns it).
+    async createManualEvent(args) {
+      if (!isValidManualCreate(args)) return { ok: false, error: 'invalid_args' };
+      const out: Record<string, unknown> = {
+        calendarId: args.calendarId,
+        account: 'personal',
+        summary: args.summary,
+        start: args.start,
+        end: args.end,
+        timeZone: args.timeZone,
+        description: args.description,
+        sendUpdates: 'none',
+        allowDuplicates: true, // the user typed this event while looking at the calendar
+        eventId: args.eventId,
+        extendedProperties: {
+          private: { waAgent: '1', waManual: '1', waAction: args.extendedProperties.private.waAction },
+        },
+      };
+      if (typeof args.location === 'string' && args.location.length > 0) out.location = args.location;
+      const res = await call('create-event', out, undefined, { source: 'manual' });
+      if (!res.ok) return res;
+      return projectCreateEvent(res.value.text);
+    },
+
+    // [v4 T6] manual edit: content-only absolute PATCH with If-Match; never status, never the private map.
+    async updateManualEvent(args) {
+      if (!isValidManualUpdate(args)) return { ok: false, error: 'invalid_args' };
+      const out: Record<string, unknown> = {
+        calendarId: args.calendarId,
+        account: 'personal',
+        eventId: args.eventId,
+        summary: args.summary,
+        start: args.start,
+        end: args.end,
+        timeZone: args.timeZone,
+        location: args.location,
+        sendUpdates: 'none',
+        checkConflicts: false,
+        ifMatch: args.ifMatch,
+      };
+      const res = await call('update-event', out, undefined, { source: 'manual' });
+      if (!res.ok) return res;
+      if (res.value.isError) return { ok: false, error: classifyEventErrorText(res.value.text) };
+      return projectUpdatedEvent(res.value.text, args.eventId, args.timeZone);
+    },
+
+    // [v4 T6] the app's ONLY delete-event: refused here unless source is 'manual' (and again by McpHost.callerFor).
+    async deleteManualEvent(args) {
+      if (args === null || typeof args !== 'object' || args.source !== 'manual')
+        return { ok: false, error: 'invalid_args' };
+      if (!isStr(args.calendarId) || !CALENDAR_ID_RE.test(args.calendarId)) return { ok: false, error: 'invalid_args' };
+      if (!isStr(args.eventId) || !EVENT_ID_RE.test(args.eventId)) return { ok: false, error: 'invalid_args' };
+      const res = await call(
+        'delete-event',
+        { calendarId: args.calendarId, eventId: args.eventId, account: 'personal', sendUpdates: 'none' },
+        undefined,
+        { source: 'manual' },
+      );
+      if (!res.ok) return res;
+      return projectDeletedEvent(res.value.text, res.value.isError, args.eventId);
+    },
+
     async createEvent(args) {
       const out: Record<string, unknown> = {
         calendarId: args.calendarId,

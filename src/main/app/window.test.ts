@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { BrowserWindow, Menu, resetElectronMock } from '../../../tests/mocks/electron';
 import {
   APP_URL,
+  applyNativeTheme,
   buildWebPreferences,
   createMainWindow,
   createRendererRecovery,
@@ -19,6 +20,7 @@ import {
   REBUILD_WINDOW_MS,
   runQuitSequence,
   WINDOW_BOUNDS,
+  windowBackground,
   type QuitDeps,
   type RendererRecoveryDeps,
 } from './window';
@@ -498,5 +500,48 @@ describe('runQuitSequence', () => {
     const h = setup();
     await runQuitSequence(h.deps);
     expect(h.order[0]).toBe('setQuitting');
+  });
+});
+
+// [V4] T-908 T1 (spec v4-calendar-handover 2.3): general.theme drives nativeTheme.themeSource so native dialogs, scrollbars and the
+// renderer's prefers-color-scheme follow the choice; the window paints the matching canvas colour before the first frame.
+describe('[v4] applyNativeTheme / windowBackground', () => {
+  const fakeTheme = (themeSource: 'system' | 'light' | 'dark' = 'system') => ({
+    themeSource,
+    shouldUseDarkColors: false,
+  });
+  const spyLog = () => {
+    const info = vi.fn();
+    const l = { info, warn: vi.fn(), error: vi.fn(), debug: vi.fn(), child: () => l } as unknown as Logger;
+    return { l, info };
+  };
+
+  it.each(['system', 'light', 'dark'] as const)('sets themeSource to %s and logs ui.theme', (theme) => {
+    const target = fakeTheme(theme === 'system' ? 'dark' : 'system');
+    const { l, info } = spyLog();
+    expect(applyNativeTheme(target, theme, l)).toBe(true);
+    expect(target.themeSource).toBe(theme);
+    expect(info).toHaveBeenCalledExactlyOnceWith('ui.theme', { theme });
+  });
+
+  it('is a no-op (no write, no log) when the source already matches', () => {
+    const target = fakeTheme('dark');
+    const { l, info } = spyLog();
+    expect(applyNativeTheme(target, 'dark', l)).toBe(false);
+    expect(info).not.toHaveBeenCalled();
+  });
+
+  it('tolerates an absent nativeTheme (harness / tests)', () => {
+    const { l } = spyLog();
+    expect(applyNativeTheme(undefined, 'dark', l)).toBe(false);
+  });
+
+  it('the window background is the canvas token of the resolved scheme', () => {
+    expect(windowBackground(true)).toBe('#12151e');
+    expect(windowBackground(false)).toBe('#eef0f5');
+    const dark = asMock(createMainWindow({ ...deps, dark: true }));
+    expect(dark.options.backgroundColor).toBe('#12151e');
+    const light = asMock(createMainWindow(deps));
+    expect(light.options.backgroundColor).toBe('#eef0f5');
   });
 });

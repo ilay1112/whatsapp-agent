@@ -18,12 +18,25 @@ import { createDataHandlers } from './handlers/data';
 import { createAutoHandlers } from './handlers/auto';
 import { createCliHandlers } from './handlers/cli';
 import { createVoiceHandlers } from './handlers/voice';
+import { createDashboardHandlers, type RefreshService } from './handlers/dashboard';
+import { createCalendarHandlers } from './handlers/calendar';
+import type { CalendarEventsService } from '../mcp/calendarEvents';
+import type { ManualProposals } from '../exec/manualEvents';
+import type { ActionExecutorV2 } from '../exec/actionExecutor';
 
 /** What HandlerDepsV2 (frozen by W0) does not carry but the v1 handler files' v2 channels need. */
 export interface IpcHandlersExtV2 {
   autoDialog: SettingsHandlersV2['autoDialog'];
   dialogParent: SettingsHandlersV2['dialogParent'];
   listAgyModels: LlmHandlersV2['listAgyModels'];
+  /** [v4 T3] dashboard:refreshNow; absent => the channel fails closed (INTERNAL). */
+  refresh?: RefreshService;
+  /** [v4 T4] calendar:listEvents / calendar:invalidate; absent => listEvents fails closed (CAL_UNAVAILABLE). */
+  calendarEvents?: CalendarEventsService;
+  /** [v4 T6] calendar:propose*; absent => fail closed (CAL_UNAVAILABLE). */
+  manualProposals?: ManualProposals;
+  /** [v4 T6] action:undo (ActionExecutor.undoManual); absent => fail closed (INTERNAL). */
+  undoManual?: ActionExecutorV2['undoManual'];
 }
 
 /** Assembles all 13 handler groups; throws when the union is not exactly IPC_CHANNELS. */
@@ -43,6 +56,12 @@ export function createIpcHandlers(deps: HandlerDepsV2, ext: IpcHandlersExtV2): I
     createAutoHandlers(deps),
     createCliHandlers(deps),
     createVoiceHandlers(deps),
+    createDashboardHandlers(ext.refresh, deps.log), // [v4 T3]
+    createCalendarHandlers({
+      calendarEvents: ext.calendarEvents, // [v4 T4]
+      proposals: ext.manualProposals, // [v4 T6]
+      undoManual: ext.undoManual,
+    }),
   ];
   return mergeHandlerGroups(groups);
 }

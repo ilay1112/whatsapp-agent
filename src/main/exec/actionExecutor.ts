@@ -45,6 +45,7 @@ import {
   viewOf,
 } from './eventContent';
 import { parseCalendarRolesJson } from '../mcp/adminClient';
+import { createManualExecutor } from './manualEvents';
 import type {
   Result,
   ActionId,
@@ -172,6 +173,11 @@ export interface ActionExecutorV2 extends ActionExecutor {
   /** [F32] "Cancel event" (after blocked_started, or from the in-calendar card): new proposal version + pending update_event
    *  {change:'cancel', from: current, to: {...current, status:'cancelled'}} approved at once with 'user' through the approve() gates. */
   cancelEvent(itemId: ItemId, ctx: IpcContext): Promise<Result<ApproveOutcome>>;
+  /** [v4 T6] action:undo of an executed MANUAL (calendar-view) action: builds its undo action (delete / PATCH back / recreate from the
+   *  event_revisions snapshot) and approves it at once with 'user' through the same manual gates. A second undo => ACTION_STALE. */
+  undoManual(actionId: ActionId, ctx: IpcContext): Promise<Result<ApproveOutcome>>;
+  /** [v4 T6] The manual action whose undo the popover offers for this event ("Undo last change"), or null. Main only. */
+  manualUndoableFor(eventId: string): ActionId | null;
 }
 
 /** [V2-W1-04] What `createActionExecutor` accepts: the frozen v1 deps (every v1 caller keeps compiling) plus the C2 14 v2 deps, each
@@ -401,6 +407,21 @@ export function createActionExecutor(deps: ActionExecutorInput): ActionExecutorH
     const lang = isUiLang(setting) ? setting : 'en';
     return FLAT_LOCALES[lang]['calendar.eventDescription'] ?? '';
   };
+
+  /** [v4 T6] The side effect of MANUAL (calendar-view) actions. It gets this module's write client and is reached only from
+   *  approveAs (action:approve) and undoManual (action:undo) below - never from tryAuto, the chat paths or reconcile. */
+  const manualExec = createManualExecutor({
+    repos,
+    write: deps.write,
+    read: deps.read,
+    roles: calendarRoles,
+    calendarConnected: deps.calendarConnected,
+    updateSurfaceAvailable,
+    now: deps.now,
+    rate,
+    descriptionTemplate,
+    randomUuid,
+  });
 
   /** A CAS miss on a final-state transition is a programming error: audited as 'db_recovery', never silently ignored. */
   const auditedTransition = (ref: ActionId, fn: () => void): void => {
@@ -887,12 +908,12 @@ export function createActionExecutor(deps: ActionExecutorInput): ActionExecutorH
         case 'precondition': {
           // C2 14 step 8 / concern 12: the 412 arrives AFTER the write-ahead, so the action cannot stay pending: failed ACTION_STALE +
           // a pending clone, and the outcome asks the drift question about the clone (confirmDrift is honoured for it).
-          const outcome = markFailure(a, p, 'ACTION_STALE');
+          markFailure(a, p, 'ACTION_STALE');
           const clone = repos.actions.forItem(a.itemId).find((x) => x.retryOf === a.id && x.state === 'pending');
           if (clone !== undefined) driftShown.add(clone.id);
           const fresh = await getEvent(p.targetEventId);
           const current = viewOf(fresh.ok ? contentOfProjection(fresh.value) : p.from);
-          return { outcome: 'needs_confirm_drift', current, item: outcome.item };
+          return { outcome: 'needs_confirm_drift', current, item: detailOf(a.itemId) };
         }
         case 'timeout':
           return markUnknown(a, p);
@@ -1137,6 +1158,11 @@ export function createActionExecutor(deps: ActionExecutorInput): ActionExecutorH
       ) {
         return fail('WINDOW_NOT_FOCUSED');
       }
+
+      // [v4 T6] a MANUAL action (source 'manual': no item, no chat) has its own gates and side effect; the chat lookup below never
+      // returns one (repos filter source = 'chat'), and a chat action never reaches the manual path (it is not a manual row).
+      const manual = repos.actions.manualById(req.actionId);
+      if (manual !== null) return await manualExec.approve(manual, req, by);
 
       const a = repos.actions.byId(req.actionId);
       if (a === null || a.kind !== req.kind) return fail('ACTION_STALE');
@@ -1895,9 +1921,31 @@ export function createActionExecutor(deps: ActionExecutorInput): ActionExecutorH
     restoreOriginal,
     cancelEvent,
 
+    // [v4 T6] same in-flight + focus-steal guards as approve; the undo itself is approved inside with 'user'
+    async undoManual(actionId, ctx) {
+      if (inFlight.has(actionId)) return fail('ACTION_STALE');
+      inFlight.add(actionId);
+      try {
+        if (ctx.shownByNotificationAt !== null && ctx.shownByNotificationAt + LIMITS.focusGuardMainMs > deps.now())
+          return fail('WINDOW_NOT_FOCUSED');
+        return await manualExec.undo(actionId);
+      } finally {
+        inFlight.delete(actionId);
+      }
+    },
+    manualUndoableFor: (eventId) => manualExec.undoableFor(eventId),
+
     async reject(actionId) {
       const a = repos.actions.byId(actionId);
-      if (a === null) return fail('ACTION_STALE');
+      if (a === null) {
+        // [v4 review fix] a MANUAL proposal (calendar view, Cancel on cal-confirm): only the pending row closes - no item, no
+        // chat, nothing to decline; the chat paths below never see it.
+        const manual = repos.actions.manualById(actionId);
+        if (manual === null || manual.state !== 'pending') return fail('ACTION_STALE');
+        repos.actions.markRejected(actionId);
+        repos.audit.append('action_rejected', actionId, { kind: manual.kind, attempt: 1 }, deps.now());
+        return { ok: true, value: null };
+      }
       if (a.state !== 'pending') return fail('ACTION_STALE');
       const now = deps.now();
       // [V2, F32 - V2-W2-01 fix-up] a rejected update_event ("Keep 15:00") sets the delta item's event_state = 'declined' in the SAME
@@ -1931,6 +1979,7 @@ export function createActionExecutor(deps: ActionExecutorInput): ActionExecutorH
       }
       // [V2] an automatic write interrupted by a crash pauses the policy (circuit_breaker_unknown, B7).
       if (autoCrashed) pauseLivePolicy('circuit_breaker_unknown');
+      manualExec.recover(); // [v4 T6] manual executing -> unknown_outcome, never re-executed
       repos.actions.expireOverdue(now);
       // The bridge store is not reachable from here (no bridgeDb in the frozen deps), so this pass resolves calendar actions only;
       // compose.ts runs `reconcileUnknown` again with the bridge DB once the store is open (REQUESTS in the notes file).

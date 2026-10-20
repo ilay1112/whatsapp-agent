@@ -349,6 +349,15 @@ export interface Repos {
     expireOverdue(now: T.EpochMs): number;
     executing(): T.ApprovalAction[]; // startup recovery
     chainRoot(id: T.ActionId): T.ApprovalAction; // [R2] follows retry_of to attempt 1
+    // ---- [v4 T6] manual (calendar-view) rows - the chat members above never return them (source = 'chat' filters) ----
+    insertManualPending(p: {
+      payload: import('../../shared/schemas').ManualActionPayload;
+      now: T.EpochMs;
+    }): T.ManualAction;
+    manualById(id: T.ActionId): T.ManualAction | null;
+    manualExecuting(): T.ManualAction[];
+    supersedePendingManual(now: T.EpochMs): number;
+    manualUndosOf(actionId: T.ActionId): T.ManualAction[];
   };
   queue: {
     enqueue(chatId: T.ChatRef, now: T.EpochMs): void; // due = min(now + 20 s, first_enqueued_at + 60 s)
@@ -390,6 +399,21 @@ export interface Repos {
      *  oldest first ("Restore original" restores the first one's prev). */
     unrevertedAutoSpan(calendarEventId: string): T.EventRevisionRecord[];
     markReverted(id: number, byRevisionId: number): void; // UPDATE ... SET reverted_by WHERE reverted_by IS NULL
+    // ---- [v4 T6] manual rows (item_id NULL); the chat members above never return them ----
+    insertManual(r: {
+      calendarEventId: string;
+      kind: T.ManualRevisionKind;
+      prev: T.EventContentWithStatus | null;
+      next: T.EventContentWithStatus | null;
+      actionId: T.ActionId;
+      appliedAt: T.EpochMs;
+    }): T.ManualRevisionRecord;
+    manualById(id: number): T.ManualRevisionRecord | null;
+    manualForAction(actionId: T.ActionId): T.ManualRevisionRecord | null;
+    recordManualOutcome(
+      id: number,
+      o: { next: T.EventContentWithStatus | null; postEtag: string | null; postUpdated: string | null },
+    ): void;
   };
   autoPolicies: {
     /** The live row (shadow|on|paused), scope re-validated with AutoScopeSchema.parse (a bad row => treated as none + audit db_recovery). */

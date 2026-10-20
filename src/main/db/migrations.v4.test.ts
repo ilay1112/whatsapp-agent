@@ -39,7 +39,7 @@ describe('bundled SQLite', () => {
 describe("openDb(':memory:') is a v4 database", () => {
   it('is at SCHEMA_VERSION (v4, then v5) with every migration recorded', () => {
     const db = track(openDb(MEMORY_DB));
-    expect(SCHEMA_VERSION).toBe(5); // [v2-closeout auto-mode-8] v5 auto_policy_paused_from follows v4
+    expect(SCHEMA_VERSION).toBe(6); // [v2-closeout auto-mode-8] v5 auto_policy_paused_from follows v4 ; [v4 T6] v6 manual_events
     expect(db.userVersion()).toBe(SCHEMA_VERSION);
     expect(
       db

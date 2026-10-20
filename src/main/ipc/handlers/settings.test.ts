@@ -150,3 +150,31 @@ describe('calendarIdsIn', () => {
     ]);
   });
 });
+
+// [V4] T-908 T1 (spec v4-calendar-handover 2.3): general.theme is an ordinary settings:set member. The handler only writes it;
+// nativeTheme.themeSource is set by compose.ts's SettingsBus.onChange subscription (applyNativeTheme in app/window.ts), the same
+// wiring contract as language / tray / autostart above.
+describe('[v4] settings:set general.theme', () => {
+  it.each(['system', 'light', 'dark'] as const)(
+    'stores %s without a Google round trip and audits the group only',
+    async (theme) => {
+      const f = makeFixture();
+      let listed = 0;
+      f.deps.googleAuth.listCalendars = async () => {
+        listed += 1;
+        return { ok: true, value: CALENDARS };
+      };
+      const res = await createSettingsHandlers(f.deps)['settings:set']({ general: { theme } }, CTX);
+      expect(res.ok && res.value.general.theme).toBe(theme);
+      expect(f.state.settings.general.theme).toBe(theme);
+      expect(listed).toBe(0);
+      expect(f.rec.audits).toEqual([
+        { kind: 'settings_changed', ref: null, detail: { groups: 'general' }, now: NOW_0 },
+      ]);
+    },
+  );
+
+  it('the strict patch schema refuses any other value before the handler runs', () => {
+    expect(SettingsPatchSchema.safeParse({ general: { theme: 'sepia' } }).success).toBe(false);
+  });
+});

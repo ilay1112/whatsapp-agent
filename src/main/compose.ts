@@ -38,6 +38,8 @@ export interface ComposeDeps {
   version: string;
   execPath: string; // process.execPath (ELECTRON_RUN_AS_NODE child for the MCP server)
   preferredLanguages: () => string[];
+  /** [V4] T-908: electron's nativeTheme (index.ts); general.theme is mirrored into its themeSource. Absent in the harness. */
+  nativeTheme?: NativeThemeLike;
   // ---- [V2 ADD] v2-build-plan section 3 seam (V2-W0-scaffold; V2-W2-01 wires them). [W0 refinement] optional so index.ts and the v1
   //      harness keep compiling; `seams` above carries the v2 Seams fields (testSeams.ts readSeams v2).
   image?: import('./deps').ImageFacade; // S-IMAGE: the real nativeImage facade (built in index.ts, the only electron importer besides app/**)
@@ -142,7 +144,10 @@ import { createBridgeSendClient } from './bridge/sendClient';
 import { runMediaJanitor } from './bridge/janitor';
 
 import { createMcpHost, mcpStatusToErrorCode, type McpHostWithChildSpec } from './mcp/host';
-import { createMcpReadClient } from './mcp/readClient';
+import { createMcpCalendarListClient, createMcpReadClient } from './mcp/readClient';
+import { createCalendarEventsService } from './mcp/calendarEvents'; // [v4 T4]
+import { createCalendarHandlers } from './ipc/handlers/calendar'; // [v4 T4]
+import { createManualProposals } from './exec/manualEvents'; // [v4 T6] calendar:propose* (pending only, no write client)
 import { createMcpWriteClient } from './mcp/writeClient';
 import { createMcpAdminClient } from './mcp/adminClient';
 import { createGoogleAuth, type GoogleAuthDeps, type GoogleAuthService } from './mcp/googleAuth';
@@ -176,7 +181,13 @@ import { reconcileUnknown } from './exec/reconcile';
 import { createNotifier, type Notifier } from './app/notifications';
 import { createMainI18n } from './app/i18n';
 import { applyAutostart } from './app/autostart';
-import { runQuitSequence, QUIT_CHILD_GRACE_MS, QUIT_DRAIN_MS } from './app/window';
+import {
+  applyNativeTheme,
+  runQuitSequence,
+  QUIT_CHILD_GRACE_MS,
+  QUIT_DRAIN_MS,
+  type NativeThemeLike,
+} from './app/window';
 import { buildTrayTemplate, trayIconFor, type TFn, type TrayState } from './app/tray';
 
 import { createAppHandlers } from './ipc/handlers/app';
@@ -194,6 +205,7 @@ import { mergeHandlerGroups } from './ipc/register.handlers';
 import { createAutoHandlers } from './ipc/handlers/auto';
 import { createCliHandlers, createOpenVisibleConsole } from './ipc/handlers/cli';
 import { createVoiceHandlers } from './ipc/handlers/voice';
+import { createDashboardHandlers, createRefreshService } from './ipc/handlers/dashboard';
 import { createWaReadClient } from './bridge/waReadClient';
 import { isTrustedSender, type IpcEventLike } from './ipc/sender';
 
@@ -644,6 +656,8 @@ export async function compose(deps: ComposeDeps): Promise<AppRuntimeHandle> {
     if (tz !== current) settingsBus.setInternal((s) => (s.general.timeZone = tz));
   };
   syncTimeZone();
+  // [V4] T-908: native dialogs, scrollbars and the renderer's prefers-color-scheme follow general.theme from the first frame.
+  applyNativeTheme(deps.nativeTheme, settings().general.theme, log);
 
   // ---------------------------------------------------------------------------------------------------------------
   // 4. i18n (main) + language
@@ -974,6 +988,21 @@ export async function compose(deps: ComposeDeps): Promise<AppRuntimeHandle> {
   googleAuth.onChange((s) => emit('google', s));
   const calendarRoles = (): ReturnType<typeof parseCalendarRolesJson> =>
     parseCalendarRolesJson(repos.meta.get('calendar_roles_json'));
+  // [v4 T4] the calendar view's read of every calendar (handover §2.4). Its own list facade over the narrowed READ caller: the
+  // model's McpReadClient / ToolGate gain nothing (I2'). In-memory cache only (decision 1), emptied by calendar:invalidate,
+  // dashboard:refreshNow and every executed calendar write that goes through an IPC door (see `handlers` below).
+  /** [v4 T6] late-bound: the executor is built in section 13; until then no event offers an undo. */
+  let manualUndoableFor: (eventId: string) => string | null = () => null;
+  const calendarEvents = createCalendarEventsService({
+    list: createMcpCalendarListClient(mcpHost.callerFor('read')),
+    roles: calendarRoles,
+    timeZone: () => settings().general.timeZone,
+    lang: () => uiLanguage().lang,
+    connected: calendarConnected,
+    clock,
+    log,
+    undoableFor: (eventId) => manualUndoableFor(eventId),
+  });
 
   // ---------------------------------------------------------------------------------------------------------------
   // 11. LLM: model manager -> lazy llama runtime -> provider factory
@@ -1684,6 +1713,20 @@ export async function compose(deps: ComposeDeps): Promise<AppRuntimeHandle> {
     featureGates: (p) => FEATURE_GATES[p],
     calendarRoles,
   });
+  manualUndoableFor = (eventId) => executor.manualUndoableFor(eventId); // [v4 T6]
+  // [v4 T6] calendar:propose*: pending source:'manual' actions only. Its deps carry NO write client (I1'); the event id is resolved
+  // from the calendar view's week cache (no Google id crosses IPC, ARCH-v2 10).
+  const manualProposals = createManualProposals({
+    repos,
+    read: mcpRead,
+    resolve: (calendarId, eventKey) => calendarEvents.resolve(calendarId, eventKey),
+    roles: calendarRoles,
+    timeZone: () => settings().general.timeZone,
+    calendarConnected,
+    now,
+    audit: (kind, ref, detail) => audit(kind, ref, detail, now()),
+    randomUuid: () => randomUuidOf(random.bytes(16)),
+  });
 
   // ---- [V2] automatic mode: the main-owned native dialog (S-DIALOG / WCA_DIALOG_SCRIPT), the policy service, undo ----
   const showMessageBox: ShowMessageBoxFn =
@@ -2086,6 +2129,28 @@ export async function compose(deps: ComposeDeps): Promise<AppRuntimeHandle> {
     createAutoHandlers(handlerDepsV2, { dialogParent }),
     cliHandlers,
     createVoiceHandlers(handlerDepsV2),
+    // [v4 T3] dashboard:refreshNow: one ingest scan + re-queue of the chats active in the last 24 h + calendar cache invalidation.
+    createDashboardHandlers(
+      createRefreshService({
+        ingest,
+        repos,
+        items,
+        queue: theQueue,
+        clock,
+        log,
+        audit,
+        notifyChanged,
+        invalidateCalendar: () => calendarEvents.invalidate(), // [v4 T4]
+      }),
+      log,
+    ),
+    // [v4 T4] calendar:listEvents / calendar:invalidate ; [v4 T6] calendar:propose* (pending only) + action:undo (manual)
+    createCalendarHandlers({
+      calendarEvents,
+      proposals: manualProposals,
+      undoManual: (actionId, ctx) => executor.undoManual(actionId, ctx),
+      audit: (channel) => audit('ipc_rejected', null, { channel, reason: 'window_not_focused' }, now()),
+    }),
   ]);
 
   /**
@@ -2123,6 +2188,51 @@ export async function compose(deps: ComposeDeps): Promise<AppRuntimeHandle> {
       }
       return res;
     },
+    // [v4 T4] every IPC door that can write a calendar event empties the calendar view's read cache afterwards (whatever the
+    // outcome: an unknown outcome may still have written). Automatic writes are not an IPC door; their staleness is bounded by
+    // the 5 min TTL and the Refresh buttons.
+    'action:approve': async (req, ctx) => {
+      try {
+        return await baseHandlers['action:approve'](req, ctx);
+      } finally {
+        if (req.kind !== 'send_reply') calendarEvents.invalidate();
+      }
+    },
+    'item:undoChange': async (req, ctx) => {
+      try {
+        return await baseHandlers['item:undoChange'](req, ctx);
+      } finally {
+        calendarEvents.invalidate();
+      }
+    },
+    'item:restoreOriginal': async (req, ctx) => {
+      try {
+        return await baseHandlers['item:restoreOriginal'](req, ctx);
+      } finally {
+        calendarEvents.invalidate();
+      }
+    },
+    'item:cancelEvent': async (req, ctx) => {
+      try {
+        return await baseHandlers['item:cancelEvent'](req, ctx);
+      } finally {
+        calendarEvents.invalidate();
+      }
+    },
+    'auto:undo': async (req, ctx) => {
+      try {
+        return await baseHandlers['auto:undo'](req, ctx);
+      } finally {
+        calendarEvents.invalidate();
+      }
+    },
+    'action:undo': async (req, ctx) => {
+      try {
+        return await baseHandlers['action:undo'](req, ctx);
+      } finally {
+        calendarEvents.invalidate(); // [v4 T6]
+      }
+    },
   };
 
   // ---------------------------------------------------------------------------------------------------------------
@@ -2133,6 +2243,7 @@ export async function compose(deps: ComposeDeps): Promise<AppRuntimeHandle> {
   settingsBus.onChange((s) => {
     applyLanguage();
     applyAutostart({ electron, enabled: s.general.autostart, isPackaged });
+    applyNativeTheme(deps.nativeTheme, s.general.theme, log); // [V4] no-op unless the theme changed
     if (s.agent.paused !== lastPaused) {
       lastPaused = s.agent.paused;
       healthHub.setPaused(s.agent.paused);

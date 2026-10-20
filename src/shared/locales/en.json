@@ -589,6 +589,11 @@
       "title": "{{cli}} did not accept the chosen model",
       "body": "{{cli}} refused the selected model with the settings the app uses. Choose another model, then run a test.",
       "action": "Choose another model"
+    },
+    "CAL_EVENT_FOREIGN_PROTECTED": {
+      "title": "This event is protected",
+      "body": "It has other attendees or repeats; change it in Google Calendar.",
+      "action": "Open in Google Calendar"
     }
   },
   "event": {
@@ -966,6 +971,11 @@
     "he": "עברית",
     "label": "Language"
   },
+  "theme": {
+    "system": "System",
+    "light": "Light",
+    "dark": "Dark"
+  },
   "list": {
     "analysing_one": "Analysing {{count}} chat...",
     "analysing_other": "Analysing {{count}} chats...",
@@ -1245,6 +1255,7 @@
         "system": "Windows language"
       },
       "languageLabel": "Language",
+      "themeLabel": "Appearance",
       "notif": {
         "generic": "On",
         "off": "Off"
@@ -1725,7 +1736,8 @@
       "undo_unavailable": "changes to events are unavailable, so it could not be undone",
       "content_rejected": "the title or place contains a link, a number or unusual characters",
       "cross_chat_rows": "the AI read messages from other chats",
-      "multiple_events": "this chat has more than one event"
+      "multiple_events": "this chat has more than one event",
+      "manual_only": "you made this change yourself in the calendar view"
     },
     "dialog": {
       "title": "Turn on automatic mode?",
@@ -1932,14 +1944,53 @@
     "prev": "Previous week",
     "next": "Next week",
     "today": "Today",
-    "scopeNote": "Shows the chats this app analysed, not your whole Google calendar.",
+    "scopeNote": "Shows every calendar you ticked; events from other calendars can be changed here only if they have no other attendees and do not repeat.",
     "gotIt": "Got it",
     "empty": "Nothing this week",
-    "undated": "No date yet"
+    "undated": "No date yet",
+    "picker": "Calendars",
+    "refresh": "Refresh events",
+    "failedFor": "Could not load {{name}}",
+    "readOnlyCalendar": "Read-only calendar",
+    "refusedAttendees": "Has other attendees — not changed from here",
+    "refusedRecurring": "Repeating event — not changed from here",
+    "newEvent": "New event",
+    "edit": "Edit",
+    "move": "Move",
+    "delete": "Delete",
+    "undoLast": "Undo last change",
+    "confirmCreate": "Add to {{calendar}}?",
+    "confirmEdit": "Change this event?",
+    "confirmDelete": "Delete this event?",
+    "refusedFromChat": "Added from a chat — change it from its card",
+    "refusedAllDay": "All-day event — change it in Google Calendar",
+    "confirm": "Confirm",
+    "save": "Continue",
+    "fieldCalendar": "Calendar",
+    "fieldTitle": "Title",
+    "fieldDate": "Date",
+    "fieldStart": "Starts",
+    "fieldEnd": "Ends",
+    "fieldLocation": "Place",
+    "before": "Now",
+    "after": "New",
+    "invalidTime": "The end must be after the start (5 minutes to 12 hours).",
+    "invalidTitle": "Enter a title.",
+    "doneCreate": "Event added",
+    "doneEdit": "Event changed",
+    "doneDelete": "Event deleted",
+    "doneUndo": "Change undone",
+    "undoUnavailable": "This change can no longer be undone"
   },
   "view": {
     "cards": "Cards",
     "calendar": "Calendar"
+  },
+  "refresh": {
+    "now": "Refresh",
+    "running": "Refreshing…",
+    "done": "{{newRows}} new messages, {{queued}} chats queued, {{skipped}} skipped, {{nothing}} unchanged",
+    "cooldown": "Just refreshed — try again in a moment"
   },
   "filter": {
     "showAll": "Show all ({{count}} hidden)",

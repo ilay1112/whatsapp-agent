@@ -12,6 +12,8 @@ export interface MainWindowDeps {
   log: Logger;
   /** `render-process-gone`: main state is intact, so the owner (compose.ts) just builds a new window (ARCHITECTURE 14). */
   onRenderProcessGone?: (reason: string) => void;
+  /** [V4] T-908: the resolved colour scheme (nativeTheme.shouldUseDarkColors) - the window paints that canvas before the first frame. */
+  dark?: boolean;
 }
 
 /** The autostart entry launches us with `--hidden` (electron-stack 5.5); `wasOpenedAtLogin` is macOS-only. */
@@ -86,6 +88,7 @@ export function createMainWindow(deps: MainWindowDeps): BrowserWindow {
     ...WINDOW_BOUNDS,
     show: false,
     autoHideMenuBar: true,
+    backgroundColor: windowBackground(deps.dark === true),
     webPreferences: buildWebPreferences(deps),
   });
   hardenWebContents(win, deps.log);
@@ -290,4 +293,32 @@ export async function runQuitSequence(deps: QuitDeps): Promise<void> {
   const outcome = await Promise.race([sequence, timeout]);
   if (timer !== undefined) globalThis.clearTimeout(timer);
   exitOnce(outcome);
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
+// [V4] T-908 theme (spec v4-calendar-handover 2.3)
+// ---------------------------------------------------------------------------------------------------------------------
+
+export type ThemeSource = 'system' | 'light' | 'dark';
+/** The slice of electron's `nativeTheme` main uses; compose.ts receives it from index.ts (tests pass a plain object). */
+export interface NativeThemeLike {
+  themeSource: ThemeSource;
+  readonly shouldUseDarkColors: boolean;
+}
+
+/** The `--color-canvas` token of styles.css for each scheme: the window background before the renderer paints. */
+const CANVAS = { light: '#eef0f5', dark: '#12151e' } as const;
+export function windowBackground(dark: boolean): string {
+  return dark ? CANVAS.dark : CANVAS.light;
+}
+
+/**
+ * Mirrors `general.theme` into `nativeTheme.themeSource`, so native dialogs, scrollbars and the renderer's
+ * `prefers-color-scheme` follow the user's choice. Returns true when it changed something (logged as `ui.theme`).
+ */
+export function applyNativeTheme(target: NativeThemeLike | undefined, theme: ThemeSource, log: Logger): boolean {
+  if (target === undefined || target.themeSource === theme) return false;
+  target.themeSource = theme;
+  log.info('ui.theme', { theme });
+  return true;
 }

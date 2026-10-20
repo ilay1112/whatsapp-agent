@@ -42,6 +42,7 @@ import { AutoStrip } from '../components/AutoStrip';
 import { ItemList } from '../components/ItemList';
 import { ItemCard } from '../components/ItemCard';
 import { CalendarWeek } from '../components/CalendarWeek';
+import { RefreshButton } from '../components/RefreshButton';
 import { CloseIcon, UndoDismissDrawer, useDialogChrome } from '../components/UndoDismissDrawer';
 import './dashboard.css';
 
@@ -321,7 +322,7 @@ export function Dashboard() {
       aria-label={t('app.mainRegion')}
       data-testid="dashboard"
       data-layout={wide ? 'wide' : 'narrow'}
-      className="flex min-h-0 grow flex-col gap-2 p-4"
+      className="flex min-h-0 grow flex-col gap-2 overflow-y-auto px-4 pb-4"
       onKeyDown={onMainKeyDown}
     >
       <h1 className="sr-only">{t('app.dashboard')}</h1>
@@ -346,7 +347,12 @@ export function Dashboard() {
 
       {/* [V3] ux.md 6.11: schedule-only filter + view switch. The filter button is absent only when it is on and has
           nothing to reveal; while it is off it stays so the user can switch back. */}
-      <div className="flex flex-wrap items-center justify-end gap-2" data-testid="dash-toolbar">
+      <div
+        className="sticky inset-bs-0 z-10 flex flex-wrap items-center justify-end gap-2 bg-canvas pt-4"
+        data-testid="dash-toolbar"
+      >
+        {/* [v4 T3] Refresh: scan + re-queue recent chats + calendar invalidate (main-side cooldown); never sends or writes. */}
+        <RefreshButton />
         {!scheduleOnly || hidden > 0 ? (
           <button
             type="button"

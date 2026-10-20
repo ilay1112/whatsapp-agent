@@ -207,9 +207,11 @@ describe('createMcpWriteClient.updateEvent', () => {
     ).resolves.toEqual({ ok: false, error: 'bad_response' });
   });
 
-  it('the write facade still has no delete, no read and no admin method', () => {
+  it('the write facade has no generic delete, no read and no admin method ([v4 T6] only deleteManualEvent)', () => {
     const client = createMcpWriteClient(caller(okText('{}')).call);
-    expect(Object.keys(client)).toEqual(['createEvent', 'updateEvent']);
+    expect(Object.keys(client).sort()).toEqual(
+      ['createEvent', 'createManualEvent', 'deleteManualEvent', 'updateEvent', 'updateManualEvent'].sort(),
+    );
     for (const forbidden of ['deleteEvent', 'getEvent', 'listCalendars', 'call', 'caller'])
       expect(client).not.toHaveProperty(forbidden);
   });

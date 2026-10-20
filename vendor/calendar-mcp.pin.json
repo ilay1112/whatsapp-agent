@@ -8,6 +8,7 @@
   "insertions": 7,
   "enabledTools": [
     "create-event",
+    "delete-event",
     "get-current-time",
     "get-event",
     "get-freebusy",
@@ -16,5 +17,5 @@
     "manage-accounts",
     "update-event"
   ],
-  "enabledToolsSha256": "424f60c523c471df757136df0e6853ec1c3ad64cc9c3c66f3f33835113bd4d2d"
+  "enabledToolsSha256": "c15217d01e44c02879e463edaa28288c2cd3453b26c5cae44fa558111a2cb350"
 }

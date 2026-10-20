@@ -8,6 +8,7 @@ import {
   SETTINGS_V2_ADDED,
   SettingsPatchSchema,
   SettingsSchema,
+  THEMES,
   type Settings,
 } from './settings';
 
@@ -89,5 +90,40 @@ describe('SETTINGS_V2_ADDED (C2 19 item 14)', () => {
     expect(exe.safeParse('C:\\a&b\\claude.exe').success).toBe(false);
     expect(exe.safeParse('C:\\a\\..\\claude.exe').success).toBe(false);
     expect(exe.safeParse('"C:\\a\\claude.exe"').success).toBe(false);
+  });
+});
+
+// [V4] T-908 T1 (spec v4-calendar-handover 2.3): general.theme - 'system' by default, patchable through settings:set with exactly
+// the three values, and a row stored BEFORE the key existed still parses (the repo falls back to DEFAULT_SETTINGS on a parse
+// failure, which would silently drop every other choice the user made).
+describe('[v4] general.theme', () => {
+  it("defaults to 'system'", () => {
+    expect(DEFAULT_SETTINGS.general.theme).toBe('system');
+    expect(THEMES).toEqual(['system', 'light', 'dark']);
+  });
+
+  it.each(THEMES)('the patch schema accepts %s and applySettingsPatch stores it', (theme) => {
+    expect(SettingsPatchSchema.safeParse({ general: { theme } }).success).toBe(true);
+    expect(applySettingsPatch(DEFAULT_SETTINGS, { general: { theme } }).general.theme).toBe(theme);
+  });
+
+  it.each(['auto', 'Dark', '', null, 1])('the patch schema rejects %j', (theme) => {
+    expect(SettingsPatchSchema.safeParse({ general: { theme } }).success).toBe(false);
+  });
+
+  it("a stored row without the key parses as 'system' and keeps the user's other values", () => {
+    const stored = structuredClone(DEFAULT_SETTINGS) as Record<string, Record<string, unknown>>;
+    delete stored.general!.theme;
+    stored.general!.language = 'he';
+    const parsed = SettingsSchema.safeParse(stored);
+    expect(parsed.success).toBe(true);
+    expect(parsed.data?.general.theme).toBe('system');
+    expect(parsed.data?.general.language).toBe('he');
+  });
+
+  it('a stored row with an unknown theme does not parse', () => {
+    const stored = structuredClone(DEFAULT_SETTINGS) as Record<string, Record<string, unknown>>;
+    stored.general!.theme = 'sepia';
+    expect(SettingsSchema.safeParse(stored).success).toBe(false);
   });
 });

@@ -46,22 +46,22 @@ const errText = (text: string): McpResult<{ text: string; isError: boolean }> =>
 });
 
 describe('the frozen tool table', () => {
-  it('has exactly the eight enabled tools and matches ENABLED_TOOLS_ENV', () => {
+  it('has exactly the nine enabled tools and matches ENABLED_TOOLS_ENV', () => {
     expect(Object.keys(MCP_TOOLS).sort()).toEqual(ENABLED_TOOLS_ENV.split(',').slice().sort());
-    expect(Object.keys(MCP_TOOLS)).toHaveLength(8); // [V2] C2 11: + get-event, update-event
-    // Exactly one WRITE tool exists in the whole table.
+    expect(Object.keys(MCP_TOOLS)).toHaveLength(9); // [V2] C2 11: + get-event, update-event ; [v4 T6] + delete-event
+    // The WRITE tools of the whole table.
     expect(
       Object.entries(MCP_TOOLS)
         .filter(([, cls]) => cls === 'write')
         .map(([n]) => n),
-    ).toEqual(['create-event', 'update-event']); // [V2] C2 11
+    ).toEqual(['create-event', 'update-event', 'delete-event']); // [V2] C2 11 ; [v4 T6] delete-event (manual only)
   });
 
   it('narrows tool names by class at the type level', () => {
     expectTypeOf<McpToolNameOf<'read'>>().toEqualTypeOf<
       'get-current-time' | 'get-freebusy' | 'list-events' | 'get-event'
     >(); // [V2]
-    expectTypeOf<McpToolNameOf<'write'>>().toEqualTypeOf<'create-event' | 'update-event'>(); // [V2]
+    expectTypeOf<McpToolNameOf<'write'>>().toEqualTypeOf<'create-event' | 'update-event' | 'delete-event'>(); // [V2] [v4 T6]
     expectTypeOf<McpToolNameOf<'admin'>>().toEqualTypeOf<'list-calendars' | 'manage-accounts'>();
   });
 

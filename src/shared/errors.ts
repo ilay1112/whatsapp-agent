@@ -63,6 +63,7 @@ export const ERROR_CODES = [
   'CAL_EVENT_FOREIGN',
   'CAL_UPDATE_FAILED',
   'CAL_UPDATE_UNAVAILABLE',
+  'CAL_EVENT_FOREIGN_PROTECTED', // [v4 T6] I9': a manual change of an event with other attendees / a recurrence (or a chat card's event)
   // [V2 ADD] automatic mode (B7)
   'AUTO_NOT_CONFIRMED',
   'AUTO_CALENDAR_NOT_OWNED',
@@ -175,6 +176,7 @@ export const ERROR_ACTION: Record<ErrorCode, ErrorAction> = {
   CAL_EVENT_FOREIGN: 'none', // info line
   CAL_UPDATE_FAILED: 'try_again',
   CAL_UPDATE_UNAVAILABLE: 'export_diagnostics',
+  CAL_EVENT_FOREIGN_PROTECTED: 'none', // [v4 T6] info line (the popover already shows the reason)
   AUTO_NOT_CONFIRMED: 'none',
   AUTO_CALENDAR_NOT_OWNED: 'none',
   AUTO_NO_TRACK_RECORD: 'none',

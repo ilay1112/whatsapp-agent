@@ -18,7 +18,8 @@
 //      `action_approved` audit row) or by an automatic decision with an `auto_writes.pre_json`; its arguments are exactly
 //      `buildUpdateEventArgs(approved_final_json, pre-flight identity)`, the target calendar is the configured one and the target
 //      event is the source item's calendar event;
-//   4. [V2 rule 8] zero `delete-event` calls; [V2 rule 9] zero `update_on_foreign_event` violations and every `update-event` targets
+//   4. [V2 rule 8] zero `delete-event` calls ([v4 T6] except a manual one proven by rule 13: one click-approved source:manual
+//      action + its pre-write snapshot row per manual create / update / delete call); [V2 rule 9] zero `update_on_foreign_event` violations and every `update-event` targets
 //      an event an app `create-event` made in the SAME fake calendar with the same identity tags;
 //   5. [V2 rule 10] every `/api/media` request names a message; [V2 rule 11] every fake CLI / whisper journal entry is violation-free;
 //   6. every fake's `violations` list is empty;
@@ -30,6 +31,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { eventIdFor, type ApprovedEventContent } from '../../../src/main/exec/buildCreateEventArgs.ts';
 import { buildUpdateEventArgs } from '../../../src/main/exec/buildUpdateEventArgs.ts';
 import { UpdateEventPayloadSchema } from '../../../src/shared/schemas.ts';
+import { isManualCall, matchManualCall, type ManualRowLite } from '../../helpers/ledger.manual.ts';
 import type { Settings } from '../../../src/shared/settings.ts';
 
 export interface SendRecord {
@@ -372,6 +374,29 @@ function matchUpdateRow(
 }
 
 /** Throws with every problem it found; an empty return means the spec caused no unapproved side effect. */
+/** [v4 T6] source:'manual' rows (no chat: the chat join above never sees them); [] on a pre-v6 profile. */
+function readManualActions(appDb: string): ManualRowLite[] {
+  return withDb(appDb, [] as ManualRowLite[], (db) => {
+    const cols = new Set(
+      (db.prepare(`PRAGMA table_info(actions)`).all() as unknown as Array<{ name: string }>).map((c) => c.name),
+    );
+    if (!cols.has('source')) return [];
+    return db
+      .prepare(`SELECT id, kind, state, approved_by, approved_final_json, source FROM actions WHERE source = 'manual'`)
+      .all() as unknown as ManualRowLite[];
+  });
+}
+function manualSnapshotOf(appDb: string, actionId: string): boolean {
+  return withDb(appDb, false, (db) => {
+    const row = db
+      .prepare(
+        `SELECT COUNT(*) AS n FROM event_revisions WHERE action_id = ? AND item_id IS NULL AND prev_json IS NOT NULL`,
+      )
+      .get(actionId) as { n: number } | undefined;
+    return (row?.n ?? 0) > 0;
+  });
+}
+
 export function assertE2eLedger(src: LedgerSources): void {
   const problems: string[] = [];
   const appDb = join(src.userDataDir, 'app.db');
@@ -419,6 +444,7 @@ export function assertE2eLedger(src: LedgerSources): void {
     : src.createEvents;
   for (const ev of createCalls) {
     const args = ev.args;
+    if (isManualCall({ tool: 'create-event', args })) continue; // [v4 T6] rule 13 below
     for (const key of Object.keys(args))
       if (!CREATE_EVENT_KEYS.has(key)) problems.push(`create-event carried a non-whitelisted key: ${key}`);
     if (args.sendUpdates !== 'none') problems.push('create-event did not pin sendUpdates:none');
@@ -475,6 +501,7 @@ export function assertE2eLedger(src: LedgerSources): void {
   const usedByUpdate = new Set<string>();
   for (const call of src.calendarCalls ?? []) {
     if (call.tool !== 'update-event') continue;
+    if (isManualCall(call)) continue; // [v4 T6] rule 13 below
     const found = matchUpdateRow(appDb, actions, call.args, approvedAudit, call.at);
     if (typeof found === 'string') {
       problems.push(found);
@@ -484,16 +511,31 @@ export function assertE2eLedger(src: LedgerSources): void {
     usedByUpdate.add(found.id);
   }
 
-  // ---- 4. never delete (rule 8) / never foreign (rule 9), per fake calendar ----------------------------------------------
+  // ---- [v4 T6] 3b. manual calendar-view writes (rule 13): each proven by ONE click-approved manual action (+ snapshot) ----
+  const manualRows = readManualActions(appDb);
+  const proven = new Set<CalendarCallRecord>();
+  const usedManual = new Set<string>();
+  const approvedIds = new Set(approvedAudit.keys());
+  for (const call of src.calendarCalls ?? []) {
+    if (!isManualCall(call)) continue;
+    const problem = matchManualCall(call, manualRows, approvedIds, (id) => manualSnapshotOf(appDb, id), usedManual);
+    if (problem === null) proven.add(call);
+    else problems.push(problem);
+  }
+
+  // ---- 4. never delete (rule 8: [v4 T6] except a proven manual delete) / never foreign (rule 9), per fake calendar --------
   const bySource = new Map<string, CalendarCallRecord[]>();
   for (const c of src.calendarCalls ?? []) bySource.set(c.source, [...(bySource.get(c.source) ?? []), c]);
   for (const [source, calls] of bySource) {
-    const deletes = calls.filter((c) => c.tool === 'delete-event' || c.tool === 'delete_event').length;
+    const deletes = calls.filter(
+      (c) => (c.tool === 'delete-event' || c.tool === 'delete_event') && !proven.has(c),
+    ).length;
     if (deletes > 0) problems.push(`never-delete: ${deletes} delete-event call(s) reached calendar ${source} (rule 8)`);
     const created = new Map<string, Record<string, string>>();
     for (const c of calls) if (c.tool === 'create-event') created.set(String(c.args.eventId), privOf(c.args));
     for (const c of calls) {
       if (c.tool !== 'update-event') continue;
+      if (isManualCall(c)) continue; // [v4 T6] proven by rule 13; I9' kept by the fake's manual_write_on_protected_event
       const origin = created.get(String(c.args.eventId));
       if (origin === undefined) {
         problems.push(`never-foreign: update-event on an event no app create-event made in ${source} (rule 9)`);

@@ -55,7 +55,7 @@ export const MCP_BACKOFF_MS = [2_000, 10_000, 60_000] as const;
 export const MCP_BREAKER = { maxExits: 3, windowMs: 600_000 } as const;
 export const MCP_STABLE_AFTER_MS = 60_000;
 
-/** [V2 CHANGE] start() now verifies tools/list === the EIGHT names of MCP_TOOLS (else 'toolset_mismatch' - whole surface, v1 rule), readOnlyHint:true on
+/** [V2 CHANGE] start() now verifies tools/list === the NINE ([v4 T6]; v2: eight) names of MCP_TOOLS (else 'toolset_mismatch' - whole surface, v1 rule), readOnlyHint:true on
  *  these four, destructiveHint:true on update-event. */
 export const READ_ONLY_HINT_TOOLS: readonly McpToolName[] = [
   'get-current-time',
@@ -63,7 +63,7 @@ export const READ_ONLY_HINT_TOOLS: readonly McpToolName[] = [
   'list-events',
   'get-event',
 ];
-export const DESTRUCTIVE_HINT_TOOLS: readonly McpToolName[] = ['update-event'];
+export const DESTRUCTIVE_HINT_TOOLS: readonly McpToolName[] = ['update-event', 'delete-event']; // [v4 T6] + delete-event
 /** B4 narrow fail-closed guard, evaluated on the same tools/list: update-event.inputSchema.properties.status.enum must contain 'cancelled' AND
  *  properties.ifMatch must exist. Failure disables the UPDATE surface only (callerFor('write') refuses 'update-event' with 'unavailable' and the
  *  audit 'toolset_mismatch' {reason:'status_missing'|'ifmatch_missing'}); creates keep working; AppHealth.calendar.updatesAvailable = false;
@@ -98,6 +98,7 @@ export const REQUIRED_INPUT_FIELDS: Readonly<Record<string, readonly string[]>> 
   'manage-accounts': ['action'],
   'get-event': ['calendarId', 'eventId'], // [V2] research v2-event-editing 1.7
   'update-event': ['calendarId', 'eventId'], // [V2]
+  'delete-event': ['calendarId', 'eventId'], // [v4 T6]
 };
 /** Statuses in which a tool call may leave the app at all. `reconnect_required` is NOT one of them: the token is dead,
  *  and googleAuth.startSignIn() recovers by stop -> delete tokens.json -> start, never by calling through it. */
@@ -442,7 +443,7 @@ export function createMcpHost(deps: McpHostDeps & McpHostExtras): McpHostWithChi
   };
 
   function callerFor<C extends McpToolClass>(cls: C): McpToolCaller<C> {
-    return async (tool, args, signal) => {
+    return async (tool, args, signal, opts) => {
       // (1) Capability assertion at RUN TIME: a bug (or a cast) in a facade cannot reach another tool class.
       if (MCP_TOOLS[tool as McpToolName] !== cls) {
         audit?.(
@@ -452,6 +453,17 @@ export function createMcpHost(deps: McpHostDeps & McpHostExtras): McpHostWithChi
           now(),
         );
         throw new McpCapabilityError(cls);
+      }
+      // (1b) [v4 T6] I9': delete-event exists ONLY for a manual (calendar-view) action approved by a click. Any other caller - a chat
+      // action, a bug, a cast - is refused before anything leaves the app (audited like a blocked tool).
+      if (tool === 'delete-event' && opts?.source !== 'manual') {
+        audit?.(
+          'tool_blocked',
+          null,
+          { nameSha8: sha8(String(tool)), nameLen: String(tool).length, verdict: 'blocked_not_exposed', runId: 0 },
+          now(),
+        );
+        return { ok: false, error: 'invalid_args' };
       }
       // (2) The calendar answers only while it is actually usable.
       const c = client;

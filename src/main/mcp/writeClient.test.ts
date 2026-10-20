@@ -143,9 +143,12 @@ describe('createMcpWriteClient', () => {
     expect(call).toHaveBeenCalledOnce();
   });
 
-  it('exposes exactly one method - there is no read, no admin and no delete on the write facade', () => {
+  it('exposes only the write methods - no read, no admin; the only delete is the manual one', () => {
     const { call } = caller(okText('{}'));
     const client = createMcpWriteClient(call);
-    expect(Object.keys(client)).toEqual(['createEvent', 'updateEvent']); // [V2] C2 11 (still no delete, no read, no admin)
+    // [V2] C2 11 ; [v4 T6] + the three manual (calendar-view) methods
+    expect(Object.keys(client).sort()).toEqual(
+      ['createEvent', 'createManualEvent', 'deleteManualEvent', 'updateEvent', 'updateManualEvent'].sort(),
+    );
   });
 });

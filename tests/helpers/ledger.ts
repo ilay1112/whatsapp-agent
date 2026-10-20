@@ -14,6 +14,7 @@ import { buildUpdateEventArgs } from '../../src/main/exec/buildUpdateEventArgs.t
 import { UpdateEventPayloadSchema } from '../../src/shared/schemas.ts';
 import type { Settings } from '../../src/shared/settings.ts';
 import { neverDeleteProblems, neverForeignProblems } from '../fakes/fake-mcp-calendar.ts';
+import { isManualCall, matchManualCall, type ManualCall } from './ledger.manual.ts';
 import type { ApprovedEventContent } from '../../src/main/exec/buildCreateEventArgs.ts';
 import type { Db } from '../../src/main/db/index.ts';
 import type { FakeBridge } from '../fakes/fake-bridge.ts';
@@ -102,6 +103,7 @@ interface ActionRowLite {
   approved_final_json: string | null;
   jid: string | null;
   approved_by: string | null; // [V2] F18 / T2 8.1 rules 6-7
+  source: string; // [v4 T6] 'chat' | 'manual'
 }
 
 export interface LedgerSources {
@@ -161,7 +163,7 @@ function loadActions(db: Db): ActionRowLite[] {
   return db
     .prepare<ActionRowLite>(
       `SELECT a.id, a.item_id, a.chat_id, a.kind, a.state, a.attempt, a.retry_of, a.idempotency_key,
-              a.approved_at, a.approved_final_json, c.jid AS jid, a.approved_by
+              a.approved_at, a.approved_final_json, c.jid AS jid, a.approved_by, a.source
          FROM actions a LEFT JOIN chats c ON c.id = a.chat_id`,
     )
     .all();
@@ -283,6 +285,7 @@ export function assertLedger(s: LedgerSources = sources ?? {}): void {
   // 2. every create-event call matches an approved action, the deterministic eventId and the chain-root waAction
   for (const call of s.calendar?.calls ?? []) {
     if (call.tool !== 'create-event') continue;
+    if (isManualCall(call as ManualCall)) continue; // [v4 T6] rule 13 below
     const args = call.args as Record<string, unknown>;
     for (const key of Object.keys(args))
       if (!CREATE_EVENT_KEYS.has(key)) problems.push(`create-event carried a non-whitelisted key: ${key}`);
@@ -337,6 +340,7 @@ export function assertLedger(s: LedgerSources = sources ?? {}): void {
   const usedByUpdate = new Set<string>();
   for (const call of s.calendar?.calls ?? []) {
     if (call.tool !== 'update-event') continue;
+    if (isManualCall(call as ManualCall)) continue; // [v4 T6] rule 13 below
     if (rows === null || !s.db) {
       problems.push('an update-event was recorded but no app DB was attached to prove it was approved');
       continue;
@@ -349,8 +353,30 @@ export function assertLedger(s: LedgerSources = sources ?? {}): void {
     if (usedByUpdate.has(found.id)) problems.push('two update-event calls share one approved action (rule 6)');
     usedByUpdate.add(found.id);
   }
-  // [V2] rule 8: never delete - zero delete-event calls, independent of the fake's own violation.
-  for (const pr of neverDeleteProblems(s.calendar?.calls ?? [])) problems.push(`${pr} (rule 8)`);
+  // [v4 T6] rule 13: every manual call is proven by a click-approved manual action (+ its snapshot row).
+  const provenManual = new Set<unknown>();
+  const usedManual = new Set<string>();
+  const snapshotOf = (actionId: string): boolean =>
+    s.db !== undefined &&
+    s.db
+      .prepare<{ n: number }>(
+        `SELECT COUNT(*) AS n FROM event_revisions WHERE action_id = ? AND item_id IS NULL AND prev_json IS NOT NULL`,
+      )
+      .get(actionId)!.n > 0;
+  for (const call of s.calendar?.calls ?? []) {
+    const c = call as ManualCall;
+    if (!isManualCall(c)) continue;
+    if (rows === null) {
+      problems.push(`a manual ${c.tool} was recorded but no app DB was attached (rule 13)`);
+      continue;
+    }
+    const problem = matchManualCall(c, rows, approved, snapshotOf, usedManual);
+    if (problem === null) provenManual.add(c.args);
+    else problems.push(problem);
+  }
+  // [V2] rule 8: never delete - [v4 T6] except a delete-event proven by rule 13 (a manual action approved by a click).
+  for (const pr of neverDeleteProblems(s.calendar?.calls ?? [], (args) => provenManual.has(args)))
+    problems.push(`${pr} (rule 8)`);
   // [V2] rule 9: never foreign - zero update_on_foreign_event violations; every update targets an app-created event of this fake.
   if (s.calendar?.appCreated !== undefined) {
     const calls = s.calendar.calls as ReadonlyArray<{ tool: string; args: Record<string, unknown> }>;

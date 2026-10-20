@@ -3,6 +3,7 @@ import { contextBridge, ipcRenderer } from 'electron';
 
 const INVOKE = new Set<string>([
   'app:getBootstrap', 'app:ackTrayHint', 'health:get', 'dashboard:get', 'dashboard:getIgnored',
+  'dashboard:refreshNow', // [v4 T3]
   'item:get', 'item:dismiss', 'item:restore', 'item:retriage', 'item:setEditing', 'item:completeEvent',
   'action:approve', 'action:reject', 'agent:setPaused', 'chat:setPolicy', 'chat:listPolicies', 'clipboard:writeText',
   'onboarding:getState', 'onboarding:setStep', 'consent:get', 'consent:accept',
@@ -12,6 +13,8 @@ const INVOKE = new Set<string>([
   'model:getPlan', 'model:startDownload', 'model:pause', 'model:resume', 'model:cancel', 'model:delete', 'model:selfTest',
   'google:getWizardState', 'google:pickCredentialsFile', 'google:importCredentials', 'google:startSignIn', 'google:status',
   'google:disconnect', 'google:listCalendars',
+  'calendar:listEvents', 'calendar:invalidate', // [v4 T4]
+  'calendar:proposeCreate', 'calendar:proposeEdit', 'calendar:proposeDelete', 'action:undo', // [v4 T6]
   'settings:get', 'settings:set', 'external:open', 'data:purgeNow', 'diagnostics:export',
   // [V2 ADD] 24 channels (v2-contracts 8.2)
   'item:undoChange', 'item:getImage', 'item:restoreOriginal', 'item:cancelEvent', 'wa:setReadScope',

@@ -30,6 +30,13 @@
   background: var(--color-canvas);
 }
 
+/* [V4] T-908 sticky shell: the dashboard now fills the app scroller instead of growing the document, so the stacked
+   one-column container is a bounded scroller. Its sections keep their natural height (no squeezing into nested scrollers)
+   and the container scrolls them as one, under the sticky toolbar. */
+[data-layout='narrow'] .dash-column {
+  flex-shrink: 0;
+}
+
 /* ---- 2. sheet / drawer panel (UX 7 geometry): the LEADING corners are round, the trailing edge meets the window. ---- */
 .wca-panel {
   border-start-start-radius: var(--radius-lg);

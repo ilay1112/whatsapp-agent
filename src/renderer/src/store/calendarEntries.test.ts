@@ -1,22 +1,28 @@
 // v3 dashboard (T-904, handover §2.2 / §2.3; Tasks 2-3): the schedule-only filter predicate and the week-calendar selectors.
 import { describe, expect, it } from 'vitest';
-import type { ChangeView, EventContentView, ItemCard } from '@shared/types';
+import type { ChangeView, EventContentView, ForeignEventView, ItemCard } from '@shared/types';
 import type { DashboardStore } from './dashboard';
-import { epochMsToLocal, localToEpochMs } from '@shared/when';
+import { localToEpochMs } from '@shared/when';
 import {
+  CAL_HUES,
   SCHEDULE_INTENTS,
+  calendarHueOf,
+  foreignEntryOf,
+  hash8,
+  isForeignEntry,
+  manageRefusals,
+  mergeForeignEntries,
   clipToDay,
-  firstDayFor,
   hiddenCount,
   isScheduleRelated,
   layoutLanes,
   selectCalendarEntries,
-  shiftWeek,
   visibleItems,
-  weekOf,
   type CalendarEntry,
 } from './calendarEntries';
 import { defaultCard } from '../../../../tests/setup-renderer';
+import * as week from '@shared/week';
+import * as store from './calendarEntries';
 
 const TZ = 'Asia/Jerusalem';
 
@@ -285,85 +291,6 @@ describe('selectCalendarEntries', () => {
   });
 });
 
-describe('weekOf', () => {
-  const local = (ms: number): string => epochMsToLocal(ms, TZ);
-
-  it('firstDay 0 on a Wednesday starts on the previous Sunday at local midnight', () => {
-    const w = weekOf(at('2026-10-14T12:00:00'), 0, TZ);
-    expect(local(w.startMs)).toBe('2026-10-11T00:00:00');
-    expect(w.days).toHaveLength(7);
-    expect(w.days[0]).toBe(w.startMs);
-    expect(w.days.map(local)).toEqual([
-      '2026-10-11T00:00:00',
-      '2026-10-12T00:00:00',
-      '2026-10-13T00:00:00',
-      '2026-10-14T00:00:00',
-      '2026-10-15T00:00:00',
-      '2026-10-16T00:00:00',
-      '2026-10-17T00:00:00',
-    ]);
-  });
-
-  it('firstDay 1 starts on Monday; a Sunday anchor belongs to the week that began six days earlier', () => {
-    expect(local(weekOf(at('2026-10-14T12:00:00'), 1, TZ).startMs)).toBe('2026-10-12T00:00:00');
-    expect(local(weekOf(at('2026-10-18T09:00:00'), 1, TZ).startMs)).toBe('2026-10-12T00:00:00');
-  });
-
-  it('an anchor at local midnight of the first day is in that week', () => {
-    expect(local(weekOf(at('2026-10-18T00:00:00'), 0, TZ).startMs)).toBe('2026-10-18T00:00:00');
-  });
-
-  it('the DST week (Israel falls back on Sunday 2026-10-25) has 7 local midnights, the first day 25 h long', () => {
-    const w = weekOf(at('2026-10-28T12:00:00'), 0, TZ);
-    expect(w.days.map((d) => local(d).slice(11))).toEqual(Array(7).fill('00:00:00'));
-    expect(local(w.days[0]!).slice(0, 10)).toBe('2026-10-25');
-    expect(local(w.days[6]!).slice(0, 10)).toBe('2026-10-31');
-    expect(w.days[1]! - w.days[0]!).toBe(25 * 3_600_000);
-  });
-});
-
-describe('shiftWeek', () => {
-  it('moves the anchor by whole local weeks, also across the DST change', () => {
-    expect(shiftWeek(at('2026-10-14T12:00:00'), 1, TZ)).toBe(at('2026-10-14T12:00:00') + 7 * 86_400_000);
-    expect(epochMsToLocal(shiftWeek(at('2026-10-21T00:30:00'), 1, TZ), TZ)).toBe('2026-10-28T00:30:00');
-    expect(epochMsToLocal(shiftWeek(at('2026-11-01T00:30:00'), -1, TZ), TZ)).toBe('2026-10-25T00:30:00');
-  });
-});
-
-describe('firstDayFor', () => {
-  type Proto = Intl.Locale & { getWeekInfo?: () => { firstDay: number }; weekInfo?: unknown };
-  const proto = Intl.Locale.prototype as Proto;
-  const withWeekInfo = (firstDay: number | null, run: () => void): void => {
-    const original = Object.getOwnPropertyDescriptor(proto, 'getWeekInfo');
-    const originalInfo = Object.getOwnPropertyDescriptor(proto, 'weekInfo');
-    if (firstDay === null) {
-      delete proto.getWeekInfo;
-      Object.defineProperty(proto, 'weekInfo', { configurable: true, get: () => undefined });
-    } else Object.defineProperty(proto, 'getWeekInfo', { configurable: true, value: () => ({ firstDay }) });
-    try {
-      run();
-    } finally {
-      if (original) Object.defineProperty(proto, 'getWeekInfo', original);
-      else delete proto.getWeekInfo;
-      if (originalInfo) Object.defineProperty(proto, 'weekInfo', originalInfo);
-      else delete proto.weekInfo;
-    }
-  };
-
-  it('Hebrew always starts on Sunday', () => {
-    withWeekInfo(1, () => expect(firstDayFor('he')).toBe(0));
-  });
-
-  it('English follows the locale week: Monday when weekInfo says 1, else Sunday', () => {
-    withWeekInfo(1, () => expect(firstDayFor('en')).toBe(1));
-    withWeekInfo(7, () => expect(firstDayFor('en')).toBe(0));
-  });
-
-  it('English falls back to Sunday when the runtime has no weekInfo', () => {
-    withWeekInfo(null, () => expect(firstDayFor('en')).toBe(0));
-  });
-});
-
 describe('clipToDay (48 px per hour)', () => {
   const day = (date: string): number => at(`${date}T00:00:00`);
 
@@ -402,5 +329,138 @@ describe('clipToDay (48 px per hour)', () => {
     const r = clipToDay(entryOf('2026-10-20T23:55:00', '2026-10-20T23:59:00'), day('2026-10-20'), TZ)!;
     expect(r.heightPx).toBeGreaterThanOrEqual(12);
     expect(r.topPx + r.heightPx).toBeLessThanOrEqual(24 * 48);
+  });
+});
+
+describe('[V4] week helpers re-export', () => {
+  it('the store re-exports the @shared/week functions (weekOf / shiftWeek / firstDayFor tests live in src/shared/week.test.ts)', () => {
+    expect(store.weekOf).toBe(week.weekOf);
+    expect(store.shiftWeek).toBe(week.shiftWeek);
+    expect(store.firstDayFor).toBe(week.firstDayFor);
+  });
+});
+
+// ---------------------------------------------------------------------------------------------------------------------
+// [V4] T-908 group C (handover §2.4): foreign events of every calendar join the card entries
+// ---------------------------------------------------------------------------------------------------------------------
+describe('[V4] foreign entries', () => {
+  const view = (over: Partial<ForeignEventView> = {}): ForeignEventView => ({
+    calendarId: 'work@x.test',
+    title: 'Team sync',
+    startLocal: '2026-10-20T10:00:00',
+    endLocal: '2026-10-20T11:00:00',
+    allDay: false,
+    attendees: 0,
+    recurring: false,
+    ownedByApp: false,
+    fromChat: false,
+    location: '',
+    writable: true,
+    eventKey: 'aaaaaaaaaaaaaaaa',
+    undoActionId: null,
+    ...over,
+  });
+  const inCalendar = (itemId: number, eventKey: string, startLocal = '2026-10-20T15:00:00'): ItemCard =>
+    card({
+      itemId,
+      eventState: 'created',
+      event: {
+        title: 'Coffee',
+        startLocal,
+        endLocal: startLocal.replace('T15', 'T16'),
+        timeZone: TZ,
+        location: '',
+      } as ItemCard['event'],
+      calendar: { eventStartTs: localToEpochMs(startLocal, TZ), eventKey, revision: 1, status: 'confirmed' },
+    });
+
+  it('foreignEntryOf: wall-clock times in the zone, state foreign, no card', () => {
+    const e = foreignEntryOf(view({ attendees: 2, recurring: true, writable: false }), TZ)!;
+    expect(e).toMatchObject({
+      state: 'foreign',
+      itemId: null,
+      card: null,
+      startMs: localToEpochMs('2026-10-20T10:00:00', TZ),
+      endMs: localToEpochMs('2026-10-20T11:00:00', TZ),
+      calendarId: 'work@x.test',
+      eventKey: 'aaaaaaaaaaaaaaaa',
+      attendees: 2,
+      recurring: true,
+      writable: false,
+    });
+    expect(isForeignEntry(e)).toBe(true);
+    // a zero-length event still gets a block; an inverted one is dropped
+    const zero = foreignEntryOf(view({ endLocal: '2026-10-20T10:00:00' }), TZ)!;
+    expect(zero.endMs - zero.startMs).toBe(60_000);
+    expect(foreignEntryOf(view({ endLocal: '2026-10-20T09:00:00' }), TZ)).toBeNull();
+  });
+
+  it('mergeForeignEntries: sorted by start; an app-owned event a card already shows is dropped (eventKey)', () => {
+    const { entries } = selectCalendarEntries(lists([], [inCalendar(7, 'key-of-card')]), false, TZ);
+    const merged = mergeForeignEntries(
+      entries,
+      [
+        view({
+          title: 'owned001',
+          ownedByApp: true,
+          eventKey: 'key-of-card',
+          startLocal: '2026-10-20T15:00:00',
+          endLocal: '2026-10-20T16:00:00',
+        }),
+        view({ title: 'owned002', ownedByApp: true, eventKey: 'no-card-key' }),
+        view({
+          title: 'foreign1',
+          eventKey: 'key-of-card',
+          startLocal: '2026-10-20T08:00:00',
+          endLocal: '2026-10-20T09:00:00',
+        }),
+      ],
+      TZ,
+    );
+    expect(merged.map((e) => (e.state === 'foreign' ? e.title : `item-${e.itemId}`))).toEqual([
+      'foreign1', // not app-owned: never merged away, even with a colliding key
+      'owned002',
+      'item-7',
+    ]);
+  });
+
+  it('selectCalendarEntries with foreign events merges them; without, the v3 result is unchanged', () => {
+    const l = lists([], [inCalendar(7, 'k1')]);
+    expect(selectCalendarEntries(l, false, TZ).entries.map((e) => e.itemId)).toEqual([7]);
+    const both = selectCalendarEntries(l, false, TZ, [view()]);
+    expect(both.entries.map((e) => e.state)).toEqual(['foreign', 'in_calendar']);
+  });
+
+  it('manageRefusals: read-only calendar, attendees, recurring - in that order; none for a plain writable event', () => {
+    expect(manageRefusals(foreignEntryOf(view(), TZ)!)).toEqual([]);
+    expect(manageRefusals(foreignEntryOf(view({ writable: false, attendees: 1, recurring: true }), TZ)!)).toEqual([
+      'readonly',
+      'attendees',
+      'recurring',
+    ]);
+  });
+
+  it('hash8 is a stable 8-hex hash; calendarHueOf is 0..7 and stable per calendar', () => {
+    expect(hash8('primary')).toMatch(/^[0-9a-f]{8}$/);
+    expect(hash8('primary')).toBe(hash8('primary'));
+    expect(hash8('primary')).not.toBe(hash8('primarz'));
+    const hues = ['primary', 'work@x.test', 'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'].map(calendarHueOf);
+    for (const h of hues) expect(h).toBeGreaterThanOrEqual(0);
+    for (const h of hues) expect(h).toBeLessThan(CAL_HUES);
+    expect(calendarHueOf('work@x.test')).toBe(calendarHueOf('work@x.test'));
+    expect(new Set(hues).size).toBeGreaterThan(1);
+  });
+});
+
+describe('[v4 T7] assignCalendarHues', () => {
+  it('spreads calendars that hash to one hue over the next free hues, in list order; unknown ids keep the hash hue', async () => {
+    const { assignCalendarHues, calendarHueOf, hash8 } = await import('./calendarEntries');
+    const ids = ['primary', 'work@group.calendar.google.com', 'holidays@group.v.calendar.google.com'];
+    assignCalendarHues(ids);
+    const hues = ids.map(calendarHueOf);
+    expect(new Set(hues).size).toBe(3);
+    expect(hues[0]).toBe(Number.parseInt(hash8('primary'), 16) % 8);
+    expect(calendarHueOf('other@x.test')).toBe(Number.parseInt(hash8('other@x.test'), 16) % 8);
+    assignCalendarHues([]);
   });
 });

@@ -27,6 +27,12 @@ import type { McpResult } from '../mcp/readClient';
 // fixture
 // ---------------------------------------------------------------------------------------------------------------------
 
+/** [v4 T6] the manual write methods: a chat test must never reach them (each answers invalid_args and is never asserted). */
+const NO_MANUAL_WRITES = {
+  createManualEvent: () => Promise.resolve({ ok: false as const, error: 'invalid_args' as const }),
+  updateManualEvent: () => Promise.resolve({ ok: false as const, error: 'invalid_args' as const }),
+  deleteManualEvent: () => Promise.resolve({ ok: false as const, error: 'invalid_args' as const }),
+};
 const NOW_0 = Date.UTC(2026, 8, 21, 9, 0, 0) as EpochMs;
 const JID = '972550000001@s.whatsapp.net'; // TESTS T5: synthetic JID, never a real number
 const LID_JID = '15551234567890@lid';
@@ -112,7 +118,8 @@ function makeRig(opts: { jid?: string; sendable?: boolean; wireDetail?: boolean 
         state.creates.push(args);
         return state.createResult(args);
       },
-      updateEvent: () => Promise.resolve({ ok: false as const, error: 'unavailable' as const }), // [V2] C2 11 (unused by v1)
+      updateEvent: () => Promise.resolve({ ok: false as const, error: 'unavailable' as const }),
+      ...NO_MANUAL_WRITES, // [v4 T6] never reached by a chat action // [V2] C2 11 (unused by v1)
     },
     read: {
       getCurrentTime: () => Promise.reject(new Error('exec never reads the clock through MCP')),
@@ -411,6 +418,7 @@ describe('approve gate: approval binding', () => {
       write: {
         createEvent: () => Promise.reject(new Error('unused')),
         updateEvent: () => Promise.resolve({ ok: false as const, error: 'unavailable' as const }),
+        ...NO_MANUAL_WRITES, // [v4 T6] never reached by a chat action
       },
       read: {
         getCurrentTime: () => Promise.reject(new Error('unused')),
@@ -675,7 +683,8 @@ function secondExecutor(base: Rig): { exec: ActionExecutor; creates: CreateEvent
         creates.push(args);
         return { ok: true, value: { eventId: args.eventId, htmlLink: null } };
       },
-      updateEvent: () => Promise.resolve({ ok: false as const, error: 'unavailable' as const }), // [V2] C2 11 (unused by v1)
+      updateEvent: () => Promise.resolve({ ok: false as const, error: 'unavailable' as const }),
+      ...NO_MANUAL_WRITES, // [v4 T6] never reached by a chat action // [V2] C2 11 (unused by v1)
     },
     read: {
       getCurrentTime: () => Promise.reject(new Error('unused')),
@@ -1076,6 +1085,7 @@ describe('defensive paths', () => {
       write: {
         createEvent: () => Promise.reject(new Error('unused')),
         updateEvent: () => Promise.resolve({ ok: false as const, error: 'unavailable' as const }),
+        ...NO_MANUAL_WRITES, // [v4 T6] never reached by a chat action
       },
       read: {
         getCurrentTime: () => Promise.reject(new Error('unused')),
@@ -1106,6 +1116,7 @@ describe('defensive paths', () => {
       write: {
         createEvent: () => Promise.reject(new Error('unused')),
         updateEvent: () => Promise.resolve({ ok: false as const, error: 'unavailable' as const }),
+        ...NO_MANUAL_WRITES, // [v4 T6] never reached by a chat action
       },
       read: {
         getCurrentTime: () => Promise.reject(new Error('unused')),
@@ -1201,7 +1212,7 @@ describe('ItemDetail wiring', () => {
   it('reports the calendar coordinates in the fallback detail once the event exists', async () => {
     const rig = makeRig({ wireDetail: false });
     const res = await rig.exec.approve(req(seedAction(rig, eventPayload(rig))), CTX);
-    expect(res.ok && res.value.item.calendar).not.toBeNull();
+    expect(res.ok && res.value.item?.calendar).not.toBeNull();
   });
 });
 
@@ -1270,6 +1281,7 @@ describe('success atomicity', () => {
       write: {
         createEvent: (args) => Promise.resolve({ ok: true, value: { eventId: args.eventId, htmlLink: null } }),
         updateEvent: () => Promise.resolve({ ok: false as const, error: 'unavailable' as const }),
+        ...NO_MANUAL_WRITES, // [v4 T6] never reached by a chat action
       },
       read: {
         getCurrentTime: () => Promise.reject(new Error('unused')),

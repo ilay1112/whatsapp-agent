@@ -3,16 +3,22 @@
 // - The schedule-only filter: `isScheduleRelated` hides ONLY a finished analysis whose intent is question / smalltalk /
 //   other and that carries nothing event-like. Analysing, held, failed, raw and manipulation-flagged cards always stay
 //   visible.
-// - The week calendar: `selectCalendarEntries` turns the cards the dashboard already holds into timed entries (no Google
-//   event is ever read, I2'/I9); a card without a complete slot is "undated" and goes to the side list.
+// - The week calendar: `selectCalendarEntries` turns the cards the dashboard already holds into timed entries; a card
+//   without a complete slot is "undated" and goes to the side list.
+// - [V4] T-908 §2.4: the events of every calendar of the account (`calendar:listEvents`, a main-side read the model never
+//   sees) join them as `state: 'foreign'` entries (`mergeForeignEntries`); an app-owned event that a card already shows is
+//   dropped (de-dup by the opaque eventKey).
 //
 // Nothing here formats text or touches the DOM; titles are carried as-is (UNTRUSTED) for the component to isolate.
-import type { EpochMs, EventState, Intent, ItemCard, ItemId, Lang, LocalDateTime } from '@shared/types';
-import { localeFor } from '@shared/i18n/languages';
-import { addMinutes, epochMsToLocal, localToEpochMs } from '@shared/when';
+import type { EpochMs, EventState, ForeignEventView, Intent, ItemCard, ItemId, LocalDateTime } from '@shared/types';
+import { epochMsToLocal, localToEpochMs } from '@shared/when';
 import { startMsOf } from '../components/ChangeLine.format';
 import type { DashboardStore } from './dashboard';
 import { LIST_KEYS } from './dashboard';
+
+// [V4] the pure week helpers live in @shared/week (main computes the same week for calendar:listEvents); re-exported
+// here so every existing import keeps working.
+export { firstDayFor, shiftWeek, weekOf } from '@shared/week';
 
 export const SCHEDULE_INTENTS: ReadonlySet<Intent> = new Set<Intent>([
   'schedule_request',
@@ -67,7 +73,8 @@ const DAY_MINUTES = 24 * 60;
 
 export type CalendarEntryState = 'proposed' | 'change_proposed' | 'in_calendar' | 'cancelled';
 
-export interface CalendarEntry {
+/** An entry drawn from one of the dashboard's cards (v3). */
+export interface ItemCalendarEntry {
   itemId: ItemId;
   startMs: EpochMs;
   endMs: EpochMs;
@@ -78,6 +85,41 @@ export interface CalendarEntry {
   eventKey: string | null;
   card: ItemCard;
 }
+
+/**
+ * [V4] T-908 §2.4: an event of any calendar of the account (ForeignEventView from `calendar:listEvents`). It has no card:
+ * a click opens the read-only EventPopover (group D adds the manual actions there). `writable` = the calendar's role is
+ * owner|writer; attendees / recurring are the I9' refusal reasons.
+ */
+export interface ForeignCalendarEntry {
+  state: 'foreign';
+  itemId: null;
+  card: null;
+  startMs: EpochMs;
+  endMs: EpochMs;
+  /** UNTRUSTED (other people's event text): render it only inside `<bdi className="msg-text" dir="auto">`. */
+  title: string;
+  /** The opaque per-event key (same function as ItemCard.calendar.eventKey). [v4 T6] The ONLY event name the renderer has (no
+   *  Google event id crosses IPC, ARCH-v2 10): calendar:proposeEdit / proposeDelete take (calendarId, eventKey). */
+  eventKey: string;
+  calendarId: string;
+  writable: boolean;
+  attendees: number;
+  recurring: boolean;
+  allDay: boolean;
+  ownedByApp: boolean;
+  /** [v4 T6] a chat card's event (managed from its card) */
+  fromChat: boolean;
+  /** [v4 review fix] UNTRUSTED: the event's current location (the edit form pre-fills it), '' = none */
+  location: string;
+  /** [v4 T6] the manual action "Undo last change" reverts (action:undo), or null */
+  undoActionId: string | null;
+}
+
+/** One block of the week calendar: a card's event / proposal, or [V4] an event of any calendar. */
+export type CalendarEntry = ItemCalendarEntry | ForeignCalendarEntry;
+
+export const isForeignEntry = (e: CalendarEntry): e is ForeignCalendarEntry => e.state === 'foreign';
 
 /** Entry state of a card's own event; null = no block (the card is undated). */
 const STATE_OF: Record<EventState, CalendarEntryState | null> = {
@@ -108,7 +150,7 @@ function instantsOf(slot: Slot, fallbackZone: string): { startMs: EpochMs; endMs
   return endMs > startMs ? { startMs, endMs } : null;
 }
 
-function entryOf(card: ItemCard, timeZone: string): CalendarEntry | null {
+function entryOf(card: ItemCard, timeZone: string): ItemCalendarEntry | null {
   let slot: Slot | null = null;
   let state: CalendarEntryState | null = null;
   if (card.change !== null) {
@@ -125,7 +167,7 @@ function entryOf(card: ItemCard, timeZone: string): CalendarEntry | null {
   return { itemId: card.itemId, ...when, title: slot.title, state, eventKey: key === '' ? null : key, card };
 }
 
-const isLiveEvent = (e: CalendarEntry): boolean => e.state === 'in_calendar' || e.state === 'cancelled';
+const isLiveEvent = (e: ItemCalendarEntry): boolean => e.state === 'in_calendar' || e.state === 'cancelled';
 
 /**
  * The week calendar's data: one timed entry per card that has a complete slot, and the undated rest (side list), both
@@ -137,9 +179,22 @@ export function selectCalendarEntries(
   lists: DashboardStore['lists'],
   scheduleOnly: boolean,
   timeZone: string,
+): { entries: ItemCalendarEntry[]; undated: ItemCard[] };
+/** [V4] ... plus the events of every calendar (`mergeForeignEntries`). */
+export function selectCalendarEntries(
+  lists: DashboardStore['lists'],
+  scheduleOnly: boolean,
+  timeZone: string,
+  foreign: readonly ForeignEventView[],
+): { entries: CalendarEntry[]; undated: ItemCard[] };
+export function selectCalendarEntries(
+  lists: DashboardStore['lists'],
+  scheduleOnly: boolean,
+  timeZone: string,
+  foreign?: readonly ForeignEventView[],
 ): { entries: CalendarEntry[]; undated: ItemCard[] } {
   const seen = new Set<ItemId>();
-  const timed: CalendarEntry[] = [];
+  const timed: ItemCalendarEntry[] = [];
   const undated: ItemCard[] = [];
   for (const key of LIST_KEYS) {
     for (const card of visibleItems(lists[key].items, scheduleOnly)) {
@@ -150,7 +205,7 @@ export function selectCalendarEntries(
       else timed.push(entry);
     }
   }
-  const newestOfEvent = new Map<string, CalendarEntry>();
+  const newestOfEvent = new Map<string, ItemCalendarEntry>();
   for (const e of timed) {
     if (e.eventKey === null || !isLiveEvent(e)) continue;
     const kept = newestOfEvent.get(e.eventKey);
@@ -158,47 +213,89 @@ export function selectCalendarEntries(
   }
   const entries = timed.filter((e) => e.eventKey === null || !isLiveEvent(e) || newestOfEvent.get(e.eventKey) === e);
   entries.sort((a, b) => a.startMs - b.startMs || a.itemId - b.itemId);
-  return { entries, undated };
+  return { entries: foreign === undefined ? entries : mergeForeignEntries(entries, foreign, timeZone), undated };
 }
 
-/** Day of week (0 = Sunday) of an ISO date, computed on the calendar date itself (no zone involved). */
-function weekdayOf(isoDate: string): number {
-  const [y, m, d] = isoDate.split('-').map(Number) as [number, number, number];
-  return new Date(Date.UTC(y, m - 1, d)).getUTCDay();
-}
-
-/** `isoDate` + n calendar days, as an ISO date. */
-function addDays(isoDate: string, n: number): string {
-  return addMinutes(`${isoDate}T00:00:00`, n * DAY_MINUTES).slice(0, 10);
+/** [V4] ForeignEventView -> entry; times are wall clock in `timeZone` (settings.general.timeZone, as main projected them). */
+export function foreignEntryOf(e: ForeignEventView, timeZone: string): ForeignCalendarEntry | null {
+  const startMs = localToEpochMs(e.startLocal, timeZone);
+  const endMs = localToEpochMs(e.endLocal, timeZone);
+  if (!Number.isFinite(startMs) || !Number.isFinite(endMs) || endMs < startMs) return null;
+  return {
+    state: 'foreign',
+    itemId: null,
+    card: null,
+    startMs,
+    // a zero-length event still gets a (minimum-height) block
+    endMs: endMs === startMs ? startMs + 60_000 : endMs,
+    title: e.title,
+    eventKey: e.eventKey,
+    calendarId: e.calendarId,
+    writable: e.writable,
+    attendees: e.attendees,
+    recurring: e.recurring,
+    allDay: e.allDay,
+    ownedByApp: e.ownedByApp,
+    fromChat: e.fromChat,
+    location: e.location,
+    undoActionId: e.undoActionId,
+  };
 }
 
 /**
- * The week that contains `anchorMs` in `timeZone`: `days` are the 7 LOCAL midnights (a DST day is 23 or 25 h long, so
- * they are not 24 h apart), `startMs` = `days[0]`. `firstDay` 0 = Sunday, 1 = Monday.
+ * [V4] The card entries plus the foreign events, sorted by start. An app-owned event whose eventKey a card entry already
+ * carries is dropped (the card is the richer view of the same event); every other foreign event is kept - an event shared
+ * into two visible calendars appears once per calendar, like in Google Calendar.
  */
-export function weekOf(anchorMs: EpochMs, firstDay: 0 | 1, timeZone: string): { startMs: EpochMs; days: EpochMs[] } {
-  const date = epochMsToLocal(anchorMs, timeZone).slice(0, 10);
-  const first = addDays(date, -((weekdayOf(date) - firstDay + 7) % 7));
-  const days = Array.from({ length: 7 }, (_, i) => localToEpochMs(`${addDays(first, i)}T00:00:00`, timeZone));
-  return { startMs: days[0]!, days };
+export function mergeForeignEntries(
+  entries: readonly CalendarEntry[],
+  foreign: readonly ForeignEventView[],
+  timeZone: string,
+): CalendarEntry[] {
+  const carded = new Set<string>();
+  for (const e of entries) if (e.state !== 'foreign' && e.eventKey !== null) carded.add(e.eventKey);
+  const out: CalendarEntry[] = [...entries];
+  for (const f of foreign) {
+    if (f.ownedByApp && carded.has(f.eventKey)) continue;
+    const entry = foreignEntryOf(f, timeZone);
+    if (entry !== null) out.push(entry);
+  }
+  // stable: item entries keep their own order (start, then itemId) ahead of a foreign entry with the same start
+  return out
+    .map((e, i) => ({ e, i }))
+    .sort((a, b) => a.e.startMs - b.e.startMs || a.i - b.i)
+    .map((x) => x.e);
 }
 
-/** `anchorMs` moved by whole weeks on the wall clock (so a DST change never slips the anchor into a neighbour day). */
-export function shiftWeek(anchorMs: EpochMs, weeks: number, timeZone: string): EpochMs {
-  return localToEpochMs(addMinutes(epochMsToLocal(anchorMs, timeZone), weeks * 7 * DAY_MINUTES), timeZone);
+/** [V4] Stable 32-bit FNV-1a hash of a string as 8 hex digits (block test ids, calendar hues). Not a security hash. */
+export function hash8(s: string): string {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < s.length; i += 1) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 0x01000193) >>> 0;
+  }
+  return h.toString(16).padStart(8, '0');
 }
 
-type LocaleWithWeekInfo = Intl.Locale & { getWeekInfo?: () => { firstDay: number }; weekInfo?: { firstDay: number } };
-
-/** First column of the week: Sunday for Hebrew; otherwise the locale's `weekInfo.firstDay` (Monday = 1), else Sunday. */
-export function firstDayFor(lang: Lang): 0 | 1 {
-  if (lang === 'he') return 0;
-  try {
-    const l = new Intl.Locale(localeFor(lang)) as LocaleWithWeekInfo;
-    const info = l.getWeekInfo?.() ?? l.weekInfo;
-    return info?.firstDay === 1 ? 1 : 0;
-  } catch {
-    return 0;
+/** [V4] Number of calendar hue tokens (styles.css --color-cal-0..7). */
+export const CAL_HUES = 8;
+/** [V4] The hue (0..7) of a calendar: hash8(calendarId) mod 8, so a calendar keeps its colour across runs. [v4 T7] Once the
+ *  account's calendar list is known (assignCalendarHues), calendars that would share a hue are spread to the next free one in
+ *  list order (three calendars all hashing to one hue drew the whole week in one colour). */
+export function calendarHueOf(calendarId: string): number {
+  return assignedHues.get(calendarId) ?? preferredHue(calendarId);
+}
+const preferredHue = (calendarId: string): number => Number.parseInt(hash8(calendarId), 16) % CAL_HUES;
+const assignedHues = new Map<string, number>();
+/** [v4 T7] Distinct hues for the first 8 calendars of the account (list order = google:listCalendars); stable for a stable list. */
+export function assignCalendarHues(calendarIds: readonly string[]): void {
+  assignedHues.clear();
+  const taken = new Set<number>();
+  for (const id of calendarIds) {
+    let hue = preferredHue(id);
+    for (let i = 0; i < CAL_HUES && taken.has(hue); i += 1) hue = (hue + 1) % CAL_HUES;
+    taken.add(hue);
+    assignedHues.set(id, hue);
   }
 }
 
@@ -267,5 +364,22 @@ export function layoutLanes(blocks: ReadonlyArray<{ topPx: number; heightPx: num
     clusterEnd = cluster.length === 1 ? b.end : Math.max(clusterEnd, b.end);
   }
   closeCluster();
+  return out;
+}
+
+/** [V4] Why a foreign event cannot be managed from the calendar view (I9'): read-only calendar, other attendees, repeating;
+ *  [v4 T6] a chat card's event (change it from the card), an all-day event (change it in Google Calendar). */
+export type ManageRefusal = 'readonly' | 'attendees' | 'recurring' | 'fromChat' | 'allDay';
+/**
+ * [V4] The refusal reasons of one foreign entry, in display order; [] = group D may offer edit / move / delete. A UI hint only:
+ * main refuses the same cases in code (CAL_EVENT_FOREIGN_PROTECTED), whatever the renderer shows.
+ */
+export function manageRefusals(e: ForeignCalendarEntry): ManageRefusal[] {
+  const out: ManageRefusal[] = [];
+  if (!e.writable) out.push('readonly');
+  if (e.attendees > 0) out.push('attendees');
+  if (e.recurring) out.push('recurring');
+  if (e.fromChat) out.push('fromChat');
+  if (e.allDay) out.push('allDay');
   return out;
 }

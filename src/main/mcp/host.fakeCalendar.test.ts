@@ -461,8 +461,8 @@ describe('global violations (T2 3.7) - evaluated on the RAW arguments', () => {
     expect(neverForeignProblems(fake).filter((p) => p.includes('no app create-event'))).toHaveLength(6);
   });
 
-  it('never-delete: ANY delete-event call is a violation, even though the name is not registered', async () => {
-    const { fake, call } = await raw();
+  it('[v4 T6] when delete-event is NOT enabled, any call is still a violation (the never-delete net of v2)', async () => {
+    const { fake, call } = await raw({ enabledTools: Object.keys(MCP_TOOLS).filter((n) => n !== 'delete-event') });
     const res = await call('delete-event', { calendarId: 'primary', eventId: ID });
     expect(res.isError).toBe(true);
     expect(fake.violations).toEqual(['write_or_disabled_tool_called:delete-event']);
@@ -473,10 +473,99 @@ describe('global violations (T2 3.7) - evaluated on the RAW arguments', () => {
     expect(fake.violations).toHaveLength(1);
   });
 
-  it('when every real tool is registered, delete-event goes through the disabled-tool handler (still a violation)', async () => {
-    const { fake, call } = await raw({ enabledTools: [...Object.keys(MCP_TOOLS), 'delete-event'] });
-    await call('delete-event', {});
-    expect(fake.violations).toEqual(['write_or_disabled_tool_called:delete-event']);
+  it('[v4 T6] delete-event (enabled for manual actions): an unprotected event is deleted (cancelled); a protected one is a violation', async () => {
+    const seeds = [
+      {
+        id: 'plainevt01',
+        calendarId: 'primary',
+        summary: 'p',
+        start: '2026-10-01T10:00:00',
+        end: '2026-10-01T11:00:00',
+      },
+      {
+        id: 'attendee01',
+        calendarId: 'primary',
+        summary: 'a',
+        start: '2026-10-01T12:00:00',
+        end: '2026-10-01T13:00:00',
+        attendees: [{ email: 'x@example.test' }],
+      },
+      {
+        id: 'recurring1',
+        calendarId: 'primary',
+        summary: 'r',
+        start: '2026-10-01T14:00:00',
+        end: '2026-10-01T15:00:00',
+        recurringEventId: 'base',
+      },
+    ];
+    const { fake, call } = await raw({ seedEvents: seeds });
+    const res = await call('delete-event', { calendarId: 'primary', eventId: 'plainevt01', sendUpdates: 'none' });
+    expect(res.isError).toBe(false);
+    expect(JSON.parse(res.text)).toMatchObject({ success: true, eventId: 'plainevt01' });
+    expect(fake.storedEvents.find((e) => e.eventId === 'plainevt01')?.status).toBe('cancelled');
+    expect(fake.violations).toEqual([]);
+    // a second delete of the same (now deleted) event: not found
+    expect(
+      (await call('delete-event', { calendarId: 'primary', eventId: 'plainevt01', sendUpdates: 'none' })).isError,
+    ).toBe(true);
+    await call('delete-event', { calendarId: 'primary', eventId: 'attendee01', sendUpdates: 'none' });
+    await call('delete-event', { calendarId: 'primary', eventId: 'recurring1' });
+    expect(fake.violations).toEqual([
+      'manual_write_on_protected_event:attendees',
+      'delete_event_send_updates:undefined',
+      'manual_write_on_protected_event:recurring_instance',
+    ]);
+    // the ledger helper still counts every delete it is not told is a proven manual one
+    expect(neverDeleteProblems(fake.calls)).toEqual(['never-delete: 4 delete-event call(s) reached the calendar']);
+    expect(neverDeleteProblems(fake.calls, (a) => a.eventId === 'plainevt01')).toEqual([
+      'never-delete: 2 delete-event call(s) reached the calendar',
+    ]);
+  });
+
+  it('[v4 T6] a manual-shaped update (no private map): content + If-Match only; status or a protected event is a violation', async () => {
+    const seeds = [
+      {
+        id: 'plainevt01',
+        calendarId: 'primary',
+        summary: 'p',
+        start: '2026-10-01T10:00:00',
+        end: '2026-10-01T11:00:00',
+      },
+      {
+        id: 'attendee01',
+        calendarId: 'primary',
+        summary: 'a',
+        start: '2026-10-01T12:00:00',
+        end: '2026-10-01T13:00:00',
+        attendees: [{ email: 'x@example.test' }],
+      },
+    ];
+    const { fake, call } = await raw({ seedEvents: seeds });
+    const manual = (eventId: string, extra: Record<string, unknown> = {}): Record<string, unknown> => ({
+      calendarId: 'primary',
+      account: 'personal',
+      eventId,
+      summary: 'Moved',
+      start: '2026-10-01T16:00:00',
+      end: '2026-10-01T17:00:00',
+      timeZone: TZ,
+      location: '',
+      sendUpdates: 'none',
+      checkConflicts: false,
+      ifMatch: fake.storedEvents.find((e) => e.eventId === eventId)!.etag,
+      ...extra,
+    });
+    expect((await call('update-event', manual('plainevt01'))).isError).toBe(false);
+    expect(fake.violations).toEqual([]);
+    expect(fake.storedEvents.find((e) => e.eventId === 'plainevt01')).toMatchObject({ summary: 'Moved', priv: {} });
+    await call('update-event', manual('attendee01'));
+    await call('update-event', manual('plainevt01', { status: 'cancelled' }));
+    expect(fake.violations).toEqual(
+      expect.arrayContaining(['manual_write_on_protected_event:attendees', 'manual_update_status']),
+    );
+    // rule 9 leaves a manual update to ledger rule 13 (it carries no app identity tags)
+    expect(neverForeignProblems(fake).filter((p) => p.includes('no app create-event'))).toEqual([]);
   });
 
   it('rule 9: an update of an app-created event with its creation tags is clean; changed tags are a problem', async () => {

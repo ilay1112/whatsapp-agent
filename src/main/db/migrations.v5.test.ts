@@ -69,9 +69,9 @@ const pausedFrom = (db: ReturnType<typeof openDb>, id: string): string | null =>
   db.prepare<{ p: string | null }>('SELECT paused_from AS p FROM auto_policies WHERE id = ?').get(id)!.p;
 
 describe('migration v5 auto_policy_paused_from', () => {
-  it('is the newest migration', () => {
-    expect(SCHEMA_VERSION).toBe(5);
-    expect(MIGRATIONS.at(-1)!.name).toBe('auto_policy_paused_from');
+  it('is migration 5 (v6 manual_events follows it)', () => {
+    expect(SCHEMA_VERSION).toBeGreaterThanOrEqual(5);
+    expect(MIGRATIONS.find((m) => m.version === 5)!.name).toBe('auto_policy_paused_from');
   });
 
   it('a v4 paused TRIAL is backfilled paused_from=shadow and resumes as shadow; the trigger refuses on', () => {

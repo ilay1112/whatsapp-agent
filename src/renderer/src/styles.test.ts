@@ -155,9 +155,11 @@ describe('styles.css - v2 recipes (UX2 1.1-1.4)', () => {
     expect(css).toMatch(new RegExp(`@utility\\s+${name}\\s*\\{`));
   });
 
-  it('adds no colour token beyond the v1 set (UX2 1.2)', () => {
+  it('adds no colour token beyond the v1 set (UX2 1.2) - [V4] plus exactly the 8 calendar hues --color-cal-0..7', () => {
     const tokens = new Set(propertyNames.filter((p) => p.startsWith('--color-')));
-    expect(tokens.size).toBe(19);
+    const hues = [...tokens].filter((p) => /^--color-cal-[0-7]$/.test(p));
+    expect(hues).toHaveLength(8);
+    expect(tokens.size).toBe(19 + 8);
   });
 
   it('draws the media rule DOTTED and the shadow chip DASHED, also under forced colours', () => {
@@ -182,5 +184,44 @@ describe('styles.css - v2 recipes (UX2 1.1-1.4)', () => {
     const urls = [...css.matchAll(/url\("([^"]+)"\)/g)].map((m) => m[1]!);
     expect(urls.length).toBeGreaterThanOrEqual(6);
     for (const u of urls) expect(u.startsWith('data:image/svg+xml,')).toBe(true);
+  });
+});
+
+// [V4] T-908 T1 (spec v4-calendar-handover 2.3): the user's theme choice. The OS media query still drives 'system', but it is
+// guarded so an explicit 'light' wins over a dark OS, and an explicit 'dark' gets the SAME dark palette without the media query.
+describe('styles.css - v4 theme switch', () => {
+  /** The declarations of the first rule whose selector is exactly `selector` (searched from `from`). */
+  const block = (selector: string, from = 0): string => {
+    const at = css.indexOf(`${selector} {`, from);
+    expect(at, selector).toBeGreaterThanOrEqual(0);
+    const open = css.indexOf('{', at);
+    return css.slice(open + 1, css.indexOf('}', open)).trim();
+  };
+  const tokens = (decls: string): Record<string, string> =>
+    Object.fromEntries([...decls.matchAll(/(--color-[a-z-]+)\s*:\s*([^;]+);/g)].map((m) => [m[1]!, m[2]!.trim()]));
+
+  it("guards the OS dark block with :root:not([data-theme='light']) and copies it under :root[data-theme='dark']", () => {
+    const media = css.indexOf('@media (prefers-color-scheme: dark)');
+    expect(media).toBeGreaterThanOrEqual(0);
+    const guarded = tokens(block(':root:not([data-theme="light"])', media));
+    const forced = tokens(block(':root[data-theme="dark"]'));
+    expect(Object.keys(guarded).length).toBeGreaterThanOrEqual(19); // every UX 2.1 token (more if a later palette adds dark variants)
+    expect(forced).toEqual(guarded);
+    // the guarded rule really is inside the media query (the first selector after it)
+    expect(css.indexOf(':root:not([data-theme="light"])', media)).toBeLessThan(css.indexOf('}', media));
+  });
+
+  it('color-scheme follows the choice: light dark by default, light / dark when forced', () => {
+    expect(block(':root')).toMatch(/color-scheme:\s*light dark/);
+    expect(block(':root[data-theme="light"]')).toMatch(/color-scheme:\s*light;/);
+    expect(block(':root[data-theme="dark"]')).toMatch(/color-scheme:\s*dark;/);
+  });
+
+  it('adds the sun and moon icons to the closed list (system reuses icon-auto), none mirrored', () => {
+    for (const name of ['icon-sun', 'icon-moon']) {
+      expect(css).toMatch(new RegExp(`@utility\\s+${name}\\s*\\{`));
+      const body = css.slice(css.indexOf(`@utility ${name}`)).split('\n}')[0]!;
+      expect(body, name).not.toContain(':dir(rtl)');
+    }
   });
 });

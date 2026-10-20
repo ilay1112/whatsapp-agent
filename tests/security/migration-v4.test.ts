@@ -71,6 +71,7 @@ const V4_TRIGGERS = [
 ];
 const V4_INDEXES = [
   'ix_actions_item',
+  'ix_actions_manual', // [v4 T6] v6 manual_events (a v3 file is migrated through v4, v5 and v6)
   'ix_actions_state',
   'ix_audit_ts',
   'ix_auto_decisions_chat',
@@ -335,7 +336,7 @@ describe('v3 -> v4 through openDb', () => {
     const { file } = copyFixture();
     const db = openDb(file);
     handles.push(db);
-    expect(SCHEMA_VERSION).toBe(5); // [v2-closeout auto-mode-8] v5 auto_policy_paused_from follows v4
+    expect(SCHEMA_VERSION).toBe(6); // [v2-closeout auto-mode-8] v5 auto_policy_paused_from follows v4 ; [v4 T6] v6 manual_events
     expect(db.userVersion()).toBe(SCHEMA_VERSION);
     expect(db.prepare('PRAGMA foreign_key_check').all()).toEqual([]);
     expect(db.prepare<{ integrity_check: string }>('PRAGMA integrity_check').get()!.integrity_check).toBe('ok');

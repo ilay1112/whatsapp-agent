@@ -518,6 +518,161 @@ CREATE TRIGGER trg_auto_policies_paused_from BEFORE UPDATE OF paused_from ON aut
   BEGIN SELECT RAISE(ABORT,'paused_from is immutable while paused'); END;
 `,
   },
+  {
+    version: 6,
+    name: 'manual_events',
+    // [v4 T6] T-908 handover §2.5 (I9'): user-authored calendar-view actions.
+    //  - actions: item_id / proposal_id / chat_id become NULLABLE; + source ('chat' | 'manual'); kind += 'delete_event'.
+    //    CHECKs tie them together: a chat row has all three ids, a manual row has none; delete_event is manual-only; send_reply is
+    //    chat-only. trg_actions_state: a manual row is approved ONLY by a click ('user') - never the toast, never an auto decision.
+    //    trg_actions_frozen: + source; NULL-safe (IS) comparisons for the now-nullable ids.
+    //  - event_revisions: item_id NULLABLE (manual rows); kind += manual_create | manual_edit | manual_delete | manual_undo; a row
+    //    has item_id NULL exactly when its kind is a manual one; the rev-1 <=> create rule holds for chat rows only.
+    //  - auto_decisions: reason += 'manual_only' (AUTO_REASONS parity; a manual action never reaches a decision row).
+    // Every existing row is copied unchanged (chat rows get source 'chat'). Runs with foreignKeysOff (table rebuilds).
+    foreignKeysOff: true,
+    sql: String.raw`
+-- ---------- 1. actions (rebuild) ----------
+CREATE TABLE actions_new (id TEXT PRIMARY KEY,
+                        item_id INTEGER REFERENCES items(id) ON DELETE CASCADE,
+                        proposal_id INTEGER REFERENCES proposals(id) ON DELETE CASCADE,
+                        chat_id INTEGER REFERENCES chats(id),
+                        kind TEXT NOT NULL CHECK(kind IN ('send_reply','create_event','update_event','delete_event')),
+                        canonical_json TEXT, content_sha256 TEXT NOT NULL CHECK(length(content_sha256) = 64),
+                        idempotency_key TEXT NOT NULL UNIQUE,
+                        attempt INTEGER NOT NULL DEFAULT 1, retry_of TEXT REFERENCES actions(id) ON DELETE SET NULL,
+                        state TEXT NOT NULL DEFAULT 'pending' CHECK(state IN
+                          ('pending','approved','executing','done','failed','unknown_outcome','rejected','expired','superseded')),
+                        approved_at INTEGER, approved_final_json TEXT, executed_at INTEGER, result_json TEXT, error_code TEXT,
+                        created_at INTEGER NOT NULL, expires_at INTEGER NOT NULL,
+                        approved_by TEXT,
+                        source TEXT NOT NULL DEFAULT 'chat' CHECK(source IN ('chat','manual')),
+                        CHECK((source = 'chat') = (item_id IS NOT NULL AND proposal_id IS NOT NULL AND chat_id IS NOT NULL)),
+                        CHECK(source = 'chat' OR (item_id IS NULL AND proposal_id IS NULL AND chat_id IS NULL)),
+                        CHECK(kind <> 'delete_event' OR source = 'manual'),
+                        CHECK(kind <> 'send_reply' OR source = 'chat'));
+INSERT INTO actions_new (id, item_id, proposal_id, chat_id, kind, canonical_json, content_sha256, idempotency_key, attempt, retry_of, state,
+                         approved_at, approved_final_json, executed_at, result_json, error_code, created_at, expires_at, approved_by, source)
+  SELECT id, item_id, proposal_id, chat_id, kind, canonical_json, content_sha256, idempotency_key, attempt, retry_of, state,
+         approved_at, approved_final_json, executed_at, result_json, error_code, created_at, expires_at, approved_by, 'chat'
+  FROM actions;
+DROP TABLE actions;
+ALTER TABLE actions_new RENAME TO actions;
+CREATE INDEX ix_actions_item ON actions(item_id, state);
+CREATE INDEX ix_actions_state ON actions(state, expires_at);
+CREATE INDEX ix_actions_manual ON actions(source, state) WHERE source = 'manual';
+
+-- ---------- 2. auto_decisions (rebuild: reason += manual_only) ----------
+DROP TRIGGER trg_auto_writes_insert;
+CREATE TABLE auto_decisions_new (id TEXT PRIMARY KEY, policy_id TEXT NOT NULL REFERENCES auto_policies(id),
+                        action_id TEXT NOT NULL UNIQUE REFERENCES actions(id) ON DELETE CASCADE,
+                        item_id INTEGER NOT NULL REFERENCES items(id) ON DELETE CASCADE,
+                        chat_id INTEGER NOT NULL REFERENCES chats(id) ON DELETE CASCADE,
+                        kind TEXT NOT NULL CHECK(kind IN ('create','update','cancel')),
+                        verdict TEXT NOT NULL CHECK(verdict IN ('auto','shadow','fallback')),
+                        reason TEXT NOT NULL CHECK(reason IN ('ok',
+                          'no_policy','policy_shadow','policy_paused','policy_expired','snapshot_changed','calendar_disconnected','calendar_not_owned','no_track_record','undo_unavailable',
+                          'unknown_contact','chat_opted_out','chat_tainted','no_user_participation','no_user_echo',
+                          'badge_red','badge_amber','badge_info','blocked_tool_call','suspicious','assumed_hour','missing_fields','low_confidence',
+                          'intent_not_eligible','title_rejected','content_rejected','media_derived','cross_chat_rows','multiple_events',
+                          'provider_unsafe','manual_only',
+                          'beyond_horizon','too_long','too_soon','quiet_hours','conflict','duplicate','auto_budget',
+                          'edits_not_in_scope','cancel_not_in_scope','cancel_too_soon','not_app_event','wrong_item','not_own_copy','event_has_attendees',
+                          'event_cancelled','modified_in_google','move_too_far','edit_budget','unknown_prev_state')),
+                        checks_json TEXT NOT NULL, decided_at INTEGER NOT NULL,
+                        CHECK((verdict IN ('auto','shadow')) = (reason = 'ok')));
+INSERT INTO auto_decisions_new (id, policy_id, action_id, item_id, chat_id, kind, verdict, reason, checks_json, decided_at)
+  SELECT id, policy_id, action_id, item_id, chat_id, kind, verdict, reason, checks_json, decided_at FROM auto_decisions;
+DROP TABLE auto_decisions;
+ALTER TABLE auto_decisions_new RENAME TO auto_decisions;
+CREATE INDEX ix_auto_decisions_chat ON auto_decisions(chat_id, decided_at);
+CREATE INDEX ix_auto_decisions_policy ON auto_decisions(policy_id, verdict);
+CREATE INDEX ix_auto_decisions_item ON auto_decisions(item_id);
+CREATE TRIGGER trg_auto_decisions_immutable BEFORE UPDATE ON auto_decisions BEGIN SELECT RAISE(ABORT,'append-only'); END;
+CREATE TRIGGER trg_auto_writes_insert BEFORE INSERT ON auto_writes
+  WHEN NOT EXISTS (SELECT 1 FROM auto_decisions d WHERE d.id = NEW.decision_id AND d.action_id = NEW.action_id AND d.verdict = 'auto')
+  BEGIN SELECT RAISE(ABORT,'auto write without auto decision'); END;
+
+-- ---------- 3. event_revisions (rebuild: item_id nullable, manual kinds) ----------
+CREATE TABLE event_revisions_new (id INTEGER PRIMARY KEY, calendar_event_id TEXT NOT NULL,
+                        item_id INTEGER REFERENCES items(id) ON DELETE CASCADE,
+                        revision INTEGER NOT NULL CHECK(revision >= 1),
+                        kind TEXT NOT NULL CHECK(kind IN ('create','reschedule','move','cancel','undo',
+                                                          'manual_create','manual_edit','manual_delete','manual_undo')),
+                        prev_json TEXT, next_json TEXT,
+                        action_id TEXT NOT NULL REFERENCES actions(id) ON DELETE CASCADE,
+                        applied_at INTEGER NOT NULL,
+                        reverted_by INTEGER REFERENCES event_revisions(id) ON DELETE SET NULL,
+                        post_etag TEXT, post_updated TEXT,
+                        CHECK((item_id IS NULL) = (kind IN ('manual_create','manual_edit','manual_delete','manual_undo'))),
+                        CHECK(item_id IS NULL OR ((kind = 'create') = (revision = 1))));
+INSERT INTO event_revisions_new (id, calendar_event_id, item_id, revision, kind, prev_json, next_json, action_id, applied_at, reverted_by,
+                                 post_etag, post_updated)
+  SELECT id, calendar_event_id, item_id, revision, kind, prev_json, next_json, action_id, applied_at, reverted_by, post_etag, post_updated
+  FROM event_revisions;
+DROP TABLE event_revisions;
+ALTER TABLE event_revisions_new RENAME TO event_revisions;
+CREATE UNIQUE INDEX ux_event_rev ON event_revisions(calendar_event_id, revision);
+CREATE INDEX ix_event_rev_item ON event_revisions(item_id);
+CREATE INDEX ix_event_rev_action ON event_revisions(action_id);
+CREATE INDEX ix_event_rev_reverted ON event_revisions(reverted_by) WHERE reverted_by IS NOT NULL;
+CREATE TRIGGER trg_event_rev_frozen BEFORE UPDATE OF id, calendar_event_id, item_id, revision, kind, action_id, applied_at ON event_revisions
+  BEGIN SELECT RAISE(ABORT,'append-only'); END;
+
+-- ---------- 4. actions triggers (v2 text + manual rules; NULL-safe identity comparisons) ----------
+CREATE TRIGGER trg_actions_state BEFORE UPDATE OF state ON actions WHEN NEW.state <> OLD.state BEGIN
+  SELECT CASE
+    WHEN OLD.state IN ('done','failed','rejected','expired','superseded') THEN RAISE(ABORT,'terminal state')
+    WHEN NEW.state='pending'   THEN RAISE(ABORT,'cannot return to pending')
+    WHEN NEW.state='approved'  AND (OLD.state<>'pending' OR NEW.approved_at IS NULL OR NEW.approved_final_json IS NULL) THEN RAISE(ABORT,'bad approve')
+    WHEN NEW.state='approved'  AND NEW.approved_by IS NULL THEN RAISE(ABORT,'bad approve')
+    WHEN NEW.state='approved'  AND NEW.source='manual' AND NEW.approved_by <> 'user' THEN RAISE(ABORT,'manual needs a click')
+    WHEN NEW.state='approved'  AND NEW.kind='send_reply' AND NEW.approved_by <> 'user' THEN RAISE(ABORT,'send needs a click')
+    WHEN NEW.state='approved'  AND NEW.approved_by = 'user_toast'
+         AND (NEW.kind <> 'update_event' OR json_extract(NEW.canonical_json,'$.change') IS NOT 'undo'
+              OR json_extract(NEW.canonical_json,'$.revertOf') IS NULL) THEN RAISE(ABORT,'toast approves undo only')
+    WHEN NEW.state='approved'  AND NEW.approved_by NOT IN ('user','user_toast')
+         AND NOT EXISTS (SELECT 1 FROM auto_decisions d JOIN auto_policies p ON p.id = d.policy_id
+                         WHERE d.id = NEW.approved_by AND d.action_id = NEW.id AND d.verdict = 'auto' AND p.state = 'on'
+                           AND p.expires_at > CAST(unixepoch('subsec') * 1000 AS INTEGER)
+                           AND NEW.approved_final_json = NEW.canonical_json
+                           AND json_extract(NEW.canonical_json,'$.change') IS NOT 'undo'
+                           AND ((NEW.kind = 'create_event' AND d.kind = 'create')
+                                OR (NEW.kind = 'update_event' AND d.kind IN ('update','cancel'))))
+         THEN RAISE(ABORT,'auto approve without live policy decision')
+    WHEN NEW.state='executing' AND (OLD.state<>'approved' OR NEW.approved_final_json IS NULL) THEN RAISE(ABORT,'execute without approval')
+    WHEN NEW.state='done'      AND OLD.state NOT IN ('executing','unknown_outcome') THEN RAISE(ABORT,'bad done')
+    WHEN NEW.state IN ('failed','unknown_outcome') AND OLD.state<>'executing' THEN RAISE(ABORT,'bad outcome')
+    WHEN NEW.state='rejected'  AND OLD.state<>'pending' THEN RAISE(ABORT,'bad reject')
+    WHEN NEW.state IN ('expired','superseded') AND OLD.state NOT IN ('pending','unknown_outcome') THEN RAISE(ABORT,'bad close')
+  END; END;
+CREATE TRIGGER trg_actions_insert BEFORE INSERT ON actions
+  WHEN NEW.state <> 'pending' OR NEW.canonical_json IS NULL OR NEW.approved_by IS NOT NULL OR NEW.approved_at IS NOT NULL OR NEW.approved_final_json IS NOT NULL BEGIN
+  SELECT RAISE(ABORT,'actions must be born pending with content'); END;
+CREATE TRIGGER trg_actions_frozen BEFORE UPDATE OF canonical_json, content_sha256, chat_id, kind, item_id, proposal_id, idempotency_key, attempt, retry_of, source ON actions
+  WHEN NOT (
+       (NEW.canonical_json IS NULL AND OLD.canonical_json IS NOT NULL
+        AND OLD.state IN ('done','failed','rejected','expired','superseded','unknown_outcome')
+        AND NEW.retry_of IS OLD.retry_of
+        AND NEW.content_sha256 = OLD.content_sha256 AND NEW.chat_id IS OLD.chat_id AND NEW.kind = OLD.kind AND NEW.item_id IS OLD.item_id
+        AND NEW.proposal_id IS OLD.proposal_id AND NEW.idempotency_key = OLD.idempotency_key AND NEW.attempt = OLD.attempt
+        AND NEW.source = OLD.source)
+    OR (NEW.retry_of IS NULL AND OLD.retry_of IS NOT NULL AND NEW.canonical_json IS OLD.canonical_json
+        AND NEW.content_sha256 = OLD.content_sha256 AND NEW.chat_id IS OLD.chat_id AND NEW.kind = OLD.kind AND NEW.item_id IS OLD.item_id
+        AND NEW.proposal_id IS OLD.proposal_id AND NEW.idempotency_key = OLD.idempotency_key AND NEW.attempt = OLD.attempt
+        AND NEW.source = OLD.source)
+  )
+  BEGIN SELECT RAISE(ABORT,'approved content is immutable'); END;
+CREATE TRIGGER trg_actions_final_frozen BEFORE UPDATE OF approved_final_json ON actions
+  WHEN OLD.state IN ('executing','done','failed','unknown_outcome')
+   AND NOT (NEW.approved_final_json IS NULL AND OLD.state <> 'executing')
+  BEGIN SELECT RAISE(ABORT,'final payload is immutable'); END;
+CREATE TRIGGER trg_actions_approver_frozen BEFORE UPDATE OF approved_by ON actions
+  WHEN NEW.approved_by IS NOT OLD.approved_by
+   AND NOT (OLD.approved_by IS NULL AND OLD.state = 'pending' AND NEW.state = 'approved')
+  BEGIN SELECT RAISE(ABORT,'approver is immutable'); END;
+`,
+  },
 ] as const;
 
 export const SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1]!.version;

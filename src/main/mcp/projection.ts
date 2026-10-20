@@ -11,6 +11,7 @@ import type {
   AppEventRef,
   CurrentTimeProjection,
   EventProjection,
+  ListedEventProjection,
   McpErrorKind,
   McpResult,
   OwnedEventProjection,
@@ -193,6 +194,58 @@ export function projectEvents(text: string, timeZone: string): McpResult<EventPr
   return { ok: true, value: out };
 }
 
+/** [V4] Longest event id the calendar view accepts (Google ids are <= 1024; recurring instances add a suffix). */
+export const LISTED_EVENT_ID_MAX = 1024;
+/** [V4] Attendee counts are capped: the view only needs "none / some". */
+export const ATTENDEES_MAX = 999;
+
+/**
+ * [V4] T-908 §2.4: list-events text of ONE calendar -> ListedEventProjection[] for the calendar view (main-side read; no
+ * ToolSpec references it, I2'). Same rules as projectEvents (reconcile's projection, unchanged) plus the event id, all-day,
+ * an attendee COUNT (never an address), recurring (recurrence OR recurringEventId) and the app tag (waAgent === '1').
+ * Fail closed: a present-but-odd attendees / recurrence value counts as attendees / recurring (an event must never look
+ * free to modify); one malformed event makes the whole answer bad. Cancelled instances are dropped. Title cleaned + capped.
+ */
+export function projectListedEvents(text: string, timeZone: string): McpResult<ListedEventProjection[]> {
+  const root = parseJson(text);
+  if (root === null || !TIME_ZONE_RE.test(timeZone)) return BAD;
+  const items = listOf(root, 'events') ?? listOf(root, 'items');
+  if (items === null || items.length > MAX_ITEMS) return BAD;
+  const out: ListedEventProjection[] = [];
+  for (const raw of items) {
+    if (!isObject(raw)) return BAD;
+    if (raw.status === 'cancelled') continue;
+    const eventId = str(raw, 'id');
+    if (eventId === null || eventId.length === 0 || eventId.length > LISTED_EVENT_ID_MAX) return BAD;
+    const startLocal = eventTimeIn(raw.start, timeZone);
+    const endLocal = eventTimeIn(raw.end, timeZone);
+    if (startLocal === null || endLocal === null || endLocal < startLocal) return BAD;
+    const allDay = isObject(raw.start) && str(raw.start, 'dateTime') === null && str(raw.start, 'date') !== null;
+    const attendees = Array.isArray(raw.attendees)
+      ? Math.min(raw.attendees.length, ATTENDEES_MAX)
+      : presentNonEmpty(raw.attendees)
+        ? 1
+        : 0;
+    const ext = isObject(raw.extendedProperties) ? raw.extendedProperties : null;
+    const priv = ext !== null && isObject(ext.private) ? ext.private : null;
+    out.push({
+      eventId,
+      startLocal,
+      endLocal,
+      allDay,
+      title: sanitiseTitle(raw.summary),
+      attendees,
+      recurring: presentNonEmpty(raw.recurrence) || presentNonEmpty(raw.recurringEventId),
+      ownedByApp: priv !== null && priv.waAgent === '1',
+      // [v4 T6] a chat card's event (its create stamped waItem): managed from the card, never from the calendar view
+      fromChat: priv !== null && typeof priv.waItem === 'string' && priv.waItem !== '',
+      // [v4 review fix] UNTRUSTED, one cleaned line: the manual edit form shows (and can clear) the current location
+      location: cleanLine(raw.location, LOCATION_MAX),
+    });
+  }
+  return { ok: true, value: out };
+}
+
 /** list-events text filtered by privateExtendedProperty waAction=<chainRootActionId> -> the app's own event or null. */
 export function projectAppEvent(
   text: string,
@@ -275,6 +328,20 @@ export const PRECONDITION_RE = /precondition failed|\b412\b/i;
 export const NOT_FOUND_RE = /not found|\b404\b|\b410\b|\bdeleted\b/i;
 /** The SDK's input validation / Google's 400 on our own arguments. */
 const INVALID_ARGS_RE = /input validation error|invalid arguments|bad request|\b400\b/i;
+
+/** [v4 T6] delete-event answer (DeleteEventHandler: {success:true, eventId, ...}) -> ok only for THIS event; an error text is
+ *  classified like get-event / update-event (404/410 => not_found). The text itself never leaves this module. */
+export function projectDeletedEvent(
+  text: string,
+  isError: boolean,
+  expectedEventId: string,
+): McpResult<{ eventId: string }> {
+  if (isError) return { ok: false, error: classifyEventErrorText(text) };
+  const root = parseJson(text);
+  if (root === null || Array.isArray(root)) return BAD;
+  if (root.success !== true || str(root, 'eventId') !== expectedEventId) return BAD;
+  return { ok: true, value: { eventId: expectedEventId } };
+}
 
 /** Error TEXT of our own get-event / update-event request -> the McpErrorKind of C2 11 (order: 412, not found, invalid, other). */
 export function classifyEventErrorText(text: string): McpErrorKind {

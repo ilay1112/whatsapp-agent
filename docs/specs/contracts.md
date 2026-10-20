@@ -988,7 +988,7 @@ export interface IpcResMap {
   'item:setEditing': null;
   'item:completeEvent': ItemDetail;                                                 // new proposal version (provider 'user') + pending create_event action
   'action:approve': ApproveOutcome;
-  'action:reject': ItemDetail;
+  'action:reject': ItemDetail | null; // [v4 review fix] null = a manual (calendar-view) proposal rejected from cal-confirm (no item)
   'agent:setPaused': AppHealth;
   'chat:setPolicy': ChatView;
   'chat:listPolicies': { chats: ChatView[] };                                       // chats with policy != 'default' or forceKnown
@@ -2106,6 +2106,116 @@ export interface StubLlm extends LlmProvider {
 8. `BridgeSendRequest` serialises to exactly the keys `recipient`, `message`.
 9. `[R2]` `CLAUDE_MODEL_PRESETS` / `GEMINI_MODEL_PRESETS` are never rendered without intersecting the live `llm:listModels` result (renderer test); `CONSENT_VERSIONS[kind]` equals the version literal used by the consent copy key in both locales.
 10. `[R2]` For every string in `BRIDGE_MARKERS`, a fake-bridge-db message row whose content equals that string, plus the echoed stdout line `[2026-09-21 12:00:00] <- 972500000000: <marker>`, produces no launcher state change and no marker event (`bridge-lifecycle.test.ts`, injection corpus vector `stdout_marker`).
+
+## 19. `[V4]` T-908 additions (refresh, all calendars, manual events; D-089)
+
+Source: `docs/specs/v4-calendar-handover.md` §2, `docs/ARCHITECTURE-v2.md` B33-B36 and I9′. Shapes below are copied from `src/shared/ipc.ts` / `src/shared/types.ts` as implemented (2026-10-19); the code is authoritative if they ever differ. All channels keep the section 8 rules (trusted frame, zod `.strict()`, `Result<T>`). The model's tool surface is unchanged by 19.1-19.2 (I2'): `list-events` was already an enabled read class and `ToolGate`'s table gains nothing.
+
+### 19.1 Read side - request / response contracts
+
+```ts
+// src/shared/ipc.ts - IPC_REQUEST_SCHEMAS (additions)
+'dashboard:refreshNow': NoReq, // [v4 T3] scan + re-queue recent chats + calendar invalidate; 30 s cooldown (main-side)
+// [v4 T4] the calendar view's read of every calendar for the visible week (main-side list-events; the model gains nothing, I2').
+// calendarIds: 1..10, each in the last list-calendars answer or 'primary' (checked in main; others land in `failed`).
+'calendar:listEvents': z.strictObject({
+  anchorMs: z.number().int().nonnegative(),
+  calendarIds: z.array(z.string().min(1).max(256)).min(1).max(10),
+}),
+'calendar:invalidate': NoReq, // [v4 T4] empties the in-memory event cache (the Refresh-events button)
+
+// src/shared/ipc.ts - IpcResMap (additions)
+'dashboard:refreshNow': import('./types').RefreshReport; // [v4 T3]
+'calendar:listEvents': import('./types').CalendarEventsRes; // [v4 T4] CAL_UNAVAILABLE | CAL_RECONNECT when nothing could be read
+'calendar:invalidate': null; // [v4 T4]
+```
+
+| Channel | Request | Response | Errors | Handler (file) | Notes |
+|---|---|---|---|---|---|
+| `dashboard:refreshNow` | none | `RefreshReport` | `INTERNAL` (service unwired or threw - fail closed) | `src/main/ipc/handlers/dashboard.ts` (`createDashboardHandlers`, `createRefreshService`) | Not focus-gated (sends and writes nothing). Cooldown 30 s (`REFRESH_COOLDOWN_MS`): a press while one is in flight shares it; a press inside 30 s returns the previous report with `cooldown: true`. 24 h window (`LIMITS.syncMaxAgeMs`), cap 20 chats (`REFRESH_CHAT_CAP`), existing rate limits. Pushes `dashboard:changed`; audit `refresh_now`. |
+| `calendar:listEvents` | `{ anchorMs, calendarIds }` | `CalendarEventsRes` | `CAL_RECONNECT` (an auth error on any calendar), `CAL_UNAVAILABLE` (host not connected, every calendar unreachable, or the service unwired) | `src/main/ipc/handlers/calendar.ts` (`createCalendarHandlers`) over `src/main/mcp/calendarEvents.ts` | Week of `anchorMs` from `src/shared/week.ts` (`weekWindowOf`, `firstDayFor(lang)`). Ids not in the stored calendar roles (except `'primary'`) never reach the wire and land in `failed`; a calendar that errors lands in `failed`, the rest return. In-memory cache `(calendarId, weekStartMs)`, TTL 5 min (`CALENDAR_EVENTS_TTL_MS`); `MAX_CALENDARS_PER_READ = 10`. Nothing is written to disk. |
+| `calendar:invalidate` | none | `null` | - | `src/main/ipc/handlers/calendar.ts` | Empties the cache and drops in-flight joins. Also invalidated by refresh and in `finally` of `action:approve` (kind != `send_reply`), `item:undoChange`, `item:restoreOriginal`, `item:cancelEvent`, `auto:undo`. |
+
+Preload `INVOKE` (8.2) gains `'dashboard:refreshNow'`, `'calendar:listEvents'`, `'calendar:invalidate'`; renderer wrappers `api.refreshNow()`, `api.listCalendarEvents(req)`, `api.invalidateCalendarEvents()`. `AUDIT_KINDS` gains `'refresh_now'` (detail `{newRows, queued, skippedRateLimited}`, counts only, ref null).
+
+### 19.2 Read side - shapes (`src/shared/types.ts`)
+
+```ts
+/** [v4 T3] `dashboard:refreshNow` (v4-calendar-handover 2.1). Counts only - never a chat id, a name or message text.
+ *  `queued` = chats for which this press re-queued the open item or created a new one (ingest's own path);
+ *  `skippedNothingToAnalyse` = chats left unchanged (no eligible row in 24 h, answered, already pending, held by the user, edit-locked);
+ *  `cooldown` = true when the press landed inside the 30 s cooldown and this is the previous press's report. */
+export interface RefreshReport {
+  newRows: number;
+  queued: number;
+  skippedRateLimited: number;
+  skippedInCalendar: number;
+  skippedNothingToAnalyse: number;
+  calendarRefreshed: boolean;
+  cooldown: boolean;
+}
+
+/** [V4] T-908 §2.4: one event of any calendar of the account, for the calendar view only (main-side read, never the model's).
+ *  title UNTRUSTED (cleaned, <= 60). Times are wall clock in settings.general.timeZone; an all-day event runs local midnight ..
+ *  the midnight after its last day. `writable` = the calendar's stored role is owner|writer (it says nothing about attendees /
+ *  recurrence - I9' refuses those separately). `eventKey` = the same opaque key as ItemCard.calendar.eventKey (de-dup of the
+ *  app's own events against their cards). */
+export interface ForeignEventView {
+  // [v4 T6, ARCH-v2 10] NO eventId: the renderer names an event by (calendarId, eventKey); main resolves it from its week cache
+  calendarId: string;
+  title: string;
+  startLocal: LocalDateTime;
+  endLocal: LocalDateTime;
+  allDay: boolean;
+  attendees: number;
+  recurring: boolean;
+  ownedByApp: boolean;
+  fromChat: boolean; // [v4 T6] private waItem set = a chat card's event (managed from the card, refused here)
+  location: string; // [v4 review fix] UNTRUSTED, cleaned, <= 120 - pre-fills the manual edit form (an input value only)
+  writable: boolean;
+  eventKey: string;
+  undoActionId: string | null; // [v4 T6] the executed manual action action:undo may revert ("Undo last change")
+}
+/** [V4] calendar:listEvents answer: the visible week's events of the asked calendars; `failed` = calendar ids that errored. */
+export interface CalendarEventsRes {
+  weekStartMs: EpochMs;
+  events: ForeignEventView[];
+  fetchedAt: EpochMs;
+  failed: string[];
+}
+```
+
+Deviations from the handover's §2.1 / §2.4 text, all deliberate (worker notes `v4-refresh.md`, `v4-calendar-read.md`): `RefreshReport` adds `skippedNothingToAnalyse` and `cooldown`; `ForeignEventView` adds `eventKey` (`= sha256('wca-event|' + id)[0:16]`, equal to `agent/items.eventKeyOf`, pinned by a test) because the renderer has no synchronous sha256 for the de-dup.
+
+Main-side seams (not IPC): `createMcpCalendarListClient(call: McpToolCaller<'read'>): McpCalendarListClient` with `listEventsInWindow(calendarId, { timeMinLocal, timeMaxLocal, timeZone }): Promise<McpResult<ListedEventProjection[]>>` (`src/main/mcp/readClient.ts`, separate from `McpReadClient`); `projectListedEvents(text, tz)` (`src/main/mcp/projection.ts`); `CalendarEventsService { listEvents(req): Promise<Result<CalendarEventsRes>>; invalidate(): void }`; `Ingest.reanalyseChat?(chatId: ChatRef): { outcome: 'queued' | 'held' | 'nothing'; itemId: ItemId | null }` (synchronous; 'nothing' also when the chat's newest card was dismissed or was already made from the newest inbound row) and `Ingest.newestInboundMsgId?(chatId: ChatRef): string | null` (the wa id of the newest trigger-eligible row when it is inbound) (`src/main/bridge/ingest.ts`). `ListedEventProjection` / `ForeignEventView` carry `location: string` (UNTRUSTED, cleaned, <= 120; the manual edit form pre-fills it).
+
+### 19.3 `calendar:propose*`, `action:undo` - manual management (group D; worker notes `v4-manual-events.md`)
+
+Copied from `src/shared/ipc.ts` / `types.ts` / `schemas.ts` as implemented (2026-10-19). **No Google event id crosses IPC** (ARCH-v2 10): an event is named by `(calendarId, eventKey)` of the week read; main resolves it with `CalendarEventsService.resolve(calendarId, eventKey)` from its LIVE week cache (`CAL_EVENT_GONE` when expired / invalidated: the view re-reads and the user retries). Proposing writes nothing (I1').
+
+```ts
+// requests (zod .strict())
+'calendar:proposeCreate': { calendarId: string(1..256); title: string(1..80); startLocal: string(<=19); endLocal: string(<=19); location: string(<=120) },
+'calendar:proposeEdit':   { calendarId: string(1..256); eventKey: /^[0-9a-f]{16}$/; patch: { title?; startLocal?; endLocal?; location? } /* non-empty */ },
+'calendar:proposeDelete': { calendarId: string(1..256); eventKey: /^[0-9a-f]{16}$/ },
+'action:undo':            { actionId: uuid },   // FOCUS_GATED_CHANNELS (an undo is a calendar write approved by this click)
+// ApproveReqSchema: kind enum += 'delete_event'; delete_event takes no edit / confirm flag.
+
+// responses
+'calendar:propose*': ManualProposal;   // EVENT_INVALID | CAL_EVENT_GONE | CAL_EVENT_FOREIGN_PROTECTED | CAL_UNAVAILABLE | CAL_RECONNECT | CAL_UPDATE_UNAVAILABLE | BAD_REQUEST
+'action:undo': ApproveOutcome;         // the manual member; ACTION_STALE (already undone / changed in Google) | ACTION_EXPIRED (> 7 d)
+export interface ManualSummary { op: 'create' | 'edit' | 'delete' | 'undo'; calendarId: string; before: EventContentView | null; after: EventContentView | null }
+export interface ManualProposal { actionId: ActionId; kind: 'create_event' | 'update_event' | 'delete_event'; shownHash: Sha256Hex; summary: ManualSummary }
+export interface ManualOutcomeView { actionId: ActionId; op: ManualSummary['op']; calendarId: string; undoable: boolean; errorCode: ErrorCode | null }
+// ApproveOutcome gains: | { outcome: 'done' | 'failed'; item: null; manual: ManualOutcomeView }
+// (ChatApproveOutcome = Exclude<ApproveOutcome, {item: null}>; ManualApproveOutcome = the manual member.)
+```
+
+- **Approval**: the confirm dialog `cal-confirm` calls the existing `action:approve { actionId, kind, shownHash }`; `ActionExecutor.approve` is the only executor entry (it dispatches a `source:'manual'` row to `exec/manualEvents.ts createManualExecutor`, constructed only inside the executor). `approved_by` must be `'user'` (trigger `trg_actions_state`: "manual needs a click").
+- **Data model (migration v6 `manual_events`)**: `actions.source TEXT NOT NULL DEFAULT 'chat' CHECK IN ('chat','manual')`, `item_id` / `proposal_id` / `chat_id` nullable with CHECKs (chat row has all three, manual row none), `kind` += `'delete_event'` (manual only; `send_reply` chat only); `event_revisions.item_id` nullable, `kind` += `manual_create | manual_edit | manual_delete | manual_undo` (item_id NULL exactly for those); `auto_decisions.reason` += `manual_only`. The chat repo members filter `source = 'chat'` / `item_id IS NOT NULL`; manual rows are read through `actions.manualById / manualExecuting / manualUndosOf` and `eventRevisions.manualForAction / manualById`.
+- **Payloads** (`ManualActionPayloadSchema`, a union separate from the chat `ActionPayloadSchema`): `ManualCreatePayload { v:1, source:'manual', kind:'create_event', calendarId, eventId /* main-generated */, to: EventContent, undoOf? }`, `ManualEditPayload { ..., kind:'update_event', eventId, baseEtag, from: EventContentWithStatus, to: EventContent, undoOf? }`, `ManualDeletePayload { ..., kind:'delete_event', eventId, baseEtag, from, undoOf? }`.
+- **Server surface**: `MCP_TOOLS['delete-event'] = 'write'`, `ENABLED_TOOLS_ENV` nine names (section 18 checklist item 7 now covers nine), `DESTRUCTIVE_HINT_TOOLS` += `delete-event`, `REQUIRED_INPUT_FIELDS['delete-event'] = ['calendarId','eventId']`. `McpToolCaller` gains a 4th argument `opts?: { source?: 'chat' | 'manual' }`; `callerFor('write')` refuses `delete-event` unless `opts.source === 'manual'` (`invalid_args` + audit `tool_blocked`). Write client: `createManualEvent` (tags `waAgent:'1', waManual:'1', waAction:<action id>`, no `waItem`), `updateManualEvent` (content-only PATCH + `ifMatch`, no `status`, no private map), `deleteManualEvent({ source:'manual', calendarId, eventId })`.
+- **Errors / audit**: `ErrorCode` `CAL_EVENT_FOREIGN_PROTECTED` (action `none`); `AUDIT_KINDS` += `manual_event_proposed {kind, calendarSha8}`, `manual_event_executed {kind, op, calendarSha8, outcome}`, `manual_event_refused {reason, stage, calendarSha8}`; `AUTO_REASONS` += `manual_only`.
 
 ## Architecture concerns
 

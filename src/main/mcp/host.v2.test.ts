@@ -171,11 +171,12 @@ describe('verifyUpdateSurface (B4 narrow guard, pure)', () => {
 });
 
 describe('C2 19 item 18', () => {
-  it('MCP_TOOLS == ENABLED_TOOLS_ENV (8 names); every readOnlyHint tool is class read; update-event is the one destructive write', () => {
+  it('MCP_TOOLS == ENABLED_TOOLS_ENV (9 names, [v4 T6]); every readOnlyHint tool is class read; update-event + delete-event are the destructive writes', () => {
     expect(Object.keys(MCP_TOOLS).sort()).toEqual(ENABLED_TOOLS_ENV.split(',').sort());
-    expect(Object.keys(MCP_TOOLS)).toHaveLength(8);
+    expect(Object.keys(MCP_TOOLS)).toHaveLength(9);
     for (const name of READ_ONLY_HINT_TOOLS) expect(MCP_TOOLS[name]).toBe('read');
-    expect([...DESTRUCTIVE_HINT_TOOLS]).toEqual(['update-event']);
+    expect([...DESTRUCTIVE_HINT_TOOLS]).toEqual(['update-event', 'delete-event']);
+    expect(MCP_TOOLS['delete-event']).toBe('write');
     expect(MCP_TOOLS['update-event']).toBe('write');
   });
 });
@@ -196,7 +197,14 @@ describe('verifyToolset v2 (B3)', () => {
     );
     expect(verifyToolset(noReadOnly)).toBe('readonly_hint');
     expect(verifyToolset(listed().filter((t) => t.name !== 'get-event'))).toBe('names');
-    expect(verifyToolset([...listed(), { name: 'delete-event' }])).toBe('names');
+    // [v4 T6] delete-event is now one of the nine; a SECOND unknown tool is still a names mismatch, and it must announce destructiveHint
+    expect(verifyToolset([...listed(), { name: 'search-events' }])).toBe('names');
+    expect(verifyToolset(listed().filter((t) => t.name !== 'delete-event'))).toBe('names');
+    expect(
+      verifyToolset(
+        listed().map((t) => (t.name === 'delete-event' ? { ...t, annotations: { readOnlyHint: false } } : t)),
+      ),
+    ).toBe('destructive_hint');
   });
 });
 
@@ -235,7 +243,7 @@ describe('McpHost.updateSurface over the fake calendar', () => {
       await expect(host.start()).resolves.toBe('connected'); // not toolset_mismatch: the whole surface is NOT disabled
       expect(host.updateSurface()).toEqual({ available: false, problem });
       expect(surfaces.every((x) => !x.available)).toBe(true); // it never became available
-      expect(audits).toContainEqual({ kind: 'toolset_mismatch', ref: null, detail: { reason: problem, count: 8 } });
+      expect(audits).toContainEqual({ kind: 'toolset_mismatch', ref: null, detail: { reason: problem, count: 9 } });
 
       const write = createMcpWriteClient(host.callerFor('write'));
       await expect(write.createEvent(CREATE)).resolves.toMatchObject({ ok: true, value: { eventId: EVENT_ID } });

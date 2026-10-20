@@ -29,6 +29,12 @@ const OWNED = [
   'src/renderer/src/store/calendarEntries.ts',
   'src/renderer/src/components/CalendarWeek.tsx',
 ];
+/** [V4] T-908 T2: the app shell, checked for physical utilities only (see the SHELL test below). */
+const SHELL = [
+  'src/renderer/src/App.tsx',
+  'src/renderer/src/components/ThemeToggle.tsx',
+  'src/renderer/src/components/LanguageToggle.tsx',
+];
 /** Source with line comments stripped (the headers explain the rules by naming the very things they forbid). */
 const code = (rel: string): string =>
   readRepoFile(rel)
@@ -65,6 +71,16 @@ describe('dashboard lane - static guards', () => {
     expect(src).not.toMatch(/<a[\s>]/);
     expect(src).not.toMatch(/\bhref=/);
     expect(src).not.toMatch(/children/);
+  });
+
+  // [V4] T-908 T2 (spec v4-calendar-handover 2.2): the shell owns the sticky header and the one content scroller now, so it is held
+  // to the same ban. App.tsx is the documented header exception to "no settings:set from components" (language + theme toggles),
+  // so it joins this check only. Sticky / fixed offsets are logical too: `inset-bs-*` / `inset-be-*`, never `top-*` / `bottom-*`.
+  it.each(SHELL)('%s uses no physical Tailwind utility and no physical block offset', (rel) => {
+    const classes = [...code(rel).matchAll(/className=\{?[`'"]([^`'"]*)[`'"]/g)].map((m) => m[1]!).join(' ');
+    expect(classes).not.toMatch(
+      /(^|\s)(-?m[lr]|p[lr]|left|right|top|bottom|border-[lr]|rounded-[lr]|rounded-(tl|tr|bl|br)|text-left|text-right|float-left|float-right)(-|\s|$)/,
+    );
   });
 
   it('dashboard.css uses logical properties only', () => {

@@ -25,6 +25,8 @@ import { useHealthStore } from '../store/health';
 import { useSettingsStore } from '../store/settings';
 import { useAutoStore } from '../store/auto';
 import { QrPairing } from '../components/QrPairing';
+import { applyDocumentTheme } from '../components/ThemeToggle';
+import { THEMES } from '@shared/settings';
 import { ChooseAi } from './Onboarding/ChooseAi';
 import { toPanelState } from './Onboarding/LinkWhatsApp';
 import { num } from './Onboarding/frame';
@@ -362,8 +364,10 @@ export function Settings({ initialGroup = 'general' }: SettingsProps) {
     )?.accessRole ?? null;
 
   return (
-    <main data-testid="settings" data-group={initialGroup} className="flex min-h-full gap-6 overflow-auto p-4">
-      <nav aria-label={t('settings.navLabel')} className="sticky top-0 hidden h-fit shrink-0 cols:block">
+    // [V4] T-908 T2: the app shell's `app-scroll` is the page's scroller, so <main> owns none; the nav sticks at the same 1 rem
+    // offset as <main>'s padding, so it never jumps when the page starts to scroll.
+    <main data-testid="settings" data-group={initialGroup} className="flex grow gap-6 p-4">
+      <nav aria-label={t('settings.navLabel')} className="sticky inset-bs-4 hidden h-fit shrink-0 cols:block">
         <ul className="m-0 flex list-none flex-col gap-1 p-0">
           {SETTINGS_GROUPS.map((group) => (
             <li key={group}>
@@ -419,6 +423,28 @@ export function Settings({ initialGroup = 'general' }: SettingsProps) {
                   />
                   {/* "Windows language" is translated; the two endonyms never are (i18n-rtl.md 4.3). */}
                   <span>{choice === 'system' ? t('settings.general.lang.system') : t(`language.${choice}`)}</span>
+                </label>
+              ))}
+            </div>
+          </Row>
+
+          {/* [V4] T-908 (spec v4-calendar-handover 2.3): the same choice as the header ThemeToggle. */}
+          <Row id="row-theme" label={t('settings.general.themeLabel')} testId="settings-theme">
+            <div role="radiogroup" aria-labelledby="row-theme" className="flex flex-wrap items-center gap-3">
+              {THEMES.map((choice) => (
+                <label key={choice} className="flex items-center gap-1">
+                  <input
+                    type="radio"
+                    name="settings-theme"
+                    value={choice}
+                    data-testid={`settings-theme-${choice}`}
+                    checked={settings.general.theme === choice}
+                    onChange={() => {
+                      void set({ general: { theme: choice } });
+                      applyDocumentTheme(choice);
+                    }}
+                  />
+                  <span>{t(`theme.${choice}`)}</span>
                 </label>
               ))}
             </div>

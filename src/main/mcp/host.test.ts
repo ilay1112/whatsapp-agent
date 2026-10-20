@@ -133,7 +133,7 @@ describe('the spawn contract of ARCH 5.1', () => {
     expect(env.GOOGLE_CALENDAR_MCP_TOKEN_PATH).toBe(DEPS.tokenPath);
     expect(env.GOOGLE_ACCOUNT_MODE).toBe('personal');
     expect(env.ENABLED_TOOLS).toBe(
-      'get-current-time,get-freebusy,list-events,get-event,list-calendars,create-event,update-event,manage-accounts', // [V2] C2 11
+      'get-current-time,get-freebusy,list-events,get-event,list-calendars,create-event,update-event,delete-event,manage-accounts', // [V2] C2 11 ; [v4 T6] + delete-event
     );
 
     const ours = [

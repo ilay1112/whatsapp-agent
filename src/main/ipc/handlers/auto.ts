@@ -230,6 +230,7 @@ export function createAutoHandlers(deps: HandlerDepsV2, ext: AutoHandlersExtV2 =
         if (refused !== null) return refused;
         const res = await deps.undo.undoAuto(req.autoWriteId, 'user');
         if (!res.ok) return res;
+        if (res.value.item === null) return res; // [v4 T6] (never for an automatic write: those are chat actions)
         const itemId = res.value.item.itemId;
         return ok({ ...res.value, item: detailOr(itemId, res.value.item) });
       }),

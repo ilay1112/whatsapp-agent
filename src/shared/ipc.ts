@@ -71,6 +71,9 @@ export const ApproveReqSchema = z
       ctx.addIssue({ code: 'custom', message: 'confirmDuplicate is create_event only' });
     if (r.kind === 'create_event' && r.confirmDrift)
       ctx.addIssue({ code: 'custom', message: 'confirmDrift is update_event only' });
+    // [v4 T6] delete_event (manual only): exactly what the confirm dialog showed - no edit, no confirm flags
+    if (r.kind === 'delete_event' && (r.edit || r.confirmConflict || r.confirmDuplicate || r.confirmDrift))
+      ctx.addIssue({ code: 'custom', message: 'delete_event takes no edit or confirm flag' });
   });
 export type ApproveReq = z.infer<typeof ApproveReqSchema>;
 
@@ -108,6 +111,7 @@ export const IPC_REQUEST_SCHEMAS = {
   'health:get': NoReq,
   'dashboard:get': NoReq,
   'dashboard:getIgnored': NoReq, // [C+]
+  'dashboard:refreshNow': NoReq, // [v4 T3] scan + re-queue recent chats + calendar invalidate; 30 s cooldown (main-side)
   'item:get': ItemIdReq,
   'item:dismiss': ItemIdReq,
   'item:restore': ItemIdReq,
@@ -192,6 +196,40 @@ export const IPC_REQUEST_SCHEMAS = {
   'google:status': NoReq,
   'google:disconnect': ConfirmReq,
   'google:listCalendars': NoReq,
+  // [v4 T4] the calendar view's read of every calendar for the visible week (main-side list-events; the model gains nothing, I2').
+  // calendarIds: 1..10, each in the last list-calendars answer or 'primary' (checked in main; others land in `failed`).
+  'calendar:listEvents': z.strictObject({
+    anchorMs: z.number().int().nonnegative(),
+    calendarIds: z.array(z.string().min(1).max(256)).min(1).max(10),
+  }),
+  'calendar:invalidate': NoReq, // [v4 T4] empties the in-memory event cache (the Refresh-events button)
+  // [v4 T6] manual management (handover §2.5, I9'): each creates ONE pending source:'manual' action and writes NOTHING; the confirm
+  // dialog approves it with action:approve {actionId, kind, shownHash}. Events are named by the opaque eventKey of the week read
+  // (ARCH-v2 10: no Google event id crosses IPC); main resolves it from its week cache (CAL_EVENT_GONE when it is no longer there).
+  'calendar:proposeCreate': z.strictObject({
+    calendarId: z.string().min(1).max(256),
+    title: z.string().min(1).max(LIMITS.titleChars),
+    startLocal: z.string().max(19),
+    endLocal: z.string().max(19),
+    location: z.string().max(LIMITS.locationChars),
+  }),
+  'calendar:proposeEdit': z.strictObject({
+    calendarId: z.string().min(1).max(256),
+    eventKey: z.string().regex(/^[0-9a-f]{16}$/),
+    patch: z
+      .strictObject({
+        title: z.string().min(1).max(LIMITS.titleChars).optional(),
+        startLocal: z.string().max(19).optional(),
+        endLocal: z.string().max(19).optional(),
+        location: z.string().max(LIMITS.locationChars).optional(),
+      })
+      .refine((p) => Object.keys(p).length > 0, { message: 'empty patch' }),
+  }),
+  'calendar:proposeDelete': z.strictObject({
+    calendarId: z.string().min(1).max(256),
+    eventKey: z.string().regex(/^[0-9a-f]{16}$/),
+  }),
+  'action:undo': z.strictObject({ actionId: z.uuid() }), // [v4 T6] undo of an executed MANUAL action (focus-gated click)
   'settings:get': NoReq,
   'settings:set': SettingsPatchSchema,
   'external:open': z.union([
@@ -214,7 +252,14 @@ export type ApproveOutcome =
   // write-ahead): the action failed and item.actions holds its pending clone (v2-contracts concerns #12). The card says
   // "In Google it is now Thu 16:00 - apply the change anyway?" -> re-send with confirmDrift:true ("Apply anyway") or action:reject ("Keep Google's").
   | { outcome: 'needs_confirm_drift'; current: EventContentView; item: ItemDetail }
-  | { outcome: 'failed'; item: ItemDetail }; // action 'failed' | 'unknown_outcome'; item.actions holds the fresh retry action + lastError
+  | { outcome: 'failed'; item: ItemDetail } // action 'failed' | 'unknown_outcome'; item.actions holds the fresh retry action + lastError
+  // [v4 T6] a MANUAL (calendar-view) action: no item; `manual` says what happened and whether action:undo is offered. A manual
+  // action never answers needs_confirm_* (a stale view is ACTION_STALE: the view re-reads and the user proposes again).
+  | { outcome: 'done' | 'failed'; item: null; manual: import('./types').ManualOutcomeView };
+/** [v4 T6] What a CARD's approval / undo door can answer (a manual outcome never reaches a card). */
+export type ChatApproveOutcome = Exclude<ApproveOutcome, { item: null }>;
+/** [v4 T6] What a calendar-view approval / action:undo answers. */
+export type ManualApproveOutcome = Extract<ApproveOutcome, { item: null }>;
 // [V2] update_event gate failures before the write-ahead: ACTION_STALE (to == from, or baseRevision != items.event_revision),
 // CAL_UPDATE_UNAVAILABLE (startup guard), EVENT_INVALID. CAL_EVENT_GONE / CAL_EVENT_FOREIGN end the action 'failed' WITHOUT a retry clone
 // (GONE instead inserts a pending create_event with `to` - "Add as new event").
@@ -231,6 +276,7 @@ export interface IpcResMap {
   'health:get': AppHealth;
   'dashboard:get': DashboardData;
   'dashboard:getIgnored': { items: ItemCard[] }; // [R2] latest 20 with closed_reason='dismissed' ONLY ("Undo dismiss" drawer; other closed items are not listed)
+  'dashboard:refreshNow': import('./types').RefreshReport; // [v4 T3]
   'item:get': ItemDetail;
   'item:dismiss': ItemDetail;
   'item:restore': ItemDetail;
@@ -238,7 +284,7 @@ export interface IpcResMap {
   'item:setEditing': null;
   'item:completeEvent': ItemDetail; // new proposal version (provider 'user') + pending create_event action
   'action:approve': ApproveOutcome;
-  'action:reject': ItemDetail;
+  'action:reject': ItemDetail | null; // [v4 review fix] null = a manual (calendar-view) proposal: no item to re-render
   'agent:setPaused': AppHealth;
   'chat:setPolicy': ChatView;
   'chat:listPolicies': { chats: ChatView[] }; // chats with policy != 'default' or forceKnown ; [V2] or autoPolicy = 'never'
@@ -273,6 +319,12 @@ export interface IpcResMap {
   'google:status': GoogleWizardState;
   'google:disconnect': GoogleWizardState;
   'google:listCalendars': { calendars: CalendarInfo[] };
+  'calendar:listEvents': import('./types').CalendarEventsRes; // [v4 T4] CAL_UNAVAILABLE | CAL_RECONNECT when nothing could be read
+  'calendar:invalidate': null; // [v4 T4]
+  'calendar:proposeCreate': import('./types').ManualProposal; // [v4 T6] pending only
+  'calendar:proposeEdit': import('./types').ManualProposal; // [v4 T6] CAL_EVENT_GONE | CAL_EVENT_FOREIGN_PROTECTED | ...
+  'calendar:proposeDelete': import('./types').ManualProposal; // [v4 T6]
+  'action:undo': ApproveOutcome; // [v4 T6] the undo action is approved at once through the same executor gates
   'settings:get': Settings;
   'settings:set': Settings;
   'external:open': null;
@@ -350,6 +402,7 @@ export const FOCUS_GATED_CHANNELS = [
   'item:cancelEvent', // [F32]
   'cli:setOverage', // [F11] focus-gated in both directions (the control lives on the focused Settings page); only {allow:true} shows the native confirmation
   'wa:setReadScope', // [F11] focus-gated in both directions; only {scope:'all_chats'} shows the native confirmation
+  'action:undo', // [v4 T6] an undo of a manual action is a calendar write approved by this click
 ] as const satisfies readonly IpcChannel[];
 /** [V2 ADD] Nothing on an MCP surface (the loopback tool server, the calendar child) may ever carry one of these (B29, test A18). */
 export const NEVER_ON_MCP_PREFIXES = [
@@ -358,6 +411,7 @@ export const NEVER_ON_MCP_PREFIXES = [
   'item:restoreOriginal',
   'item:cancelEvent',
   'action:',
+  'calendar:propose', // [v4 T6]
   'settings:',
   'cli:',
   'consent:',

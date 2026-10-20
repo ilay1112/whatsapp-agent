@@ -45,12 +45,20 @@ export const ImagesSettingsSchema = z.strictObject({
   cloud: z.boolean(), // effective only while the active cloud provider's consent is at the version whose text names pictures (B19, B21)
 });
 
+/** [V4] T-908: the UI colour scheme. 'system' follows the OS (prefers-color-scheme); main mirrors it into nativeTheme.themeSource. */
+export const THEMES = ['system', 'light', 'dark'] as const;
+export const ThemeSchema = z.enum(THEMES);
+export type Theme = (typeof THEMES)[number];
+
 export const SettingsSchema = z.strictObject({
   general: z.strictObject({
     language: z.enum(['system', 'en', 'he']),
     autostart: z.boolean(),
     timeZone: z.string().min(1).max(64), // IANA. [R2] READ-ONLY for the user: main sets it
     notifications: z.enum(['off', 'generic']), // never message text ; [V2] automatic-write toasts are shown even when 'off' (B11: a control)
+    // [V4] T-908 (v4-calendar-handover 2.3). `.default` so a row stored before the key existed still parses (the repo would
+    // otherwise fall back to DEFAULT_SETTINGS and drop every other choice); no migration needed.
+    theme: ThemeSchema.default('system'),
   }),
   llm: z.strictObject({
     provider: z.enum(PROVIDER_IDS), // [V2 CHANGE] 5 ids ; still NOT settable through settings:set (llm:setProvider only)
@@ -96,7 +104,13 @@ export const SettingsSchema = z.strictObject({
 export type Settings = z.infer<typeof SettingsSchema>;
 
 export const DEFAULT_SETTINGS: Settings = {
-  general: { language: 'system', autostart: false, timeZone: 'Asia/Jerusalem', notifications: 'generic' },
+  general: {
+    language: 'system',
+    autostart: false,
+    timeZone: 'Asia/Jerusalem',
+    notifications: 'generic',
+    theme: 'system', // [V4]
+  },
   llm: {
     provider: 'local',
     claudeModel: 'claude-opus-5',
@@ -148,6 +162,7 @@ export const SettingsPatchSchema = z
         language: z.enum(['system', 'en', 'he']),
         autostart: z.boolean(),
         notifications: z.enum(['off', 'generic']),
+        theme: ThemeSchema, // [V4] header ThemeToggle + Settings > General
       })
       .partial(),
     llm: z

@@ -2,13 +2,25 @@
 // Every write is a compare-and-set on the OLD state; the frozen triggers of CONTRACTS 15.2 are the second line of defence.
 // [V2] v2 members (C2 16.1): V2-W1-01-db.
 import { createHash, randomUUID } from 'node:crypto';
-import { ActionPayloadSchema, canonicalJson, UpdateEventPayloadSchema } from '../../../shared/schemas';
+import {
+  ActionPayloadSchema,
+  canonicalJson,
+  ManualActionPayloadSchema,
+  UpdateEventPayloadSchema,
+} from '../../../shared/schemas';
 import type { ActionPayload, EventContentWithStatus } from '../../../shared/schemas';
 import { LIMITS } from '../../../shared/types';
 import type * as T from '../../../shared/types';
 import { ActionStateError, RepoContractError, RowNotFoundError } from '../errors';
 import type { Db, Repos } from '../index';
-import { ACTION_COLUMNS, type ActionRow, toAction } from './rows';
+import {
+  ACTION_COLUMNS,
+  MANUAL_ACTION_COLUMNS,
+  type ActionRow,
+  type ManualActionRow,
+  toAction,
+  toManualAction,
+} from './rows';
 
 export type ActionsRepo = Repos['actions'];
 
@@ -34,9 +46,17 @@ export function sha256Hex(utf8: string): string {
   return createHash('sha256').update(utf8, 'utf8').digest('hex');
 }
 
+/** [v4 T6] CHAT rows only: a manual (calendar-view) row has no item / proposal / chat and is never handed to the chat paths. */
 const selectById = (db: Db, id: T.ActionId): T.ApprovalAction | null => {
-  const row = db.prepare<ActionRow>(`SELECT ${ACTION_COLUMNS} FROM actions WHERE id = ?`).get(id);
+  const row = db.prepare<ActionRow>(`SELECT ${ACTION_COLUMNS} FROM actions WHERE id = ? AND source = 'chat'`).get(id);
   return row ? toAction(row) : null;
+};
+/** [v4 T6] MANUAL rows only. */
+const selectManualById = (db: Db, id: T.ActionId): T.ManualAction | null => {
+  const row = db
+    .prepare<ManualActionRow>(`SELECT ${MANUAL_ACTION_COLUMNS} FROM actions WHERE id = ? AND source = 'manual'`)
+    .get(id);
+  return row ? toManualAction(row) : null;
 };
 
 /** node:sqlite raises ERR_SQLITE_ERROR for a RAISE(ABORT) in a trigger; the CAS helpers map that to 'stale', never to a crash. */
@@ -187,9 +207,58 @@ export function createActionsRepo(db: Db): ActionsRepo {
 
     executing() {
       return db
-        .prepare<ActionRow>(`SELECT ${ACTION_COLUMNS} FROM actions WHERE state = 'executing' ORDER BY created_at ASC`)
+        .prepare<ActionRow>(
+          `SELECT ${ACTION_COLUMNS} FROM actions WHERE state = 'executing' AND source = 'chat' ORDER BY created_at ASC`,
+        )
         .all()
         .map(toAction);
+    },
+
+    // ---- [v4 T6] manual (calendar-view) rows: handover §2.5. Never returned by the chat members above. ----
+    /** Validates the payload with the MANUAL schema (a chat payload is refused), source 'manual', no item / proposal / chat,
+     *  idempotency key `manual:<uuid>`, born pending (trigger), expires like every action (LIMITS.actionTtlMs). */
+    insertManualPending(p) {
+      const payload = ManualActionPayloadSchema.parse(p.payload);
+      const canonical = canonicalJson(payload);
+      const id = randomUUID();
+      db.prepare(
+        `INSERT INTO actions(id, item_id, proposal_id, chat_id, kind, canonical_json, content_sha256, idempotency_key,
+                             attempt, retry_of, state, created_at, expires_at, source)
+         VALUES (?, NULL, NULL, NULL, ?, ?, ?, ?, 1, NULL, 'pending', ?, ?, 'manual')`,
+      ).run(id, payload.kind, canonical, sha256Hex(canonical), `manual:${id}`, p.now, p.now + LIMITS.actionTtlMs);
+      return selectManualById(db, id)!;
+    },
+
+    manualById(id) {
+      return selectManualById(db, id);
+    },
+
+    manualExecuting() {
+      return db
+        .prepare<ManualActionRow>(
+          `SELECT ${MANUAL_ACTION_COLUMNS} FROM actions WHERE state = 'executing' AND source = 'manual' ORDER BY created_at ASC`,
+        )
+        .all()
+        .map(toManualAction);
+    },
+
+    /** One approvable manual proposal at a time: every still-pending manual action is superseded (a new propose, an undo). */
+    supersedePendingManual(_now) {
+      return db.prepare(`UPDATE actions SET state = 'superseded' WHERE source = 'manual' AND state = 'pending'`).run()
+        .changes;
+    },
+
+    /** Manual undo actions of `actionId` that got past the write-ahead (idempotency: a second undo is refused). */
+    manualUndosOf(actionId) {
+      return db
+        .prepare<ManualActionRow>(
+          `SELECT ${MANUAL_ACTION_COLUMNS} FROM actions
+             WHERE source = 'manual' AND state IN ('approved','executing','done','unknown_outcome')
+               AND CASE WHEN json_valid(canonical_json) THEN json_extract(canonical_json, '$.undoOf') = ? ELSE 0 END
+             ORDER BY created_at ASC`,
+        )
+        .all(actionId)
+        .map(toManualAction);
     },
 
     /** [R2] Follows retry_of to attempt 1. The chain is at most `attempt` long; the guard stops a corrupted cycle. */
@@ -210,7 +279,7 @@ export function createActionsRepo(db: Db): ActionsRepo {
     countUserApprovedCreates() {
       return db
         .prepare<{ n: number }>(
-          `SELECT COUNT(*) AS n FROM actions WHERE kind = 'create_event' AND state = 'done' AND approved_by = 'user'`,
+          `SELECT COUNT(*) AS n FROM actions WHERE kind = 'create_event' AND state = 'done' AND approved_by = 'user' AND source = 'chat'`,
         )
         .get()!.n;
     },
@@ -224,7 +293,7 @@ export function createActionsRepo(db: Db): ActionsRepo {
       const rows = db
         .prepare<{ canonical_json: string }>(
           `SELECT canonical_json FROM actions
-             WHERE kind = 'update_event' AND state = 'rejected'
+             WHERE kind = 'update_event' AND state = 'rejected' AND source = 'chat'
                AND CASE WHEN json_valid(canonical_json)
                         THEN json_extract(canonical_json, '$.targetEventId') = ? AND json_extract(canonical_json, '$.baseRevision') = ?
                         ELSE 0 END

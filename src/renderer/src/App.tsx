@@ -41,6 +41,8 @@ import { HealthPill, type HealthPart } from './components/HealthPill';
 import { DownloadPill, type DownloadPillProgress } from './components/DownloadPill';
 import { SetupStrip } from './components/SetupStrip';
 import { LanguageToggle } from './components/LanguageToggle';
+import { applyDocumentTheme, ThemeToggle } from './components/ThemeToggle';
+import type { Theme } from '@shared/settings';
 import { Dashboard } from './views/Dashboard';
 import { Settings, type SettingsGroup } from './views/Settings';
 import { Welcome } from './views/Onboarding/Welcome';
@@ -487,6 +489,17 @@ export function App() {
     [setSettings, i18n],
   );
 
+  // [V4] T-908 (spec v4-calendar-handover 2.3): <html data-theme> follows the stored choice - at boot (hydrate) and on every
+  // change, whichever control made it (header switch or Settings > General). The store updates optimistically and rolls back
+  // on a refused save, so this one effect covers both directions.
+  const theme: Theme = settings?.general.theme ?? 'system';
+  useEffect(() => {
+    applyDocumentTheme(theme);
+  }, [theme]);
+
+  // Header exception, like onLanguage: the switch persists through settings:set; main mirrors it into nativeTheme.
+  const onTheme = useCallback((next: Theme) => void setSettings({ general: { theme: next } }), [setSettings]);
+
   const onPause = useCallback(async () => {
     const next = !(health?.paused ?? false);
     const r = await api.setPaused(next);
@@ -727,7 +740,9 @@ export function App() {
   const paused = health?.paused ?? settings?.agent.paused ?? false;
 
   return (
-    <div data-testid="app" data-view={view} className="flex min-h-full flex-col bg-canvas text-text">
+    // [V4] T-908 T2 (spec v4-calendar-handover 2.2): a fixed-height column. Header, setup strip and footer stay in normal flow;
+    // the content wrapper (`app-scroll`) is the one scroller between them, so nothing above it ever scrolls away.
+    <div data-testid="app" data-view={view} className="flex h-full flex-col overflow-hidden bg-canvas text-text">
       <header
         role="banner"
         className={`flex h-12 shrink-0 items-center gap-2 px-4 ${paused ? 'border-b-2 border-warn' : 'border-b border-line'} bg-surface`}
@@ -754,6 +769,11 @@ export function App() {
             {paused ? t('header.resume') : t('header.pause')}
           </button>
         ) : null}
+        {/* [V4] below the roomy breakpoint the header has no room for a third control group; the same choice lives in
+            Settings > General (settings-theme), so the narrow window keeps its no-horizontal-scroll guarantee. */}
+        <div className="max-roomy:hidden">
+          <ThemeToggle value={theme} onChange={onTheme} />
+        </div>
         <LanguageToggle value={language} onChange={onLanguage} compact />
         {!onboarding ? (
           <button
@@ -772,7 +792,7 @@ export function App() {
         <SetupStrip tasks={tasks} details={setupDetails} onAction={onSetupAction} onHide={hideSetupTask} />
       ) : null}
 
-      <div className="min-h-0 grow">
+      <div className="flex min-h-0 grow flex-col overflow-y-auto" data-testid="app-scroll">
         {onboarding ? (
           <main aria-label={t('app.mainRegion')} data-testid="onboarding">
             {step === 'welcome' ? <Welcome onDone={() => goToStep('choose_ai')} /> : null}
@@ -827,7 +847,7 @@ export function App() {
         <div
           role="status"
           data-testid="toast"
-          className="fixed end-4 bottom-10 z-30 w-80 max-w-full rounded-sm bg-surface p-3 shadow-pop"
+          className="fixed end-4 inset-be-10 z-30 w-80 max-w-full rounded-sm bg-surface p-3 shadow-pop"
           onMouseEnter={() => setToastPaused(true)}
           onMouseLeave={() => setToastPaused(false)}
           onFocus={() => setToastPaused(true)}

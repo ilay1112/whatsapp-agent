@@ -292,6 +292,18 @@ const voiceState: VoiceState = {
   suggestLite: false,
 };
 
+/** [v4 T6] default answer of calendar:propose* (a pending manual action; nothing written). */
+function MANUAL_PROPOSAL(
+  kind: 'create_event' | 'update_event' | 'delete_event',
+  op: 'create' | 'edit' | 'delete',
+): IpcRes<'calendar:proposeCreate'> {
+  return {
+    actionId: '11111111-1111-4111-8111-111111111111',
+    kind,
+    shownHash: 'a'.repeat(64),
+    summary: { op, calendarId: 'primary', before: null, after: null },
+  };
+}
 export const IPC_DEFAULTS: { [C in IpcChannel]: IpcRes<C> } = {
   'app:getBootstrap': {
     lang: 'en',
@@ -312,6 +324,15 @@ export const IPC_DEFAULTS: { [C in IpcChannel]: IpcRes<C> } = {
     analysing: 0,
   },
   'dashboard:getIgnored': { items: [] },
+  'dashboard:refreshNow': {
+    newRows: 0,
+    queued: 0,
+    skippedRateLimited: 0,
+    skippedInCalendar: 0,
+    skippedNothingToAnalyse: 0,
+    calendarRefreshed: true,
+    cooldown: false,
+  },
   'item:get': defaultDetail,
   'item:dismiss': { ...defaultDetail, status: 'dismissed', closedReason: 'dismissed' },
   'item:restore': defaultDetail,
@@ -364,6 +385,23 @@ export const IPC_DEFAULTS: { [C in IpcChannel]: IpcRes<C> } = {
         accessRole: 'owner',
       },
     ],
+  },
+  'calendar:listEvents': { weekStartMs: 0, events: [], fetchedAt: 0, failed: [] }, // [v4 T4]
+  'calendar:invalidate': null, // [v4 T4]
+  // [v4 T6] a pending manual proposal / a done manual undo (tests that care supply their own answer)
+  'calendar:proposeCreate': MANUAL_PROPOSAL('create_event', 'create'),
+  'calendar:proposeEdit': MANUAL_PROPOSAL('update_event', 'edit'),
+  'calendar:proposeDelete': MANUAL_PROPOSAL('delete_event', 'delete'),
+  'action:undo': {
+    outcome: 'done',
+    item: null,
+    manual: {
+      actionId: '22222222-2222-4222-8222-222222222222',
+      op: 'undo',
+      calendarId: 'primary',
+      undoable: false,
+      errorCode: null,
+    },
   },
   'settings:get': DEFAULT_SETTINGS,
   'settings:set': DEFAULT_SETTINGS,

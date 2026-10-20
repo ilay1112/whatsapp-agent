@@ -1,6 +1,6 @@
 // src/main/index.ts - Electron main entry (owner W2-01). Thin by design: every capability is wired in compose.ts.
 // ESM main: protocol.registerSchemesAsPrivileged and requestSingleInstanceLock run at module top level BEFORE any top-level await.
-import { app, clipboard, dialog, ipcMain, nativeImage, Notification, safeStorage, shell } from 'electron';
+import { app, clipboard, dialog, ipcMain, nativeImage, nativeTheme, Notification, safeStorage, shell } from 'electron';
 import type { BrowserWindow } from 'electron';
 import electronLog from 'electron-log/main';
 import nodeFs from 'node:fs';
@@ -290,6 +290,7 @@ if (!gotLock) {
         version: app.getVersion(),
         execPath: process.execPath,
         preferredLanguages: () => app.getPreferredSystemLanguages(),
+        nativeTheme, // [V4] T-908: general.theme -> nativeTheme.themeSource
         image: nativeImageFacade,
         dialog: showMessageBox,
         notifyWithActions,
@@ -318,6 +319,7 @@ if (!gotLock) {
           isPackaged: app.isPackaged,
           initial: rt.uiLanguage(),
           startHidden,
+          dark: nativeTheme.shouldUseDarkColors, // [V4] compose already applied general.theme to themeSource
           log,
           // [REPAIR] The crashed window used to be left behind: a ghost that `installCloseToTray` could only hide, that
           // `attachWindow` no longer trusted, and that a crash-during-load rebuilt without limit - even mid-quit.

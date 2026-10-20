@@ -175,8 +175,12 @@ export type ChatAutoPolicy = (typeof CHAT_AUTO_POLICIES)[number];
 
 /** [V2 CHANGE] + update_event (D-036). Cancel = update_event with to.status='cancelled'; undo = update_event with change='undo'.
  *  There is no delete kind and no undo_auto kind (B10). */
-export const ACTION_KINDS = ['send_reply', 'create_event', 'update_event'] as const;
+export const ACTION_KINDS = ['send_reply', 'create_event', 'update_event', 'delete_event'] as const; // [v4 T6] + delete_event (source 'manual' ONLY - DB CHECK)
 export type ActionKind = (typeof ACTION_KINDS)[number];
+/** [v4 T6] actions.source: 'chat' = proposed from a WhatsApp item (item / proposal / chat set), 'manual' = authored by the user in
+ *  the calendar view (no item, no proposal, no chat; approved ONLY by a click - trg_actions_state; never AutoGate - I9'). */
+export const ACTION_SOURCES = ['chat', 'manual'] as const;
+export type ActionSource = (typeof ACTION_SOURCES)[number];
 /** [V2 ADD] The kinds AutoGate may ever evaluate (never send_reply - I1'). */
 export const CALENDAR_ACTION_KINDS = ['create_event', 'update_event'] as const;
 export type CalendarActionKind = (typeof CALENDAR_ACTION_KINDS)[number];
@@ -565,12 +569,33 @@ export interface ApprovalAction {
   createdAt: EpochMs;
   expiresAt: EpochMs;
   approvedBy: ApprovedBy | null; // [V2 ADD] NULL until approval ; set once, in the same UPDATE as state='approved' (trg_actions_approver_frozen)
+  /** [v4 T6] absent / 'chat' for every row the chat repos return (they never return a manual row); AutoGate refuses 'manual'. */
+  source?: ActionSource;
+}
+/** [v4 T6] A row of `actions` with source 'manual' (calendar view): no item / proposal / chat. Read ONLY through
+ *  repos.actions.manualById / manualExecuting; the chat-side repo methods never return it. */
+export interface ManualAction {
+  id: ActionId;
+  source: 'manual';
+  kind: 'create_event' | 'update_event' | 'delete_event';
+  canonicalJson: string;
+  contentSha256: Sha256Hex;
+  state: ActionState;
+  approvedAt: EpochMs | null;
+  approvedFinalJson: string | null;
+  executedAt: EpochMs | null;
+  result: ActionResult | null;
+  errorCode: import('./errors').ErrorCode | null;
+  createdAt: EpochMs;
+  expiresAt: EpochMs;
+  approvedBy: ApprovedBy | null;
 }
 export type ActionResult =
   | { kind: 'send_reply'; waMsgId: string | null } // filled by ingest/reconcile when the outbound row is matched
   | { kind: 'create_event'; eventId: string; htmlLink: string | null }
   // [V2 ADD] eventId === payload.targetEventId (readback-verified) ; revision = items.event_revision after the write
-  | { kind: 'update_event'; eventId: string; revision: number; status: EventStatus };
+  | { kind: 'update_event'; eventId: string; revision: number; status: EventStatus }
+  | { kind: 'delete_event'; eventId: string }; // [v4 T6] manual only
 
 export interface RunRecord {
   id: RunId;
@@ -683,6 +708,10 @@ export const AUDIT_KINDS = [
   'media_rejected',
   'voice_job',
   'chat_rules_cleared', // [sweep-fix-a] Settings 'Remove the rule': {chatRef, policy, forceKnown, autoPolicy} = the values cleared
+  'refresh_now', // [v4 T3] dashboard:refreshNow {newRows, queued, skippedRateLimited} - counts only
+  'manual_event_proposed', // [v4 T6] calendar:propose* {kind, calendarSha8} (ref = action id)
+  'manual_event_executed', // [v4 T6] {kind, op, calendarSha8, outcome} (ref = action id)
+  'manual_event_refused', // [v4 T6] {reason, stage} (ref = action id or null) - I9' refusals in main
 ] as const; // [V2 CHANGE] + 16 kinds (ARCH-v2 9.1). Details are enums/numbers/booleans/ids only (v1 rule), e.g.
 // cli_run {provider, stage, initOk, toolsCount, extraServers, toolCalls, blockedCalls, stopReason, ms, usageWindowHit} (B13 / ARCH-v2 4.3),
 // auto_write {decisionId, actionId, kind, eventIdSha8}, voice_job {itemId, seconds, wallMs, exitCode, outcome}, media_rejected {reason, bytes, pixels}.
@@ -766,6 +795,7 @@ export const AUTO_REASONS = [
   'multiple_events', // [F31] the chat has more than one editable event; a delta is never automatic
   // provider
   'provider_unsafe',
+  'manual_only', // [v4 T6] a source:'manual' action (calendar view) is never automatic - evaluated FIRST, never recorded
   // cage
   'beyond_horizon',
   'too_long',
@@ -790,8 +820,36 @@ export const AUTO_REASONS = [
 ] as const;
 export type AutoReason = (typeof AUTO_REASONS)[number];
 
-export const REVISION_KINDS = ['create', 'reschedule', 'move', 'cancel', 'undo'] as const;
+export const REVISION_KINDS = [
+  'create',
+  'reschedule',
+  'move',
+  'cancel',
+  'undo',
+  // [v4 T6] calendar-view writes (item_id NULL - DB CHECK); read only through eventRevisions.manual* (never by the chat chain)
+  'manual_create',
+  'manual_edit',
+  'manual_delete',
+  'manual_undo',
+] as const;
 export type RevisionKind = (typeof REVISION_KINDS)[number];
+export const MANUAL_REVISION_KINDS = ['manual_create', 'manual_edit', 'manual_delete', 'manual_undo'] as const;
+export type ManualRevisionKind = (typeof MANUAL_REVISION_KINDS)[number];
+/** [v4 T6] Row of event_revisions written by a manual (calendar-view) action: no item. prev = the get-event snapshot taken BEFORE
+ *  the write (I8; NULL for a create), next = the intended content (NULL for a delete). */
+export interface ManualRevisionRecord {
+  id: number;
+  calendarEventId: string; // main only - never crosses IPC
+  revision: number;
+  kind: ManualRevisionKind;
+  prev: EventContentWithStatus | null;
+  next: EventContentWithStatus | null;
+  actionId: ActionId;
+  appliedAt: EpochMs;
+  revertedBy: number | null;
+  postEtag: string | null;
+  postUpdated: string | null;
+}
 export const TRANSCRIPT_STATUSES = ['done', 'empty', 'failed', 'aborted'] as const;
 export type TranscriptStatus = (typeof TRANSCRIPT_STATUSES)[number];
 /** [V2 ADD] Google calendarList accessRole as projected by adminClient; 'unknown' is NOT owned (fail closed, B7). */
@@ -1057,6 +1115,19 @@ export interface DashboardData {
   counts: { needsReply: number; inCalendar: number; infoMissing: number; ignored: number };
   analysing: number; // queued + running (header "Analysing N chats...")
 }
+/** [v4 T3] `dashboard:refreshNow` (v4-calendar-handover 2.1). Counts only - never a chat id, a name or message text.
+ *  `queued` = chats for which this press re-queued the open item or created a new one (ingest's own path);
+ *  `skippedNothingToAnalyse` = chats left unchanged (no eligible row in 24 h, answered, already pending, held by the user, edit-locked);
+ *  `cooldown` = true when the press landed inside the 30 s cooldown and this is the previous press's report. */
+export interface RefreshReport {
+  newRows: number;
+  queued: number;
+  skippedRateLimited: number;
+  skippedInCalendar: number;
+  skippedNothingToAnalyse: number;
+  calendarRefreshed: boolean;
+  cooldown: boolean;
+}
 
 // ---------- hardware / local model ----------
 export interface GpuInfo {
@@ -1255,6 +1326,62 @@ export interface CalendarInfo {
   writable: boolean;
   accessRole: CalendarAccessRole; // [V2 ADD] cached in meta.calendar_roles_json ; automatic mode needs 'owner' for the target (B7, I9)
 } // name UNTRUSTED
+
+/** [V4] T-908 §2.4: one event of any calendar of the account, for the calendar view only (main-side read, never the model's).
+ *  title UNTRUSTED (cleaned, <= 60). Times are wall clock in settings.general.timeZone; an all-day event runs local midnight ..
+ *  the midnight after its last day. `writable` = the calendar's stored role is owner|writer (it says nothing about attendees /
+ *  recurrence - I9' refuses those separately). `eventKey` = the same opaque key as ItemCard.calendar.eventKey (de-dup of the
+ *  app's own events against their cards). [v4 T6, ARCH-v2 10] NO Google event id crosses IPC: the renderer names an event by
+ *  (calendarId, eventKey) and main resolves the id from its week cache (CalendarEventsService.resolve). */
+export interface ForeignEventView {
+  calendarId: string;
+  title: string;
+  startLocal: LocalDateTime;
+  endLocal: LocalDateTime;
+  allDay: boolean;
+  attendees: number;
+  recurring: boolean;
+  ownedByApp: boolean;
+  /** [v4 T6] an event a chat card created (private waItem tag): managed from its card, never from the calendar view. */
+  fromChat: boolean;
+  /** [v4 review fix] UNTRUSTED (other people's text, cleaned, <= 120): pre-fills the manual edit form; never in an attribute but an input value. */
+  location: string;
+  writable: boolean;
+  eventKey: string;
+  /** [v4 T6] the executed manual action action:undo may revert for this event ("Undo last change"), or null. */
+  undoActionId: string | null;
+}
+/** [v4 T6] What the confirm dialog (`cal-confirm`) shows for a manual proposal: app-built, no event id. `before` = the
+ *  get-event snapshot (edit / delete), `after` = the content that will be written (create / edit). Titles UNTRUSTED. */
+export interface ManualSummary {
+  op: 'create' | 'edit' | 'delete' | 'undo';
+  calendarId: string;
+  before: EventContentView | null;
+  after: EventContentView | null;
+}
+/** [v4 T6] calendar:propose* answer: a PENDING manual action. Nothing was written; the renderer approves it with action:approve
+ *  {actionId, kind, shownHash} from the confirm dialog. */
+export interface ManualProposal {
+  actionId: ActionId;
+  kind: 'create_event' | 'update_event' | 'delete_event';
+  shownHash: Sha256Hex;
+  summary: ManualSummary;
+}
+/** [v4 T6] The outcome of a manual action (action:approve / action:undo): `undoable` = action:undo {actionId} is offered. */
+export interface ManualOutcomeView {
+  actionId: ActionId;
+  op: ManualSummary['op'];
+  calendarId: string;
+  undoable: boolean;
+  errorCode: import('./errors').ErrorCode | null;
+}
+/** [V4] calendar:listEvents answer: the visible week's events of the asked calendars; `failed` = calendar ids that errored. */
+export interface CalendarEventsRes {
+  weekStartMs: EpochMs;
+  events: ForeignEventView[];
+  fetchedAt: EpochMs;
+  failed: string[];
+}
 
 export interface Bootstrap {
   lang: Lang;

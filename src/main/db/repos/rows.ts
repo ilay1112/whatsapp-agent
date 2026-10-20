@@ -258,6 +258,43 @@ export interface ActionRow {
 export const ACTION_COLUMNS =
   'id, item_id, proposal_id, chat_id, kind, canonical_json, content_sha256, idempotency_key, attempt, retry_of, state, ' +
   'approved_at, approved_final_json, executed_at, result_json, error_code, created_at, expires_at, approved_by';
+/** [v4 T6] A manual (calendar-view) row: actions.source = 'manual', item / proposal / chat NULL (DB CHECK). */
+export interface ManualActionRow {
+  id: string;
+  kind: string;
+  canonical_json: string | null;
+  content_sha256: string;
+  state: string;
+  approved_at: number | null;
+  approved_final_json: string | null;
+  executed_at: number | null;
+  result_json: string | null;
+  error_code: string | null;
+  created_at: number;
+  expires_at: number;
+  approved_by: string | null;
+}
+export const MANUAL_ACTION_COLUMNS =
+  'id, kind, canonical_json, content_sha256, state, approved_at, approved_final_json, executed_at, result_json, error_code, ' +
+  'created_at, expires_at, approved_by';
+export function toManualAction(r: ManualActionRow): T.ManualAction {
+  return {
+    id: r.id,
+    source: 'manual',
+    kind: r.kind as T.ManualAction['kind'],
+    canonicalJson: r.canonical_json ?? '',
+    contentSha256: r.content_sha256,
+    state: r.state as T.ActionState,
+    approvedAt: r.approved_at,
+    approvedFinalJson: r.approved_final_json,
+    executedAt: r.executed_at,
+    result: parseJsonOrNull<T.ActionResult>(r.result_json),
+    errorCode: r.error_code as ErrorCode | null,
+    createdAt: r.created_at,
+    expiresAt: r.expires_at,
+    approvedBy: r.approved_by,
+  };
+}
 export function toAction(r: ActionRow): T.ApprovalAction {
   return {
     id: r.id,
@@ -411,6 +448,22 @@ export interface EventRevisionRow {
 }
 export const EVENT_REVISION_COLUMNS =
   'id, calendar_event_id, item_id, revision, kind, prev_json, next_json, action_id, applied_at, reverted_by, post_etag, post_updated';
+/** [v4 T6] A manual revision row (item_id NULL, manual kind). */
+export function toManualRevision(r: EventRevisionRow): T.ManualRevisionRecord {
+  return {
+    id: r.id,
+    calendarEventId: r.calendar_event_id,
+    revision: r.revision,
+    kind: r.kind as T.ManualRevisionKind,
+    prev: storedContent(r.prev_json),
+    next: storedContent(r.next_json),
+    actionId: r.action_id,
+    appliedAt: r.applied_at,
+    revertedBy: r.reverted_by,
+    postEtag: r.post_etag,
+    postUpdated: r.post_updated,
+  };
+}
 export function toEventRevision(r: EventRevisionRow): T.EventRevisionRecord {
   return {
     id: r.id,

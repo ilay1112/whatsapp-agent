@@ -62,6 +62,7 @@ const VALID: Record<IpcChannel, unknown> = {
   'health:get': undefined,
   'dashboard:get': undefined,
   'dashboard:getIgnored': undefined,
+  'dashboard:refreshNow': undefined,
   'item:get': { itemId: 1 },
   'item:dismiss': { itemId: 1 },
   'item:restore': { itemId: 1 },
@@ -107,6 +108,18 @@ const VALID: Record<IpcChannel, unknown> = {
   'google:status': undefined,
   'google:disconnect': { confirm: true },
   'google:listCalendars': undefined,
+  'calendar:listEvents': { anchorMs: 0, calendarIds: ['primary'] }, // [v4 T4]
+  'calendar:invalidate': undefined, // [v4 T4]
+  'calendar:proposeCreate': {
+    calendarId: 'primary',
+    title: 'Dentist',
+    startLocal: '2026-10-07T10:00:00',
+    endLocal: '2026-10-07T11:00:00',
+    location: '',
+  }, // [v4 T6]
+  'calendar:proposeEdit': { calendarId: 'primary', eventKey: '0123456789abcdef', patch: { title: 'New' } },
+  'calendar:proposeDelete': { calendarId: 'primary', eventKey: '0123456789abcdef' },
+  'action:undo': { actionId: '11111111-1111-4111-8111-111111111111' },
   'settings:get': undefined,
   'settings:set': { privacy: { retentionDays: 14 } },
   'external:open': { target: 'project_readme' },

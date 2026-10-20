@@ -47,15 +47,25 @@ A Windows 11 desktop app that watches **your own** WhatsApp chats for plans ("co
 Each card shows the original message, the proposed event (title, date, time, place) and the draft reply, with **Approve & send**, **Add to calendar**, **Edit time**, **Ask for details** and an **×** to dismiss (*Undo dismiss* keeps the last 20).
 
 - By default only chats that look like a plan are shown; **Show all (N hidden)** reveals the rest.
-- **Cards / Calendar** switch: a week view of your proposed and booked plans (built from the app's own data, not a read of your whole Google calendar); chats with no date yet sit in a side list.
+- **Cards / Calendar** switch: a week view of your proposed and booked plans next to the events of the Google calendars you pick (see below); chats with no date yet sit in a side list.
 - A plan with a missing time can be completed by hand: **Save time**, then **Add to calendar** — still one explicit click per calendar write.
+- **Refresh** (on the dashboard toolbar) pulls new messages, re-analyses chats that were active in the last 24 hours (up to 20 per press, inside the usual AI rate limits; plans already in your calendar are left alone) and re-reads the calendar. Pressing it again within 30 seconds just shows the last result.
+- The header, the setup strip, the dashboard toolbar and the Settings menu **stay in place** while you scroll.
+- **Light, dark or system theme** — from the header switch or *Settings → General → Appearance*; native dialogs and scrollbars follow it.
 
 ### Events that follow the conversation
 
 - When a chat changes a plan the app already put on your calendar ("let's push it to 5", "can we do Sunday instead?", "sorry, I can't make it"), the card becomes a **change card** — *Wed 15:00 → 17:00* with **Approve change** / **Keep**.
-- A cancellation marks **the app's own event** as cancelled. Nothing is ever deleted: `delete-event` is not even enabled at the calendar server.
+- A cancellation marks **the app's own event** as cancelled. The AI and automatic mode never delete anything; the only deletes are the ones you start yourself from the calendar view (below).
 - The previous version is stored **before** anything is written, and every change has **Undo** (and *Restore original* after repeated changes). If you edited the event in Google yourself in the meantime, the app tells you instead of overwriting your edit.
-- Only events the app created itself, with no attendees and no recurrence, are ever changed.
+- From a conversation, only events the app created itself, with no attendees and no recurrence, are ever changed.
+
+### Your whole calendar in the week view
+
+- The week view shows **every calendar of your Google account** that you tick in the **Calendars** picker, each in its own colour with a **colour legend**; *Refresh events* re-reads the week.
+- Click any event to see its calendar, time, and whether it can be changed from here. You can **create, move, edit (title, place, length) and delete** events on any calendar you can write to — each change opens a confirmation showing exactly what will happen, needs your click, is stored before it is written and has **Undo**.
+- **Events with other attendees and repeating events are never changed or deleted from the app** — the button is disabled with the reason, and the app refuses the change in code even if asked another way. Read-only calendars are view-only. The AI and automatic mode never touch events on your other calendars.
+- **Privacy:** other calendars' events are read **per visible week, into memory only** (kept up to 5 minutes, never written to disk) and are never shown to the AI.
 
 ### Automatic mode (off by default)
 
@@ -112,7 +122,7 @@ There is **never** a silent fallback from one provider to another. Dates and tim
 
 - The app is an **MCP client** of a bundled Google Calendar MCP server (`@cocal/google-calendar-mcp` 2.6.3, run on the app's own Node runtime — no separate install). The bundled copy carries a small, pinned **seven-insertion patch** so the app can change or cancel an event safely (a `cancelled` status, an `If-Match` guard and the event's `etag`); the build refuses any other server bytes.
 - The **AI** gets only **read** tools through MCP: the current time and your free/busy slots — never other events' titles.
-- **Writing** (`create-event`, `update-event`) is done by the app itself, through the same MCP client, **only** after your click or under an active automatic-mode policy. Events are created without attendees and without sending invitations, and are tagged so the app recognises its own events. `delete-event` is never enabled. If the server cannot prove it supports safe changes, only *changes* are switched off — adding events keeps working.
+- **Writing** (`create-event`, `update-event`, and `delete-event` for deletes you start from the calendar view) is done by the app itself, through the same MCP client, **only** after your click or — never for deletes or other calendars' events — under an active automatic-mode policy. Events are created without attendees and without sending invitations, and are tagged so the app recognises its own events. `delete-event` can only be reached by a delete you started and approved yourself; a conversation or automatic mode can never trigger it. If the server cannot prove it supports safe changes, only *changes* are switched off — adding events keeps working.
 - Uses **your own** Google Cloud project and OAuth client — no server of ours is involved.
 
 ### Approval-first, enforced in code
@@ -156,7 +166,7 @@ Full design: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) (v1) and [`docs/ARCH
 | Message text for a cloud AI | Anthropic or Google — only if you chose that provider (API key or your own CLI subscription), only after its consent screen, and only a minimised slice of one conversation, with role labels instead of names, numbers or chat IDs. Earlier messages of the same chat only when the AI looks them up through the read-only tools. | per analysed message |
 | Voice notes | **Nowhere** — always transcribed on your PC. Only the transcript text is handled like a message. | — |
 | Pictures | To the cloud AI you chose, if picture reading by the cloud is on (its consent screen covers it); otherwise read by the local model. | per picture that may hold a plan |
-| Your calendar | The AI sees only busy/free times ("busy 15:00–16:00"), never other events' titles. Events are written by the app only after your click, or by automatic mode if you turned it on. | per analysed message / per approval |
+| Your calendar | The AI sees only busy/free times ("busy 15:00–16:00"), never other events' titles. Events are written by the app only after your click, or by automatic mode if you turned it on. The week view reads the events of the calendars you pick **for the visible week only, into memory** (up to 5 minutes, never saved to disk, never shown to the AI). | per analysed message / per approval / per week you open |
 | Google credentials | Stay on your PC, in your user profile. Your own Google Cloud project. | — |
 | Model downloads | HTTPS from Hugging Face, pinned by commit and SHA-256 (language models, picture add-ons, speech models). | when you pick a local model or turn on voice notes |
 | Anything else | **No** analytics, **no** crash reporting, **no** update check, **no** account. | never |
@@ -201,7 +211,7 @@ There is no published installer yet — [build it](#building-from-source), then 
 - Voice notes and pictures appear on the card as an inert bubble next to what the app read from them.
 - Badges mark anything the app assumed ("at 5" → 17:00), a clash with your calendar, a picture worth double-checking, or text that looks like it is trying to manipulate the AI (that draft is collapsed behind *show anyway*).
 - **Pause** the agent from the header or the tray at any time. The status pill shows WhatsApp / AI / Calendar health, each with one action when something is wrong.
-- **Settings:** language, AI provider and model (incl. the Claude CLI connection), voice notes and the voice model, picture reading, automatic mode and its activity page, WhatsApp re-link / unlink and read-tool scope, Google Calendar and target calendar, per-chat rules (for example *never analyse this chat*), notifications, *Start with Windows*, data retention, *purge now*, export diagnostics (metadata only), licences.
+- **Settings:** language, theme, AI provider and model (incl. the Claude CLI connection), voice notes and the voice model, picture reading, automatic mode and its activity page, WhatsApp re-link / unlink and read-tool scope, Google Calendar and target calendar, per-chat rules (for example *never analyse this chat*), notifications, *Start with Windows*, data retention, *purge now*, export diagnostics (metadata only), licences.
 
 ---
 

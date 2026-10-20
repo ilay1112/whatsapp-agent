@@ -79,7 +79,7 @@ No new colour tokens. Mapping of the new states onto the v1 families:
 
 The accent fill stays reserved for the single primary approval button of a card (ux.md 2.1). **"Approve change" is outline** when "Approve & send" is also on the card; it is accent only when it is the card's only approval (a change with no reply to send). **Undo is never accent** (it is a quiet/outline button: undo is the cheap, calm direction, not the "normal path").
 
-### 1.3 Icons (closed list grows from 22 to 27)
+### 1.3 Icons (closed list grows from 22 to 27; `[v4]` T-908 adds `sun` and `moon` -> 29)
 
 | New icon | Used by | Mirrored in RTL |
 |---|---|---|
@@ -88,6 +88,8 @@ The accent fill stays reserved for the single primary approval button of a card 
 | `undo` (counter-clockwise arrow) | Undo buttons, "Undone" chip | **yes** (it points "back" in reading direction) |
 | `auto` (calendar leaf + small lightning-free spark: two concentric arcs) | `automatic` chip, AutoStrip header, tray line | no |
 | `terminal` (rectangle + prompt caret) | Connect card install/sign-in rows | no |
+| `sun` ([v4] T-908: circle + eight short rays) | header ThemeToggle "Light" segment | no |
+| `moon` ([v4] T-908: crescent) | header ThemeToggle "Dark" segment ("System" reuses `auto`) | no |
 
 No vendor logos, ever (B12). The ChangeLine arrow is a **text glyph** (`→` U+2192 in en, `←` U+2190 in he), `aria-hidden`, never an icon, never appended to button text (ux.md 1.3 still forbids arrows in buttons).
 

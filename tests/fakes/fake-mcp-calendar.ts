@@ -35,6 +35,7 @@ export const FAKE_MCP_TOOLS = {
   'manage-accounts': 'admin',
   'create-event': 'write',
   'update-event': 'write', // [V2] C2 11
+  'delete-event': 'write', // [v4 T6] manual (calendar-view) actions only (the host refuses every other caller)
 } as const;
 export type FakeMcpToolName = keyof typeof FAKE_MCP_TOOLS;
 export type FakeMcpToolClass = (typeof FAKE_MCP_TOOLS)[FakeMcpToolName];
@@ -57,6 +58,7 @@ export type FakeMcpToolCaller<C extends FakeMcpToolClass = FakeMcpToolClass> = (
   tool: FakeMcpToolNameOf<C>,
   args: Record<string, unknown>,
   signal?: AbortSignal,
+  opts?: { source?: 'chat' | 'manual' }, // [v4 T6] mirrors McpCallOptions: delete-event needs source 'manual'
 ) => Promise<FakeMcpResult<{ text: string; isError: boolean }>>;
 
 export interface FakeEvent {
@@ -112,7 +114,11 @@ export type FakeCalendarV2Scenario =
   | 'attendees' // every event reports one attendee (foreign, I9)
   | 'foreign_tags' // every event reports a private map WITHOUT waAgent (foreign)
   | 'precondition_412_always' // every update-event answers 412
-  | `access_role:${'owner' | 'writer' | 'reader' | 'freeBusyReader' | 'unknown' | 'absent'}`;
+  | `access_role:${'owner' | 'writer' | 'reader' | 'freeBusyReader' | 'unknown' | 'absent'}`
+  // [V4] T-908 group C: list-events of a calendar answers Google's 403 (isError). Bare = the LAST calendar of `calendars` (when
+  // there are 2+); `calendar_403:<calendarId>` = that calendar. Other calendars answer normally (review focus 5).
+  | 'calendar_403'
+  | `calendar_403:${string}`;
 /** v2 violation names recorded in `violations` (C2 17 + T2 3.7; the ledger fails any test that triggers one). */
 export type FakeCalendarV2Violation =
   | `update_event_forbidden_key:${string}`
@@ -124,7 +130,11 @@ export type FakeCalendarV2Violation =
   | 'update_event_scope_key'
   | `update_event_status:${string}`
   | 'write_or_disabled_tool_called:delete-event'
-  | `update_on_foreign_event:${string}`;
+  | `update_on_foreign_event:${string}`
+  // [v4 T6] I9': a MANUAL write (content-only update without a private map, or delete-event) on an event with attendees / recurrence
+  | `manual_write_on_protected_event:${string}`
+  | 'manual_update_status'
+  | `delete_event_send_updates:${string}`;
 export interface FakeStoredEvent {
   eventId: string;
   status: 'confirmed' | 'cancelled';
@@ -158,7 +168,8 @@ export interface FakeMcpCalendarV2Additions {
 export interface FakeCalendarOptions {
   enabledTools?: string[]; // default: parsed from ENABLED_TOOLS; undefined -> ALL 13 real tool names registered
   seedEvents?: FakeEvent[];
-  calendars?: Array<{ id: string; summary: string; primary?: boolean; timeZone?: string }>;
+  /** [V4] `accessRole` per calendar (default 'owner'); an `access_role:*` scenario still overrides every calendar. */
+  calendars?: Array<{ id: string; summary: string; primary?: boolean; timeZone?: string; accessRole?: string }>;
   accounts?: 'none' | 'personal_ok' | 'invalid_grant';
   scenario?: FakeCalendarScenario;
   now?: () => number; // injected clock for get-current-time
@@ -421,6 +432,9 @@ function offsetString(minutes: number): string {
   return `${sign}${String(Math.floor(abs / 60)).padStart(2, '0')}:${String(abs % 60).padStart(2, '0')}`;
 }
 
+/** [V4] An all-day seed date (Google `start.date`). */
+const ALL_DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
+
 const shapes = {
   // Mirrors GetCurrentTimeHandler in build-resources/calendar-mcp/node_modules/@cocal/google-calendar-mcp/build/index.js (2.6.3).
   currentTime: (nowMs: number, timeZone: string): string => {
@@ -454,8 +468,12 @@ const shapes = {
       events: events.map((e) => ({
         id: e.id,
         summary: e.summary,
-        start: { dateTime: e.start, timeZone: e.timeZone ?? DEFAULT_TZ },
-        end: { dateTime: e.end, timeZone: e.timeZone ?? DEFAULT_TZ },
+        // [V4] an all-day seed (`start: 'YYYY-MM-DD'`, end exclusive) is emitted as Google does: {date} without dateTime.
+        start: ALL_DAY_RE.test(e.start) ? { date: e.start } : { dateTime: e.start, timeZone: e.timeZone ?? DEFAULT_TZ },
+        end: ALL_DAY_RE.test(e.end) ? { date: e.end } : { dateTime: e.end, timeZone: e.timeZone ?? DEFAULT_TZ },
+        attendees: e.attendees?.map((a) => ({ email: a.email, responseStatus: 'needsAction' })),
+        recurrence: e.recurrence,
+        recurringEventId: e.recurringEventId,
         status: e.status ?? 'confirmed',
         htmlLink: e.htmlLink ?? `https://www.google.com/calendar/event?eid=FAKE${String(e.id ?? '')}`,
         location: e.location,
@@ -464,8 +482,8 @@ const shapes = {
       })),
     }),
   calendars: (
-    calendars: Array<{ id: string; summary: string; primary?: boolean; timeZone?: string }>,
-    accessRole: string | null,
+    calendars: Array<{ id: string; summary: string; primary?: boolean; timeZone?: string; accessRole?: string }>,
+    accessRole: string | null | undefined, // undefined = no access_role scenario: each calendar's own role (default 'owner')
   ): string =>
     JSON.stringify({
       calendars: calendars.map((c) => ({
@@ -473,7 +491,7 @@ const shapes = {
         summary: c.summary,
         primary: c.primary === true,
         timeZone: c.timeZone ?? DEFAULT_TZ,
-        ...(accessRole === null ? {} : { accessRole }),
+        ...(accessRole === null ? {} : { accessRole: accessRole ?? c.accessRole ?? 'owner' }),
       })),
     }),
   createdEvent: (id: string, htmlLink: string): string => JSON.stringify({ id, htmlLink, status: 'confirmed' }),
@@ -503,6 +521,9 @@ const shapes = {
   updateNotFound: (): string => 'MCP error -32600: Resource not found: Not Found',
   gone410: (): string => 'MCP error -32600: Google API error: Resource has been deleted',
   precondition: (): string => `MCP error -32600: ${vendoredPreconditionText()}`,
+  // [V4] handleGoogleApiError for a 403 on events.list of a calendar the account may not read
+  forbidden403: (): string =>
+    'MCP error -32600: Google API error: Forbidden - you need to have reader access to this calendar. (403)',
 };
 
 // =====================================================================================================================
@@ -597,6 +618,13 @@ function inputSchemas(schemaDrift: boolean, patched: boolean, withStatus: boolea
       fields: z.array(z.enum(eventFields)).optional(),
     },
     'update-event': updateEventShape(withStatus && patched, withIfMatch && patched),
+    // [v4 T6] DeleteEventHandler schema of 2.6.3 (l.5199)
+    'delete-event': {
+      account: z.string().optional(),
+      calendarId: z.string(),
+      eventId: z.string(),
+      sendUpdates: z.enum(['all', 'externalOnly', 'none']).optional(),
+    },
   };
 }
 
@@ -617,6 +645,8 @@ const ANNOTATIONS: Record<
   // [V2] C2 11: readOnlyHint on get-event, destructiveHint on update-event (pinned against the real tools/list)
   'get-event': { readOnlyHint: true, openWorldHint: false },
   'update-event': { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
+  // [v4 T6] WRITE_DESTRUCTIVE_ANNOTATIONS of 2.6.3 (l.5274)
+  'delete-event': { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false },
 };
 
 const DESCRIPTIONS: Record<string, string> = {
@@ -628,6 +658,7 @@ const DESCRIPTIONS: Record<string, string> = {
   'create-event': 'Create a new calendar event.',
   'get-event': 'Get one calendar event by id.', // [V2]
   'update-event': 'Update an existing calendar event.', // [V2]
+  'delete-event': 'Delete a calendar event.', // [v4 T6]
 };
 /** `poisoned_descriptions`: the tool descriptions themselves carry an injection attempt (prompt-poisoning tests). */
 const POISONED_SUFFIX =
@@ -655,6 +686,15 @@ const stringMap = (v: unknown): Record<string, string> => {
   return out;
 };
 
+/** [v4 T6] I9' reasons a MANUAL write must never touch an event: other attendees, a recurrence, an instance of a series. */
+function protectedReasons(e: FakeEvent, view: { attendees: boolean }): string[] {
+  const reasons: string[] = [];
+  if (view.attendees || (e.attendees?.length ?? 0) > 0) reasons.push('attendees');
+  if ((e.recurrence?.length ?? 0) > 0) reasons.push('recurrence');
+  if (typeof e.recurringEventId === 'string' && e.recurringEventId.length > 0) reasons.push('recurring_instance');
+  return reasons;
+}
+
 /** T2 3.7 `update_on_foreign_event` reasons for a stored event (I9: ours, no attendees, no recurrence, created/organised by self). */
 function foreignReasons(e: FakeEvent, view: { attendees: boolean; foreignTags: boolean }): string[] {
   const reasons: string[] = [];
@@ -665,6 +705,100 @@ function foreignReasons(e: FakeEvent, view: { attendees: boolean; foreignTags: b
   if (typeof e.recurringEventId === 'string' && e.recurringEventId.length > 0) reasons.push('recurring_instance');
   if (e.creatorSelf === false && e.organizerSelf === false) reasons.push('not_self');
   return reasons;
+}
+
+// =====================================================================================================================
+// [V4] T-908 group C: the calendar view's seed (several calendars, Google-shaped samples)
+// =====================================================================================================================
+
+/** [V4] The three calendars of `v4CalendarSeed` and their roles: primary owner, work writer, holidays reader. */
+export const V4_CALENDARS = {
+  primary: 'primary',
+  work: 'work@group.calendar.google.com',
+  holidays: 'holidays@group.v.calendar.google.com',
+} as const;
+/** [V4] Event ids of `v4CalendarSeed` (base32hex, so get-event / update-event accept them - EVENT_ID_RE). */
+export const V4_EVENT_IDS = {
+  plain: 'v4plain001', // primary, no attendees, not recurring -> manageable (group D)
+  appOwned: 'v4appevt01', // primary, waAgent '1' (an earlier app create-event)
+  attendees: 'v4attend01', // work, 2 attendees -> I9' refused
+  recurring: 'v4recur001', // work, an instance of a recurring series -> I9' refused
+  allDay: 'v4alldate1', // holidays (reader), all-day, 2 days
+} as const;
+
+const nextIsoDate = (isoDate: string, n: number): string => {
+  const [y, m, d] = isoDate.split('-').map(Number) as [number, number, number];
+  return new Date(Date.UTC(y, m - 1, d + n)).toISOString().slice(0, 10);
+};
+
+/**
+ * [V4] Seed API of the calendar view (handover §2.4). `day` = an ISO date inside the week under test; the samples sit on `day`
+ * and the day after, as local wall-clock times. The return value fits both harnesses:
+ *   - unit / in-process: `createFakeMcpCalendar({ calendars: s.calendars, seedEvents: s.events, v2Scenarios: ['calendar_403'] })`
+ *   - e2e: `mcpChild(ctx, label, { calendars: s.calendars, events: s.events, v2Scenarios: ['calendar_403'] })`
+ * `calendar_403` (bare) then fails the LAST calendar (holidays); `calendar_403:<id>` picks one.
+ */
+export function v4CalendarSeed(
+  day: string,
+  timeZone = DEFAULT_TZ,
+): {
+  calendars: Array<{ id: string; summary: string; primary?: boolean; timeZone: string; accessRole: string }>;
+  events: FakeEvent[];
+} {
+  const next = nextIsoDate(day, 1);
+  return {
+    calendars: [
+      { id: V4_CALENDARS.primary, summary: 'Personal', primary: true, timeZone, accessRole: 'owner' },
+      { id: V4_CALENDARS.work, summary: 'Work', timeZone, accessRole: 'writer' },
+      { id: V4_CALENDARS.holidays, summary: 'Holidays', timeZone, accessRole: 'reader' },
+    ],
+    events: [
+      {
+        id: V4_EVENT_IDS.plain,
+        calendarId: V4_CALENDARS.primary,
+        summary: 'Dentist',
+        start: `${day}T10:00:00`,
+        end: `${day}T11:00:00`,
+        timeZone,
+        location: 'Clinic',
+      },
+      {
+        id: V4_EVENT_IDS.appOwned,
+        calendarId: V4_CALENDARS.primary,
+        summary: 'Coffee with Dana',
+        start: `${day}T15:00:00`,
+        end: `${day}T16:00:00`,
+        timeZone,
+        extendedProperties: { private: { waAgent: '1', waItem: '1', waAction: 'v4-seed-root' } },
+        createdByApp: true,
+      },
+      {
+        id: V4_EVENT_IDS.attendees,
+        calendarId: V4_CALENDARS.work,
+        summary: 'Team sync',
+        start: `${next}T09:00:00`,
+        end: `${next}T10:00:00`,
+        timeZone,
+        attendees: [{ email: 'colleague-a@example.test' }, { email: 'colleague-b@example.test' }],
+      },
+      {
+        id: V4_EVENT_IDS.recurring,
+        calendarId: V4_CALENDARS.work,
+        summary: 'Weekly 1:1',
+        start: `${next}T13:00:00`,
+        end: `${next}T13:30:00`,
+        timeZone,
+        recurringEventId: 'v4recurbase',
+      },
+      {
+        id: V4_EVENT_IDS.allDay,
+        calendarId: V4_CALENDARS.holidays,
+        summary: 'Holiday',
+        start: day,
+        end: nextIsoDate(day, 2),
+      },
+    ],
+  };
 }
 
 // =====================================================================================================================
@@ -780,6 +914,17 @@ export function createFakeCalendar(opts: FakeCalendarOptions): FakeCalendar {
     return null;
   };
 
+  /** [V4] Calendar ids whose list-events answers 403 (`calendar_403` = the last calendar when there are 2+, or `calendar_403:<id>`). */
+  const forbidden403 = (): Set<string> => {
+    const out = new Set<string>();
+    for (const s of v2) {
+      const id = scenarioArg(s, 'calendar_403');
+      if (id !== null) out.add(id);
+      else if (s === 'calendar_403' && calendars.length > 1) out.add(calendars[calendars.length - 1]!.id);
+    }
+    return out;
+  };
+
   /** Tools that need a signed-in Google account. */
   const authGate = (): ToolText | null => {
     if (accounts === 'invalid_grant') return { text: shapes.invalidGrant(), isError: true };
@@ -848,6 +993,24 @@ export function createFakeCalendar(opts: FakeCalendarOptions): FakeCalendar {
 
   /** The global update-event violations of T2 3.7, evaluated on the RAW arguments (before the SDK strips unknown keys). */
   const checkUpdateArgs = (raw: Args): void => {
+    // [v4 T6] a MANUAL (calendar-view) update carries no private map at all (the event keeps its own tags): content keys + If-Match
+    // only, never a status, never on a protected event (I9'). Every other global rule below still applies to it.
+    if (raw.extendedProperties === undefined) {
+      for (const key of Object.keys(raw)) {
+        if (!(FAKE_UPDATE_EVENT_KEYS as readonly string[]).includes(key)) violate(`update_event_forbidden_key:${key}`);
+      }
+      if ((UPDATE_EVENT_SCOPE_KEYS as readonly string[]).some((k) => raw[k] !== undefined))
+        violate('update_event_scope_key');
+      if (raw.sendUpdates !== 'none') violate(`update_event_send_updates:${String(raw.sendUpdates)}`);
+      if (raw.checkConflicts !== false) violate('update_event_check_conflicts');
+      if (typeof raw.ifMatch !== 'string' || raw.ifMatch.length === 0) violate('update_event_without_ifmatch');
+      if (raw.status !== undefined) violate('manual_update_status');
+      const target = findEvent(raw.eventId);
+      if (target !== undefined)
+        for (const reason of protectedReasons(target, { attendees: v2.has('attendees') }))
+          violate(`manual_write_on_protected_event:${reason}`);
+      return;
+    }
     for (const key of Object.keys(raw)) {
       if (!(FAKE_UPDATE_EVENT_KEYS as readonly string[]).includes(key)) violate(`update_event_forbidden_key:${key}`);
     }
@@ -911,6 +1074,8 @@ export function createFakeCalendar(opts: FakeCalendarOptions): FakeCalendar {
       const gate = authGate();
       if (gate !== null) return gate;
       const ids = Array.isArray(args.calendarId) ? args.calendarId.map(String) : [String(args.calendarId ?? '')];
+      // [V4] calendar_403: Google refuses that calendar (the real server's single-calendar list throws -> isError).
+      if (ids.some((id) => forbidden403().has(id))) return { text: shapes.forbidden403(), isError: true };
       const filters = Array.isArray(args.privateExtendedProperty) ? args.privateExtendedProperty.map(String) : [];
       const timeMin = typeof args.timeMin === 'string' ? args.timeMin : '';
       const timeMax = typeof args.timeMax === 'string' ? args.timeMax : '9999-12-31T23:59:59';
@@ -933,7 +1098,7 @@ export function createFakeCalendar(opts: FakeCalendarOptions): FakeCalendar {
       const gate = authGate();
       if (gate !== null) return gate;
       const roleScenario = [...v2].map((s) => scenarioArg(s, 'access_role')).find((r) => r !== null);
-      const role = roleScenario === undefined ? 'owner' : roleScenario === 'absent' ? null : roleScenario;
+      const role = roleScenario === undefined ? undefined : roleScenario === 'absent' ? null : roleScenario;
       return { text: garbage ? shapes.garbage() : shapes.calendars(calendars, role), isError: false };
     },
 
@@ -1079,6 +1244,31 @@ export function createFakeCalendar(opts: FakeCalendarOptions): FakeCalendar {
       if (garbage) return { text: shapes.garbage(), isError: false };
       return { text: JSON.stringify({ event: structured(e, calendarId) }), isError: false };
     },
+
+    // [v4 T6] delete-event (DeleteEventHandler l.4298): events.delete, then {success, eventId, calendarId, message}. Google keeps a
+    // deleted event as status 'cancelled' (get-event still answers it; list-events / free-busy hide it).
+    'delete-event': async (args) => {
+      if (args.sendUpdates !== 'none') violate(`delete_event_send_updates:${String(args.sendUpdates)}`);
+      const gate = authGate();
+      if (gate !== null) return gate;
+      const calendarId = String(args.calendarId ?? '');
+      const e = findEvent(args.eventId);
+      if (v2.has('gone_410')) return { text: shapes.gone410(), isError: true };
+      if (v2.has('event_missing') || e === undefined || e.calendarId !== calendarId || e.status === 'cancelled') {
+        return { text: shapes.updateNotFound(), isError: true };
+      }
+      for (const reason of protectedReasons(e, { attendees: v2.has('attendees') }))
+        violate(`manual_write_on_protected_event:${reason}`);
+      e.status = 'cancelled';
+      e.etag = nextEtag();
+      e.updated = nextUpdated();
+      e.sequence = (e.sequence ?? 0) + 1;
+      if (garbage) return { text: shapes.garbage(), isError: false };
+      return {
+        text: JSON.stringify({ success: true, eventId: e.id, calendarId, message: 'Event deleted successfully' }),
+        isError: false,
+      };
+    },
   };
 
   const registered = new Map<string, { update(u: { paramsSchema?: Record<string, z.ZodTypeAny> }): void }>();
@@ -1218,9 +1408,17 @@ export function createFakeCalendar(opts: FakeCalendarOptions): FakeCalendar {
 // [V2] ledger helpers (T2 8.1 rules 8 and 9) - pure over the fake's journal; V2-W1-04 wires them into tests/helpers/ledger.ts
 // =====================================================================================================================
 
-/** Rule 8 "never delete": zero `delete-event` calls in the journal (independent of the fake's own violation). */
-export function neverDeleteProblems(calls: ReadonlyArray<{ tool: string }>): string[] {
-  const n = calls.filter((c) => c.tool === 'delete-event' || c.tool === 'delete_event').length;
+/** Rule 8 "never delete" ([v4 T6] I9': "never delete except a manual action"): zero `delete-event` calls in the journal that the
+ *  caller's `allowed` predicate does not account for (the ledger passes one that matches each call to an executed manual
+ *  delete_event action approved by a click; without it every delete-event is a problem). */
+export function neverDeleteProblems(
+  calls: ReadonlyArray<{ tool: string; args?: Record<string, unknown> }>,
+  allowed: (args: Record<string, unknown>) => boolean = () => false,
+): string[] {
+  const n = calls.filter(
+    (c) =>
+      (c.tool === 'delete-event' || c.tool === 'delete_event') && !(c.tool === 'delete-event' && allowed(c.args ?? {})),
+  ).length;
   return n === 0 ? [] : [`never-delete: ${String(n)} delete-event call(s) reached the calendar`];
 }
 
@@ -1240,6 +1438,9 @@ export function neverForeignProblems(
   const created = new Map(cal.appCreated.map((a) => [a.eventId, a.priv]));
   for (const c of cal.calls) {
     if (c.tool !== 'update-event') continue;
+    // [v4 T6] a manual (calendar-view) update carries no private map; it is proven by ledger rule 13 instead (and the fake's
+    // manual_write_on_protected_event violation keeps I9' for it)
+    if (c.args.extendedProperties === undefined) continue;
     const eventId = typeof c.args.eventId === 'string' ? c.args.eventId : '';
     const origin = created.get(eventId);
     if (origin === undefined) {
@@ -1312,7 +1513,9 @@ function isV2Scenario(s: string): s is FakeCalendarV2Scenario {
       'attendees',
       'foreign_tags',
       'precondition_412_always',
-    ].includes(s) || /^access_role:(owner|writer|reader|freeBusyReader|unknown|absent)$/.test(s)
+    ].includes(s) ||
+    /^access_role:(owner|writer|reader|freeBusyReader|unknown|absent)$/.test(s) ||
+    /^calendar_403(:\S{1,256})?$/.test(s)
   );
 }
 
@@ -1496,12 +1699,14 @@ export function createFakeMcpCalendar(opts: FakeCalendarOptions): FakeMcpCalenda
       internals().__delay(tool, ms);
     },
     callerFor<C extends FakeMcpToolClass>(cls: C): FakeMcpToolCaller<C> {
-      return async (tool, args, signal) => {
+      return async (tool, args, signal, opts) => {
         if (FAKE_MCP_TOOLS[tool as FakeMcpToolName] !== cls) {
           const err = new Error('mcp_capability');
           err.name = 'McpCapabilityError';
           throw err;
         }
+        // [v4 T6] same rule as McpHost.callerFor: delete-event only for a manual (calendar-view) action
+        if (tool === 'delete-event' && opts?.source !== 'manual') return { ok: false, error: 'invalid_args' };
         const c = client;
         if (c === null) return { ok: false, error: 'unavailable' };
         try {
