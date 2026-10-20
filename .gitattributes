@@ -1,0 +1,18 @@
+# Line endings: every text file is LF in checkouts on every platform (the CI runner and new worktrees use core.autocrlf=true,
+# and Vitest cannot transform CRLF .mjs files - release run 39444944536). Binaries are never touched.
+* text=auto eol=lf
+*.exe binary
+*.dll binary
+*.db binary
+*.png binary
+*.ico binary
+*.jpg binary
+*.gguf binary
+*.zip binary
+*.asar binary
+*.bin binary
+*.wav binary
+*.ogg binary
+*.webp binary
+*.pak binary
+*.dat binary

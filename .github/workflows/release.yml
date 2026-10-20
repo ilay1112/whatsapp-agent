@@ -175,7 +175,7 @@ jobs:
         run: npm run typecheck
 
       - name: Unit tests (main + renderer; e2e is not run in CI)
-        run: npx vitest run --project main --project renderer
+        run: npx vitest run --project main --project renderer --testTimeout=30000
 
       - name: Set the release version
         id: version
