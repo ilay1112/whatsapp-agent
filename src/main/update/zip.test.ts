@@ -182,7 +182,7 @@ describe('extractZip - well-formed archives', () => {
       const zip = join(d, 'release.zip');
       // the release workflow's own zip step (ordinal names, '/' separators, Optimal compression)
       const script = [
-        `$src = '${src}'`,
+        `$src = (Get-Item -LiteralPath '${src}').FullName.TrimEnd('\\')`, // long name: an 8.3 TEMP (RUNNER~1 on CI) would break the prefix strip below
         `$out = '${zip}'`,
         'Add-Type -AssemblyName System.IO.Compression, System.IO.Compression.FileSystem',
         '$map = @{}',

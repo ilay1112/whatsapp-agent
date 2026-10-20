@@ -215,7 +215,7 @@ jobs:
         # other layout.
         run: |
           $top = 'WhatsAppCalendarAgent'
-          $src = (Resolve-Path -LiteralPath 'dist/win-unpacked').Path.TrimEnd('\')
+          $src = (Get-Item -LiteralPath 'dist/win-unpacked').FullName.TrimEnd('\')  # Get-Item expands 8.3 short names; Resolve-Path does not
           $out = Join-Path (Get-Location).Path $env:ZIP
           Add-Type -AssemblyName System.IO.Compression, System.IO.Compression.FileSystem
           $map = @{}
