@@ -27,6 +27,10 @@ on:
         description: 'Only print the sha256 pins of the runner VC++ CRT (no build, no release)'
         type: boolean
         default: false
+      diag:
+        description: 'Diagnose the unit-test step on the runner (no build, no release)'
+        type: boolean
+        default: false
 
 concurrency:
   group: release
@@ -36,6 +40,42 @@ permissions:
   contents: read
 
 jobs:
+  diag:
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.diag }}
+    runs-on: windows-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: Environment facts
+        run: |
+          node --version; npm --version
+          git config --get core.autocrlf; git config --get core.eol
+          git ls-files --eol scripts/release-manifest.test.mjs scripts/release-manifest.mjs
+          $b = [System.IO.File]::ReadAllBytes('scripts/release-manifest.test.mjs')[0..40]
+          Write-Host ("first bytes: " + (($b | ForEach-Object { $_.ToString('x2') }) -join ' '))
+          node --check scripts/release-manifest.test.mjs; Write-Host "node --check exit $LASTEXITCODE"
+          npx vitest --version
+      - name: One failing suite, verbose
+        continue-on-error: true
+        env:
+          DEBUG: 'vite-node:*'
+        run: npx vitest run scripts/release-manifest.test.mjs --reporter=verbose 2>&1 | Select-Object -First 120
+      - name: One slow suite, timing
+        continue-on-error: true
+        run: npx vitest run src/main/db/migrations.v4.test.ts --reporter=verbose 2>&1 | Select-Object -Last 40
+
   crt-pins:
     if: ${{ github.event_name == 'workflow_dispatch' && inputs.pin_crt }}
     runs-on: windows-latest
